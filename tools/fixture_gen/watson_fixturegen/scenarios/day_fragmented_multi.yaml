@@ -103,9 +103,9 @@ windows:
     window_id: 3602
   vault:
     template: browser
-    bundle_id: com.cedar.vault
-    app_name: Cedar Vault
-    window_title: "Private Browsing — Cedar Vault"
+    bundle_id: com.apple.Passwords
+    app_name: Passwords
+    window_title: "Passwords — Personal vault"
     window_id: 3701
     url: https://vault.cedar.example/unlock
     is_private_browsing: true
@@ -369,7 +369,7 @@ timeline:
         content:
           kind: article
           address: https://vault.cedar.example/unlock
-          kicker: Cedar Vault · private
+          kicker: Passwords · private
           page_title: Unlock personal vault
           badge: Private
           tabs:

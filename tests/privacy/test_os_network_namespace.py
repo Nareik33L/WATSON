@@ -1,8 +1,9 @@
 """OS-level no-network check (plan §6 / §11.3).
 
 Creates a loopback-only network namespace (sudo unshare --net + setpriv,
-or unshare -rn). WATSON_REQUIRE_NETNS=1 makes a missing namespace fail
-instead of skip so CI cannot silently drop this test.
+or unshare --user --map-user/--map-group --net). WATSON_REQUIRE_NETNS=1
+makes a missing namespace fail instead of skip so CI cannot silently drop
+this test.
 """
 
 from __future__ import annotations

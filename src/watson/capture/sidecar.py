@@ -28,9 +28,7 @@ def sidecar_schema_path() -> Path:
     for path in candidates:
         if path.is_file():
             return path
-    raise SidecarError(
-        "sidecar schema not found (expected schemas/sidecar.schema.json)"
-    )
+    raise SidecarError("sidecar schema not found (expected schemas/sidecar.schema.json)")
 
 
 @lru_cache(maxsize=1)

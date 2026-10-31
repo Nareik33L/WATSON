@@ -10,8 +10,10 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
+from watson.capture.exclusions import exclusion_reason
 from watson.capture.sidecar import load_sidecar
 from watson.capture.spool import SpoolPair, assert_not_fixture_file, sha256_file
+from watson.config.schema import ExclusionsConfig
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.jobs import enqueue
@@ -19,6 +21,7 @@ from watson.privacy.audit import (
     KIND_DELETE_FAILED,
     KIND_DELETED,
     KIND_INGESTED,
+    KIND_SKIPPED,
     KIND_VERIFIED,
     record_audit,
 )
@@ -68,11 +71,21 @@ def ingest_pair(
     pair: SpoolPair,
     *,
     working_day_id: str,
-) -> bool:
+    exclusions: ExclusionsConfig | None = None,
+    fixture_dir: Path | None = None,
+) -> str:
     """Insert a captured frame and enqueue extract. Idempotent on frame id.
 
-    Returns True when a new row was written.
+    Returns ``ingested``, ``existing``, or ``excluded``. Excluded frames are
+    unlinked from the spool and verified gone; they never write ``frames``
+    or content rows.
     """
+    rules = exclusions if exclusions is not None else ExclusionsConfig()
+    reason = exclusion_reason(pair.sidecar, rules)
+    if reason is not None:
+        reject_excluded_pair(conn, pair, reason=reason, fixture_dir=fixture_dir)
+        return "excluded"
+
     existing = conn.execute("SELECT id FROM frames WHERE id = ?", (pair.frame_id,)).fetchone()
     if existing is not None:
         enqueue(
@@ -81,7 +94,7 @@ def ingest_pair(
             payload=_extract_payload(pair),
             idempotency_key=f"{EXTRACT_JOB_KIND}:{pair.frame_id}",
         )
-        return False
+        return "existing"
 
     title = str(pair.sidecar.get("window_title") or "")
     title_hash = hashlib.sha256(title.encode("utf-8")).hexdigest() if title else None
@@ -122,7 +135,46 @@ def ingest_pair(
         idempotency_key=f"{EXTRACT_JOB_KIND}:{pair.frame_id}",
     )
     log.info("ingested frame", extra={"frame_id": pair.frame_id, "png_sha256": png_sha256})
-    return True
+    return "ingested"
+
+
+def reject_excluded_pair(
+    conn: sqlcipher.Connection,
+    pair: SpoolPair,
+    *,
+    reason: str,
+    fixture_dir: Path | None = None,
+) -> None:
+    """Delete an excluded spool pair and record a content-free audit event."""
+    unlink_spool_pair(pair.png_path, pair.sidecar_path, fixture_dir=fixture_dir)
+    record_audit(
+        conn,
+        kind=KIND_SKIPPED,
+        detail={"reason": reason},
+        commit=True,
+    )
+    log.info("skipped excluded frame", extra={"reason": reason})
+
+
+def unlink_spool_pair(
+    png_path: Path,
+    sidecar_path: Path,
+    *,
+    fixture_dir: Path | None = None,
+) -> None:
+    """Unlink PNG + sidecar and re-stat. Never touches a source fixture."""
+    if fixture_dir is not None:
+        assert_not_fixture_file(png_path, fixture_dir)
+        assert_not_fixture_file(sidecar_path, fixture_dir)
+    try:
+        if png_path.is_file():
+            png_path.unlink()
+        if sidecar_path.is_file():
+            sidecar_path.unlink()
+    except OSError as exc:
+        raise FrameError(f"excluded spool delete failed for {png_path.name}") from exc
+    if not (_path_gone(png_path) and _path_gone(sidecar_path)):
+        raise FrameError(f"excluded spool files still present after unlink for {png_path.name}")
 
 
 def extract_fixture_stub(
@@ -230,6 +282,8 @@ def delete_and_verify(
         "SELECT state, deletion_verified FROM frames WHERE id = ?", (frame_id,)
     ).fetchone()
     if row is None:
+        if _path_gone(png_path) and _path_gone(sidecar):
+            return
         raise FrameError(f"frame {frame_id} missing during deletion")
     already_verified = int(row["deletion_verified"]) == 1
 

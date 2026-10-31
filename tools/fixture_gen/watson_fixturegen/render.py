@@ -61,7 +61,10 @@ def render_scenario(
     frames = expand_schedule(scenario)
     frames_dir = out_dir / "frames" / scenario.date
     truth = build_truth(scenario, frames)
-    sample_ids = pick_sample([frame.frame_id for frame in frames], 50)
+    sample_ids = pick_sample(
+        [frame.frame_id for frame in frames if not frame.window.excluded],
+        50,
+    )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "truth.yaml").write_text(

@@ -50,7 +50,7 @@ Same scenario + seed (default `meta.seed`) yields byte-identical sidecar **text*
 
 1. Copy `scenarios/day_acme_q4.yaml`.
 2. Set `meta.name`, `meta.date`, `meta.seed`.
-3. Declare `windows` (`template` is one of `mail`, `document`, `chat`, `spreadsheet`, `browser`, `ide`, `videocall`) using only fictional firms, people, and `*.example` hosts. No real brands, logos, or PII. Set `excluded: true` on a window the helper would drop (private browsing, password vault); those blocks become timeline gaps and are recorded in `truth.yaml` as `skipped`, with no PNG or sidecar.
+3. Declare `windows` (`template` is one of `mail`, `document`, `chat`, `spreadsheet`, `browser`, `ide`, `videocall`) using only fictional firms, people, and `*.example` hosts. No real brands, logos, or PII. Set `excluded: true` on a window the helper should drop (private browsing, password manager on the default exclusion list). Those frames **are rendered** and sidecar-marked (`is_private_browsing`, excluded bundle id) so replay can exercise the Python ingest guard; `truth.yaml` lists them under `skipped`. They must never land in `frames` or content tables.
 4. Add a `timeline` of blocks (`window`, `start`, `end`, `states` with `at` + template `content`). Gaps between blocks are idle (no frames).
 5. Fill `truth` using the §11.1 keys. Point each decision at frames with `evidence_contains` (matched against window title, URL, and content strings) or explicit `evidence_frames`.
 6. Render into `tests/fixtures/<name>/`. `expected_segments` are generated from D3: maximal consecutive runs of `(bundle_id, normalised window title)`.

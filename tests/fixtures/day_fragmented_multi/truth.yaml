@@ -46,12 +46,21 @@ not_completed: [Northwind renewal letter (still editing at day end), Cedar Onboa
 noise: ['Cedar Daily 09:24–09:27', 'Pocket Calendar glance 09:56–09:59']
 skipped:
 - reason: excluded_app
-  window: vault
-  bundle_id: com.cedar.vault
-  app_name: Cedar Vault
-  window_title: Private Browsing — Cedar Vault
-  start: '2026-11-03T10:24:00Z'
-  end: '2026-11-03T10:27:00Z'
+  frame_id: d0bb10cd-20f9-54d8-997c-fa026c6ded67
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:24:00Z'
+- reason: excluded_app
+  frame_id: bba971d4-a6ce-5d2e-ae35-d480f6dfd109
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:24:30Z'
+- reason: excluded_app
+  frame_id: 9dc16f0a-de2d-51f9-be03-b2aed25a4ebe
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:25:15Z'
+- reason: excluded_app
+  frame_id: 6261dbe0-a7c0-5c5c-85ff-454023c19e85
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:26:00Z'
 expected_segments:
 - start: '2026-11-03T09:00:00Z'
   end: '2026-11-03T09:06:00Z'
@@ -382,6 +391,6 @@ meta:
   name: day_fragmented_multi
   date: '2026-11-03'
   seed: 7
-  frame_count: 216
+  frame_count: 220
   first_frame: 3d478f13-f6a6-585b-8cf1-b29f50e712bb
   last_frame: 256b02c1-8cc0-5075-8809-d154a5860271

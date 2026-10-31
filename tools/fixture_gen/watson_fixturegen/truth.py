@@ -47,7 +47,7 @@ def build_truth(scenario: Scenario, frames: Sequence[ScheduledFrame]) -> dict[st
         "not_completed": list(scenario.truth.not_completed),
         "noise": list(scenario.truth.noise),
     }
-    skipped = skipped_windows(scenario)
+    skipped = skipped_frames(frames)
     if skipped:
         payload["skipped"] = skipped
     payload["expected_segments"] = expected_segments(frames)
@@ -75,7 +75,7 @@ def dump_truth(truth: dict[str, Any]) -> str:
 
 
 def skipped_windows(scenario: Scenario) -> list[dict[str, Any]]:
-    """Timeline blocks the helper would drop (excluded / private apps)."""
+    """Timeline blocks marked excluded (used by tests that inspect the scenario)."""
     rows: list[dict[str, Any]] = []
     for block in scenario.timeline:
         if not block.window.excluded:
@@ -94,12 +94,28 @@ def skipped_windows(scenario: Scenario) -> list[dict[str, Any]]:
     return rows
 
 
+def skipped_frames(frames: Sequence[ScheduledFrame]) -> list[dict[str, Any]]:
+    """One truth row per generated excluded frame (audit count must match)."""
+    return [
+        {
+            "reason": "excluded_app",
+            "frame_id": frame.frame_id,
+            "bundle_id": frame.window.bundle_id,
+            "captured_at": format_captured_at(frame.captured_at),
+        }
+        for frame in frames
+        if frame.window.excluded
+    ]
+
+
 def expected_segments(frames: Sequence[ScheduledFrame]) -> list[dict[str, Any]]:
     """Maximal consecutive runs of (bundle_id, normalised window title) — D3."""
     segments: list[dict[str, Any]] = []
     current: list[ScheduledFrame] = []
     current_key: tuple[str, str] | None = None
     for frame in frames:
+        if frame.window.excluded:
+            continue
         key = (frame.window.bundle_id, normalize_title(frame.window.window_title))
         if current_key is None:
             current_key = key
