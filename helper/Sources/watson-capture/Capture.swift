@@ -570,7 +570,7 @@ enum Spool {
         _ = fchmod(fd, mode)
         let wrote = data.withUnsafeBytes { buffer -> Int in
             guard let base = buffer.baseAddress, !buffer.isEmpty else { return 0 }
-            return write(fd, base, buffer.count)
+            return Darwin.write(fd, base, buffer.count)
         }
         if wrote != data.count {
             throw CocoaError(.fileWriteUnknown)
@@ -900,54 +900,30 @@ final class FakeFrameSource: FrameSource, @unchecked Sendable {
 
     func waitUntilCaptureStarted() async {
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            lock.lock()
-            if started {
-                lock.unlock()
+            if enqueueStartedWaiter(cont) {
                 cont.resume()
-            } else {
-                startedWaiters.append(cont)
-                lock.unlock()
             }
         }
     }
 
     func releaseCapture() {
-        lock.lock()
-        released = true
-        let waiters = releaseWaiters
-        releaseWaiters.removeAll()
-        lock.unlock()
+        let waiters = markReleased()
         waiters.forEach { $0.resume() }
     }
 
     func resolveFrontmost() async throws -> FrontmostWindow {
-        lock.lock()
-        nextWindowID += 1
-        var current = window
-        current.windowID = nextWindowID
-        lock.unlock()
-        return current
+        nextWindow()
     }
 
     func screenshot(of window: FrontmostWindow) async throws -> CGImage {
         _ = window
-        lock.lock()
-        started = true
-        let startedNow = startedWaiters
-        startedWaiters.removeAll()
-        let alreadyReleased = released
-        lock.unlock()
+        let (startedNow, alreadyReleased) = markScreenshotStarted()
         startedNow.forEach { $0.resume() }
 
         if !alreadyReleased {
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                lock.lock()
-                if released {
-                    lock.unlock()
+                if enqueueReleaseWaiter(cont) {
                     cont.resume()
-                } else {
-                    releaseWaiters.append(cont)
-                    lock.unlock()
                 }
             }
         }
@@ -955,6 +931,55 @@ final class FakeFrameSource: FrameSource, @unchecked Sendable {
             throw WindowCapture.CaptureFailure.pngEncodeFailed
         }
         return image
+    }
+
+    private func nextWindow() -> FrontmostWindow {
+        lock.lock()
+        defer { lock.unlock() }
+        nextWindowID += 1
+        var current = window
+        current.windowID = nextWindowID
+        return current
+    }
+
+    /// Returns `true` if capture already started (caller should resume immediately).
+    private func enqueueStartedWaiter(_ cont: CheckedContinuation<Void, Never>) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if started {
+            return true
+        }
+        startedWaiters.append(cont)
+        return false
+    }
+
+    private func markReleased() -> [CheckedContinuation<Void, Never>] {
+        lock.lock()
+        defer { lock.unlock() }
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        return waiters
+    }
+
+    private func markScreenshotStarted() -> ([CheckedContinuation<Void, Never>], Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        started = true
+        let startedNow = startedWaiters
+        startedWaiters.removeAll()
+        return (startedNow, released)
+    }
+
+    /// Returns `true` if already released (caller should resume immediately).
+    private func enqueueReleaseWaiter(_ cont: CheckedContinuation<Void, Never>) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if released {
+            return true
+        }
+        releaseWaiters.append(cont)
+        return false
     }
 
     func ocrLines(for image: CGImage) throws -> [OCRLine] {
