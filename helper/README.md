@@ -16,7 +16,9 @@ helper/
 ├── Sources/watson-capture/       Capture.swift, OCR.swift, Filters.swift, Protocol.swift
 ├── Sources/watson-capture-cli/   main.swift
 ├── Tests/WatsonCaptureTests/     protocol, sidecar, filters, selftest, permissions
-└── scripts/                      build.sh, sign.sh, check-tcc.sh, cleanup-spool.sh, test-cleanup-spool.sh
+└── scripts/                      build.sh, sign.sh, check-tcc.sh, cleanup-spool.sh,
+                                  test-cleanup-spool.sh, test-clt-overlay.sh,
+                                  ci-clt-overlay-e2e.sh
 ```
 
 CI (macos-15, Xcode 16.2: both `swiftc` and SwiftPM builds + unit tests + `--selftest` on the swiftc binary) runs only when this directory changes. Live ScreenCaptureKit and the TCC grant are **Mac-only**; this runbook is what the person at the Mac executes.
@@ -197,6 +199,8 @@ helper/scripts/build.sh
 #   helper/scripts/build.sh --release --identity 'WATSON Dev'
 # SwiftPM (needs a toolchain that can load Package.swift, e.g. Xcode):
 #   helper/scripts/build.sh --spm --release --identity 'WATSON Dev'
+# Disable the CLT SwiftBridging VFS overlay (see Troubleshooting):
+#   helper/scripts/build.sh --no-clt-overlay
 ```
 
 That embeds `helper/Info.plist` via
@@ -377,6 +381,29 @@ Do not send certificates. Do not send `1h.jsonl` if it contains `window_title` o
 | Hardened runtime | Off for this local identity (M7 packaging will add it) |
 
 `tccutil` can only **reset** a grant (`tccutil reset ScreenCapture com.watson.capture`). Do not do that during the persistence check. The check is `CGPreflightScreenCaptureAccess` on the newly signed binary.
+
+---
+
+## Troubleshooting
+
+### `could not build module 'Foundation'` (CLT 16.2, no Xcode)
+
+On the development Mac (Command Line Tools 16.2, Swift 6.0.3, no full Xcode) the default `swiftc` build can fail while including CoreAudio `CATapDescription.h` with `could not build module 'Foundation'`.
+
+Cause: a stale August 2023 `/Library/Developer/CommandLineTools/usr/include/swift/module.modulemap` redefines `SwiftBridging`, and `bridging.modulemap` (December 2024) defines it again.
+
+`scripts/build.sh` detects that pair (both files present, and `module.modulemap` has a `module SwiftBridging` declaration — not just the word in a comment), writes an **empty** modulemap plus a clang VFS overlay under `helper/.build/clt-overlay/<debug|release>/` (outside SwiftPM's `.build/release` tree; absolute paths, `version: 0` / `roots`), and passes `-vfsoverlay` / `-Xcc -ivfsoverlay` to `swiftc`. The empty file hides the **entire** stale `module.modulemap`, not only the SwiftBridging entry. The `--spm` path gets the same overlay via `-Xswiftc -vfsoverlay` and `-Xcc -ivfsoverlay`. It prints one line: `CLT SwiftBridging overlay applied: …` and echoes `swiftc-argv:` / `swift-build-argv:` so CI can see the flags. Pass `--no-clt-overlay` to turn this off.
+
+`WATSON_CLT_ROOT` is a **test-only** override (honoured only when `CI` is set) that points detection at a fake tree so the overlay remaps that path and never the real SDK. Do not set it on the development Mac. macos-15 CI runs `build.sh` end-to-end with a fake root for swiftc, `--spm`, `--no-clt-overlay`, and `--spm --no-clt-overlay`.
+
+Alternative if you prefer to fix the toolchain instead: move the stale file aside (needs sudo) and keep using `--no-clt-overlay`:
+
+```bash
+sudo mv /Library/Developer/CommandLineTools/usr/include/swift/module.modulemap \
+  /Library/Developer/CommandLineTools/usr/include/swift/module.modulemap.stale-2023
+```
+
+Do not run that on a full Xcode install. The overlay writes only under `helper/.build/` and does not change signing.
 
 ---
 

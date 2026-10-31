@@ -67,8 +67,18 @@ jobs:
         working-directory: helper
         run: swift test
 
-      - name: Build (swiftc default)
-        run: helper/scripts/build.sh --release --no-sign
+      - name: CLT SwiftBridging overlay (fake WATSON_CLT_ROOT)
+        run: helper/scripts/test-clt-overlay.sh
+
+      - name: Build (swiftc default, no overlay)
+        run: |
+          set -euo pipefail
+          helper/scripts/build.sh --release --no-sign | tee /tmp/watson-swiftc-build.log
+          if grep -F 'CLT SwiftBridging overlay applied' /tmp/watson-swiftc-build.log; then
+            echo "FAIL: default CI build applied a CLT overlay" >&2
+            exit 1
+          fi
+          echo "ok: default swiftc build passed with no overlay"
 
       - name: Keep swiftc binary
         run: |
@@ -118,13 +128,19 @@ jobs:
           fi
           echo "ok: verify rejected binary without Info.plist (build rc=$rc verify rc=$vrc)"
 
-      - name: Build (SwiftPM --spm)
+      - name: Build (SwiftPM --spm, no overlay)
         run: |
+          set -euo pipefail
           # Fresh .build so SwiftPM does not collide with the swiftc layout.
           rm -rf helper/.build
-          helper/scripts/build.sh --spm --release --no-sign
+          helper/scripts/build.sh --spm --release --no-sign | tee /tmp/watson-spm-build.log
+          if grep -F 'CLT SwiftBridging overlay applied' /tmp/watson-spm-build.log; then
+            echo "FAIL: default --spm CI build applied a CLT overlay" >&2
+            exit 1
+          fi
           cp helper/.build/release/watson-capture /tmp/watson-capture-ci/watson-capture-spm
           chmod +x /tmp/watson-capture-ci/watson-capture-spm
+          echo "ok: default --spm build passed with no overlay"
 
       - name: Ad-hoc sign both binaries
         run: |
@@ -142,3 +158,20 @@ jobs:
           helper/scripts/compare-embedded-identity.sh
           /tmp/watson-capture-ci/watson-capture-swiftc
           /tmp/watson-capture-ci/watson-capture-spm
+
+      # After the no-overlay compare so these do not disturb those binaries.
+      # Fake WATSON_CLT_ROOT remaps only /tmp/watson-ci-fake-clt, not the SDK.
+      - name: Overlay e2e — swiftc + fake WATSON_CLT_ROOT
+        run: helper/scripts/ci-clt-overlay-e2e.sh swiftc
+
+      - name: Overlay e2e — SwiftPM + fake WATSON_CLT_ROOT
+        run: helper/scripts/ci-clt-overlay-e2e.sh spm
+
+      # if: so a SwiftPM overlay failure cannot skip the --no-clt-overlay claim.
+      - name: Overlay e2e — --no-clt-overlay + fake WATSON_CLT_ROOT
+        if: success() || failure()
+        run: helper/scripts/ci-clt-overlay-e2e.sh no-overlay
+
+      - name: Overlay e2e — --spm --no-clt-overlay + fake WATSON_CLT_ROOT
+        if: success() || failure()
+        run: helper/scripts/ci-clt-overlay-e2e.sh no-overlay-spm

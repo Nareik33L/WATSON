@@ -2,7 +2,7 @@
 # Build watson-capture with swiftc by default (no Package.swift evaluation).
 # SwiftPM is --spm opt-in: CLT 16.2 cannot link PackageDescription
 # (undefined symbol PackageDescription.Package.__allocating_init).
-# Usage: helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign] [--no-embed-plist]
+# Usage: helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign] [--no-embed-plist] [--no-clt-overlay]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,23 +11,167 @@ IDENTITY="${WATSON_CODESIGN_IDENTITY:-WATSON Dev}"
 SIGN=1
 USE_SPM=0
 EMBED_PLIST=1
+CLT_OVERLAY=1
 # Package.swift platforms: .macOS(.v14); swift-tools-version: 6.0
 MACOS_MIN="14.0"
 SWIFT_VERSION="6"
+# Set by prepare_clt_overlay_if_needed when the stale CLT modulemap is detected.
+CLT_OVERLAY_FILE=""
+
+# --- CLT SwiftBridging overlay (sourced by test-clt-overlay.sh) ---
+# Stale Aug 2023 CLT usr/include/swift/module.modulemap redefines SwiftBridging,
+# which bridging.modulemap (Dec 2024) also defines. That breaks
+# `could not build module 'Foundation'` via CoreAudio CATapDescription.h.
+# Workaround: clang VFS overlay mapping the stale file to an empty modulemap.
+# The empty file hides the *whole* stale module.modulemap (every module in
+# that file), not only SwiftBridging. bridging.modulemap is left as-is.
+# WATSON_CLT_ROOT is test-only: honoured only when CI is set (GitHub Actions
+# or CI=1). It must point at a fake tree so the overlay never remaps the
+# real SDK.
+
+_abs_norm() {
+  python3 -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).expanduser().resolve())' "$1"
+}
+
+_abs_existing() {
+  local p="$1"
+  if [[ -d "$p" ]]; then
+    (cd "$p" && pwd)
+  elif [[ -e "$p" ]]; then
+    echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+  else
+    _abs_norm "$p"
+  fi
+}
+
+resolve_clt_root() {
+  local raw=""
+  if [[ -n "${WATSON_CLT_ROOT:-}" ]]; then
+    if [[ -z "${CI:-}" ]]; then
+      echo "warning: WATSON_CLT_ROOT is test-only and ignored unless CI is set" >&2
+    else
+      echo "warning: WATSON_CLT_ROOT is a test-only override; overlay maps only that fake tree" >&2
+      raw="$WATSON_CLT_ROOT"
+    fi
+  fi
+  if [[ -z "$raw" ]] && command -v xcode-select >/dev/null 2>&1; then
+    raw="$(xcode-select -p 2>/dev/null || true)"
+  fi
+  if [[ -z "$raw" ]]; then
+    return 1
+  fi
+  _abs_existing "$raw"
+}
+
+clt_has_stale_swiftbridging() {
+  local root="$1"
+  local mm="$root/usr/include/swift/module.modulemap"
+  local bm="$root/usr/include/swift/bridging.modulemap"
+  if [[ ! -f "$mm" || ! -f "$bm" ]]; then
+    return 1
+  fi
+  # Require a module declaration, not a comment that mentions SwiftBridging.
+  grep -Eq '^[[:space:]]*module[[:space:]]+SwiftBridging' "$mm"
+}
+
+_assert_under_build_dir() {
+  local dest="$1"
+  local build="$ROOT/.build"
+  mkdir -p "$build"
+  local abs_build abs_dest
+  abs_build="$(_abs_norm "$build")"
+  abs_dest="$(_abs_norm "$dest")"
+  case "$abs_dest" in
+    "$abs_build"|"$abs_build"/*) ;;
+    *)
+      echo "refusing to write CLT overlay outside $abs_build" >&2
+      exit 1
+      ;;
+  esac
+  mkdir -p "$dest"
+}
+
+write_clt_overlay() {
+  local root="$1"
+  local dest="$2"
+  _assert_under_build_dir "$dest"
+  dest="$(cd "$dest" && pwd)"
+  local swift_inc empty ov
+  swift_inc="$(_abs_existing "$root/usr/include/swift")"
+  empty="$dest/empty.modulemap"
+  ov="$dest/overlay.yaml"
+  # Empty on purpose: hide the entire stale module.modulemap.
+  : > "$empty"
+  empty="$(_abs_existing "$empty")"
+  ov="$(_abs_existing "$ov")"
+  python3 - "$ov" "$swift_inc" "$empty" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+ov, swift_inc, empty = sys.argv[1], sys.argv[2], sys.argv[3]
+Path(ov).write_text(
+    "version: 0\n"
+    "roots:\n"
+    "  - type: directory\n"
+    f"    name: {json.dumps(swift_inc)}\n"
+    "    contents:\n"
+    "      - type: file\n"
+    "        name: module.modulemap\n"
+    f"        external-contents: {json.dumps(empty)}\n",
+    encoding="utf-8",
+)
+PY
+  CLT_OVERLAY_FILE="$ov"
+}
+
+prepare_clt_overlay_if_needed() {
+  CLT_OVERLAY_FILE=""
+  if [[ "${CLT_OVERLAY:-1}" -eq 0 ]]; then
+    return 0
+  fi
+  local root=""
+  root="$(resolve_clt_root)" || return 0
+  if [[ -z "$root" ]]; then
+    return 0
+  fi
+  if ! clt_has_stale_swiftbridging "$root"; then
+    return 0
+  fi
+  # Stay out of SwiftPM's .build/release and .build/<triple>/ trees.
+  local dest="${1:-$ROOT/.build/clt-overlay/${CONFIG:-release}}"
+  write_clt_overlay "$root" "$dest"
+  echo "CLT SwiftBridging overlay applied: $CLT_OVERLAY_FILE"
+}
+
+# Allow helper/scripts/test-clt-overlay.sh to source the helpers above
+# without compiling or signing.
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  return 0
+fi
 
 usage() {
   cat <<'EOF'
 Build watson-capture (macOS 14+, Command Line Tools).
 
-  helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign] [--no-embed-plist]
+  helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign] [--no-embed-plist] [--no-clt-overlay]
 
 Default is a plain swiftc build so CLT 16.2 (no Xcode) works. SwiftPM
 cannot load Package.swift on that toolchain (ManifestAPI:
 PackageDescription.Package.__allocating_init is undefined). Pass --spm
 to use `swift build` (CI / full Xcode).
 
+On CLT 16.2 a stale usr/include/swift/module.modulemap can redefine
+SwiftBridging (also defined in bridging.modulemap) and fail the default
+swiftc build with `could not build module 'Foundation'`. The script then
+writes a clang VFS overlay under helper/.build and passes
+-vfsoverlay / -ivfsoverlay. --no-clt-overlay disables that.
+
 Environment:
   WATSON_CODESIGN_IDENTITY   codesign identity (default: WATSON Dev)
+  WATSON_CLT_ROOT            test-only fake CLT/SDK root. Honoured only when
+                             CI is set. Overlay maps that fake tree, not the
+                             real SDK. Do not set this on the development Mac.
 
 The Info.plist (CFBundleIdentifier com.watson.capture) is embedded in __TEXT,__info_plist.
 EOF
@@ -44,6 +188,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-sign) SIGN=0; shift ;;
     --no-embed-plist) EMBED_PLIST=0; shift ;;
+    --no-clt-overlay) CLT_OVERLAY=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "unknown argument: $1" >&2
@@ -117,10 +262,43 @@ verify_binary() {
   # already passed codesign --verify in sign.sh.
   codesign -dv --verbose=4 "$bin" 2>&1 || true
 
-  echo "--- otool -s __TEXT __info_plist ---"
-  otool -s __TEXT __info_plist "$bin"
-  # Do not grep otool headers ("of" in "Contents of" is [0-9a-f]{2}).
+  # verify-embedded-plist.sh reads the section; do not dump the hex here
+  # (the full otool listing drowns CI logs).
   "$ROOT/scripts/verify-embedded-plist.sh" "$bin"
+}
+
+# Overlay flags last so empty-array `set -u` on bash 3.2 is never an issue.
+# Echo the argv so CI can assert -vfsoverlay / -ivfsoverlay were (or were not) passed.
+_echo_argv() {
+  local label="$1"
+  shift
+  local buf="$label"
+  local a
+  for a in "$@"; do
+    buf+=" $(printf '%q' "$a")"
+  done
+  echo "$buf"
+}
+
+run_swiftc() {
+  # One argv for echo and exec so overlay flags cannot drift.
+  local -a cmd
+  cmd=("$@")
+  if [[ -n "${CLT_OVERLAY_FILE:-}" ]]; then
+    cmd+=(-vfsoverlay "$CLT_OVERLAY_FILE" -Xcc -ivfsoverlay -Xcc "$CLT_OVERLAY_FILE")
+  fi
+  _echo_argv "swiftc-argv:" "${cmd[@]}"
+  swiftc "${cmd[@]}"
+}
+
+run_swift_build() {
+  local -a cmd
+  cmd=("$@")
+  if [[ -n "${CLT_OVERLAY_FILE:-}" ]]; then
+    cmd+=(-Xswiftc -vfsoverlay -Xswiftc "$CLT_OVERLAY_FILE" -Xcc -ivfsoverlay -Xcc "$CLT_OVERLAY_FILE")
+  fi
+  _echo_argv "swift-build-argv:" "${cmd[@]}"
+  swift build "${cmd[@]}"
 }
 
 build_spm() {
@@ -140,13 +318,13 @@ build_spm() {
     # --disable-sandbox: the linker must read Info.plist via -sectcreate.
     # Do not expand an empty array under `set -u` (macOS bash 3.2).
     if [[ "$EMBED_PLIST" -eq 1 ]]; then
-      swift build -c "$CONFIG" --disable-sandbox \
+      run_swift_build -c "$CONFIG" --disable-sandbox \
         -Xlinker -sectcreate \
         -Xlinker __TEXT \
         -Xlinker __info_plist \
         -Xlinker "$ROOT/Info.plist"
     else
-      swift build -c "$CONFIG" --disable-sandbox
+      run_swift_build -c "$CONFIG" --disable-sandbox
     fi
   )
 }
@@ -193,7 +371,7 @@ build_swiftc() {
   local bin="$out_dir/watson-capture"
 
   # Library module first, then the @main executable (import WatsonCapture).
-  swiftc \
+  run_swiftc \
     -module-name WatsonCapture \
     -emit-module \
     -emit-module-path "$work/WatsonCapture.swiftmodule" \
@@ -212,7 +390,7 @@ build_swiftc() {
   # -parse-as-library keeps @main on WatsonCaptureCLI working.
   # Do not expand an empty array under `set -u` (macOS bash 3.2).
   if [[ "$EMBED_PLIST" -eq 1 ]]; then
-    swiftc \
+    run_swiftc \
       -parse-as-library \
       "${OPT_FLAGS[@]}" \
       -swift-version "$SWIFT_VERSION" \
@@ -229,7 +407,7 @@ build_swiftc() {
       -Xlinker "$ROOT/Info.plist" \
       "${FRAMEWORKS[@]}"
   else
-    swiftc \
+    run_swiftc \
       -parse-as-library \
       "${OPT_FLAGS[@]}" \
       -swift-version "$SWIFT_VERSION" \
@@ -245,6 +423,8 @@ build_swiftc() {
 
   chmod +x "$bin"
 }
+
+prepare_clt_overlay_if_needed
 
 if [[ "$USE_SPM" -eq 1 ]]; then
   build_spm
