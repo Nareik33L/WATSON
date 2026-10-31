@@ -13,14 +13,15 @@ on:
 permissions:
   contents: read
 
-# macos-14 minutes are costly on a private repo. This workflow is the only
+# macos-15 minutes are costly on a private repo. This workflow is the only
 # macOS job and it starts only when helper/ (or this file) changes.
 # No ScreenCaptureKit: build, unit tests, and --selftest only.
+# GitHub retired macos-14 images (brownout / 2026-11-02 sunset).
 
 jobs:
   helper:
     name: swift build + tests
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -29,7 +30,7 @@ jobs:
         working-directory: helper
         run: |
           # Package.swift is swift-tools-version 6.0 (dev Mac is 6.0.3 / CLT).
-          # macos-14 images ship several Xcodes; pick a Swift 6 toolchain if present.
+          # macos-15 images ship several Xcodes; pick a Swift 6 toolchain if present.
           if ls -d /Applications/Xcode_16*.app >/dev/null 2>&1; then
             newest="$(ls -d /Applications/Xcode_16*.app | sort | tail -n 1)"
             sudo xcode-select -s "$newest"
