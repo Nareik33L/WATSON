@@ -39,13 +39,12 @@ def test_committed_edge_fixtures_exist() -> None:
     assert (MEETINGS / "unsupported" / "audio.xyz").is_file()
 
 
-def test_standup_audio_is_artifacts_only() -> None:
+def test_standup_audio_commits_m4a_not_wav() -> None:
     standup_wav = MEETINGS / "standup_12m" / "audio.wav"
     standup_m4a = MEETINGS / "standup_12m" / "audio.m4a"
     assert not standup_wav.is_file(), "do not commit the 16 kHz stand-up WAV"
-    assert not standup_m4a.is_file(), (
-        "stand-up audio is a macos-15 artifact until a Mac render is ≤ 8 MB"
-    )
+    assert standup_m4a.is_file(), "Mac-render stand-up AAC is committed (set stays ≤ 8 MB)"
+    assert (MEETINGS / "standup_12m" / "transcript.txt").is_file()
     assert (SCRIPTS / "standup_12m.yaml").is_file()
 
 

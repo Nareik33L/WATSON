@@ -10,7 +10,7 @@ Edge-case audio is generated from `tools/fixture_gen/meetings/*.yaml` and commit
 | `corrupt/` | truncated `audio.wav` | decode must fail |
 | `unsupported/` | `audio.xyz` | unsupported container |
 
-The 12-minute stand-up **script** is `tools/fixture_gen/meetings/standup_12m.yaml`. Its WAV (~22 MB) and AAC (~3 MB) are **not** committed: this checkout cannot run `say`. macOS 15 CI renders every A0 script and uploads `tests/fixtures/meetings` as the `a0-meeting-fixtures` artifact. If a later Mac render of compressed audio + transcripts stays ≤ 8 MB, those files can be committed; until then artifacts only.
+The 12-minute stand-up **script** is `tools/fixture_gen/meetings/standup_12m.yaml`. The Mac-render AAC (`standup_12m/audio.m4a`, ~3 MB) and reference transcript are committed; the 16 kHz WAV (~22 MB) is not. The whole `tests/fixtures/meetings` tree stays ≤ 8 MB. macOS 15 CI still renders every A0 script and uploads the directory as the `a0-meeting-fixtures` artifact.
 
 Regenerate edges (Linux-safe):
 
