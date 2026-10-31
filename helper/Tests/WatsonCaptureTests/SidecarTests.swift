@@ -34,7 +34,7 @@ final class SidecarTests: XCTestCase {
         ] {
             XCTAssertTrue(object.keys.contains(key), "missing \(key)")
         }
-        XCTAssertEqual(object["url"] as? NSNull, NSNull())
+        XCTAssertTrue(object["url"] is NSNull, "url must be present as JSON null")
         let ocr = try XCTUnwrap(object["ocr"] as? [String: Any])
         let lines = try XCTUnwrap(ocr["lines"] as? [[String: Any]])
         XCTAssertEqual(lines[0]["bbox"] as? [Int], [12, 44, 300, 62])

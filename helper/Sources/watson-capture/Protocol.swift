@@ -189,6 +189,34 @@ public struct FrameSidecar: Codable, Equatable, Sendable {
         self.height = height
         self.capture_mode = capture_mode
     }
+
+    /// Always emit `url` and `display_id`, including JSON `null`. Synthesized
+    /// `JSONEncoder` would drop the keys, which breaks the §3.1 schema.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(frame_id, forKey: .frame_id)
+        try container.encode(captured_at, forKey: .captured_at)
+        if let display_id {
+            try container.encode(display_id, forKey: .display_id)
+        } else {
+            try container.encodeNil(forKey: .display_id)
+        }
+        try container.encode(bundle_id, forKey: .bundle_id)
+        try container.encode(app_name, forKey: .app_name)
+        try container.encode(window_title, forKey: .window_title)
+        try container.encode(window_id, forKey: .window_id)
+        try container.encode(is_private_browsing, forKey: .is_private_browsing)
+        if let url {
+            try container.encode(url, forKey: .url)
+        } else {
+            try container.encodeNil(forKey: .url)
+        }
+        try container.encode(ocr, forKey: .ocr)
+        try container.encode(phash, forKey: .phash)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+        try container.encode(capture_mode, forKey: .capture_mode)
+    }
 }
 
 public struct OCRPayload: Codable, Equatable, Sendable {
