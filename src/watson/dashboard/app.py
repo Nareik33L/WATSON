@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -15,7 +17,9 @@ from watson.config.schema import WatsonConfig
 from watson.dashboard.auth import (
     CSRF_FORM_FIELD,
     SESSION_COOKIE,
+    SESSION_TTL_SECONDS,
     AuthError,
+    LaunchCodes,
     cookie_kwargs,
     csrf_matches,
     host_allowed,
@@ -25,6 +29,7 @@ from watson.dashboard.auth import (
     sign_session,
     tokens_equal,
 )
+from watson.dashboard.bind import DEFAULT_PORT
 from watson.memory.db import DatabaseError, connect
 from watson.memory.keys import KeyProviderError, get_key_provider
 from watson.pipeline.status import StatusReport, collect_status
@@ -87,9 +92,18 @@ def create_app(
     *,
     config: WatsonConfig | None = None,
     token: str,
-    port: int | None = None,
+    port: int = DEFAULT_PORT,
+    session_epoch: int | None = None,
+    session_ttl: int = SESSION_TTL_SECONDS,
+    clock: Callable[[], float] | None = None,
+    launch_codes: LaunchCodes | None = None,
 ) -> FastAPI:
-    """Build the dashboard app. ``token`` is the per-install secret (never logged)."""
+    """Build the dashboard app.
+
+    ``token`` is the per-install secret: it signs session cookies and never
+    appears in a URL or log. ``watson dashboard`` mints a single-use launch
+    code that ``/auth?code=`` exchanges for a session.
+    """
     if not token:
         raise AuthError("dashboard token must not be empty")
 
@@ -97,25 +111,39 @@ def create_app(
     app.state.token = token
     app.state.config = config
     app.state.port = port
+    app.state.session_epoch = secrets.randbits(64) if session_epoch is None else session_epoch
+    app.state.session_ttl = session_ttl
+    app.state.clock = clock if clock is not None else time.time
+    app.state.launch_codes = launch_codes if launch_codes is not None else LaunchCodes()
 
     app.add_middleware(SecurityHeadersMiddleware)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/auth")
-    async def auth(request: Request, token: str | None = None) -> Response:
-        secret: str = request.app.state.token
-        if token is None or not tokens_equal(token, secret):
+    async def auth(request: Request, code: str | None = None, token: str | None = None) -> Response:
+        if token is not None:
             return HTMLResponse("unauthorized", status_code=401)
+        codes: LaunchCodes = request.app.state.launch_codes
+        if code is None or not codes.consume(code):
+            return HTMLResponse("unauthorized", status_code=401)
+        secret: str = request.app.state.token
         session = new_session()
+        ttl = int(request.app.state.session_ttl)
+        flags = cookie_kwargs(max_age=ttl)
         response = RedirectResponse("/", status_code=303)
-        flags = cookie_kwargs()
         response.set_cookie(
             SESSION_COOKIE,
-            sign_session(session, secret),
+            sign_session(
+                session,
+                secret,
+                epoch=int(request.app.state.session_epoch),
+                issued_at=int(request.app.state.clock()),
+            ),
             httponly=bool(flags["httponly"]),
             samesite="strict",
             secure=bool(flags["secure"]),
             path=str(flags["path"]),
+            max_age=ttl,
         )
         return response
 
@@ -153,17 +181,28 @@ def _render(request: Request, template_name: str) -> HTMLResponse:
     )
 
 
+def _cached_db_key(app: FastAPI) -> bytes:
+    key = getattr(app.state, "db_key", None)
+    if isinstance(key, bytes):
+        return key
+    fetched = get_key_provider().get_key()
+    app.state.db_key = fetched
+    return fetched
+
+
 def _report(request: Request) -> StatusReport:
     config = getattr(request.app.state, "config", None)
     if config is None or not config.db_path.is_file():
         return StatusReport({}, {}, None)
     try:
-        key = get_key_provider().get_key()
+        key = _cached_db_key(request.app)
         conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
     except (KeyProviderError, DatabaseError):
         return StatusReport({}, {}, None)
     try:
         return collect_status(conn)
+    except DatabaseError:
+        return StatusReport({}, {}, None)
     finally:
         conn.close()
 

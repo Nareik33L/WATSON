@@ -18,9 +18,10 @@ PLANTED = "PLANTED_DASHBOARD_OCR_MUST_NEVER_RENDER"
 
 
 def _authed_client() -> TestClient:
-    app = create_app(token=INSTALL_TOKEN, config=load_config())
-    client = TestClient(app, base_url="http://127.0.0.1")
-    response = client.get(f"/auth?token={INSTALL_TOKEN}", follow_redirects=False)
+    app = create_app(token=INSTALL_TOKEN, config=load_config(), port=8000)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+    code = app.state.launch_codes.mint()
+    response = client.get(f"/auth?code={code}", follow_redirects=False)
     assert response.status_code == 303
     return client
 
@@ -75,5 +76,8 @@ def test_htmx_is_vendored_not_cdn() -> None:
     assert "htmx" in text.lower()
     html = (PACKAGE_DIR / "templates" / "base.html").read_text(encoding="utf-8")
     assert "/static/htmx.min.js" in html
+    assert "/static/dashboard.js" in html
     assert "http://" not in html
     assert "https://" not in html
+    dashboard_js = (PACKAGE_DIR / "static" / "dashboard.js").read_text(encoding="utf-8")
+    assert "includeIndicatorStyles = false" in dashboard_js

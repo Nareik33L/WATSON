@@ -36,7 +36,7 @@ helper/scripts/build.sh
 
 `watson status` prints capture state, queue depth, frame counts by state, deletion-verified counts, last frames (metadata only), last replay, and an audit tail. The dashboard status page renders the same numbers and never shows OCR text.
 
-`watson dashboard [--host 127.0.0.1] [--port 8000] [--open]` serves the status page on loopback only. Any bind host other than `127.0.0.1` is refused. Auth is a per-install token (macOS Keychain; `WATSON_DASHBOARD_TOKEN` or a `0600` file off-darwin). The launcher URL `/auth?token=…` sets an `HttpOnly; SameSite=Strict` session cookie. Host/Origin are checked against DNS rebinding; POST requires CSRF; CSP is strict and HTMX is vendored (no CDN).
+`watson dashboard [--host 127.0.0.1] [--port 8000] [--open]` serves the status page on loopback only. Any bind host other than `127.0.0.1` is refused. The per-install secret (macOS Keychain; `WATSON_DASHBOARD_TOKEN` or a `0600` file off-darwin) only signs session cookies and never appears in a URL or log. `watson dashboard` mints a single-use 60 s launch code and opens `/auth?code=…`, which sets an `HttpOnly; SameSite=Strict` session cookie. Sessions expire and a restart rotates them. Host/Origin are checked against DNS rebinding; POST requires CSRF; CSP is strict and HTMX is vendored (no CDN).
 
 Linux CI runs `watson replay tests/fixtures/day_acme_q4 --instant` and `watson db status` in a loopback-only network namespace (`sudo unshare --net` + `setpriv`; `unshare -rn` after relaxing AppArmor if needed). On Linux, set `WATSON_DB_KEY` to 64 hex characters; on macOS the key is Keychain-only and `WATSON_DB_KEY` is ignored. The key is never written to the data directory.
 

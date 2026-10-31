@@ -24,8 +24,9 @@ def run_dashboard(
     token = get_token_provider(config.session_dir).get_token()
     chosen = pick_available_port(bound_host, port)
     app = create_app(config=config, token=token, port=chosen)
+    code = app.state.launch_codes.mint()
     public = f"http://{bound_host}:{chosen}/"
-    auth = f"{public}auth?token={token}"
+    auth = f"{public}auth?code={code}"
     print(f"dashboard: {public}")
     print(f"auth: {auth}")
     log.info("dashboard listening", extra={"host": bound_host, "port": chosen})
