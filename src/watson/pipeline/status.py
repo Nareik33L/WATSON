@@ -11,6 +11,7 @@ from sqlcipher3 import dbapi2 as sqlcipher
 from watson.pipeline.frames import FRAME_STATES
 from watson.pipeline.jobs import JobState
 from watson.pipeline.replay import LAST_REPLAY_SETTING_ID
+from watson.privacy.audit import KIND_DELETE_FAILED
 
 JOB_STATES = tuple(state.value for state in JobState)
 LAST_FRAMES_LIMIT = 8
@@ -50,6 +51,7 @@ class StatusReport:
     last_frames: tuple[FrameMeta, ...] = ()
     deletion_verified_count: int = 0
     deletion_unverified_count: int = 0
+    deletion_failed_count: int = 0
     audit_tail: tuple[AuditItem, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
@@ -61,6 +63,7 @@ class StatusReport:
             "jobs_by_state": dict(self.jobs_by_state),
             "deletion_verified_count": self.deletion_verified_count,
             "deletion_unverified_count": self.deletion_unverified_count,
+            "deletion_failed_count": self.deletion_failed_count,
             "last_frames": [asdict(frame) for frame in self.last_frames],
             "last_replay": self.last_replay,
             "audit_tail": [
@@ -84,6 +87,7 @@ class StatusReport:
             out.append(f"frames.{state}: {self.frames_by_state.get(state, 0)}")
         out.append(f"deletion.verified: {self.deletion_verified_count}")
         out.append(f"deletion.unverified: {self.deletion_unverified_count}")
+        out.append(f"deletion.failed: {self.deletion_failed_count}")
         for state in JOB_STATES:
             out.append(f"jobs.{state}: {self.jobs_by_state.get(state, 0)}")
         if self.last_replay is None:
@@ -93,8 +97,7 @@ class StatusReport:
             out.append(f"last_replay.finished_at: {self.last_replay.get('finished_at', '-')}")
             out.append(f"last_replay.frame_count: {self.last_replay.get('frame_count', 0)}")
             out.append(
-                "last_replay.deletion_verified: "
-                f"{self.last_replay.get('deletion_verified', 0)}"
+                f"last_replay.deletion_verified: {self.last_replay.get('deletion_verified', 0)}"
             )
         if not self.last_frames:
             out.append("last_frames: none")
@@ -105,9 +108,7 @@ class StatusReport:
                 out.append(f"last_frame.{index}.app_name: {frame.app_name or '-'}")
                 out.append(f"last_frame.{index}.bundle_id: {frame.bundle_id or '-'}")
                 out.append(f"last_frame.{index}.state: {frame.state}")
-                out.append(
-                    f"last_frame.{index}.deletion_verified: {int(frame.deletion_verified)}"
-                )
+                out.append(f"last_frame.{index}.deletion_verified: {int(frame.deletion_verified)}")
         if not self.audit_tail:
             out.append("audit: none")
         else:
@@ -144,6 +145,11 @@ def collect_status(conn: sqlcipher.Connection) -> StatusReport:
     ).fetchone()
     verified = int(verified_row["verified"]) if verified_row is not None else 0
     unverified = int(verified_row["unverified"]) if verified_row is not None else 0
+    failed_row = conn.execute(
+        "SELECT COUNT(*) AS n FROM audit_events WHERE kind = ?",
+        (KIND_DELETE_FAILED,),
+    ).fetchone()
+    failed = int(failed_row["n"]) if failed_row is not None else 0
 
     queue_row = conn.execute(
         "SELECT COUNT(*) AS n FROM jobs WHERE state IN ('pending', 'claimed')"
@@ -197,6 +203,7 @@ def collect_status(conn: sqlcipher.Connection) -> StatusReport:
         last_frames=last_frames,
         deletion_verified_count=verified,
         deletion_unverified_count=unverified,
+        deletion_failed_count=failed,
         audit_tail=audit_tail,
     )
 
