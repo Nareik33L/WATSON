@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 
-# macOS jobs (Swift helper, ScreenCaptureKit, Vision OCR, TCC) arrive with M0-B.
+# macOS Swift helper CI is .github/workflows/helper.yml and runs only when helper/ changes.
 
 jobs:
   check:

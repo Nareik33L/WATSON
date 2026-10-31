@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Local M0-B helper: not sandboxed, no hardened-runtime entitlements.
+	  Screen Recording is a TCC grant (signature + identifier), not an entitlement.
+	  Packaging (M7) will add Developer ID + hardened runtime separately.
+	-->
+</dict>
+</plist>
