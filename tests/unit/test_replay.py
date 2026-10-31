@@ -220,7 +220,8 @@ def test_delete_failure_stays_unverified_then_retry(
         ).fetchall()
         assert len(fails) == 2
         details = [str(item[0]) for item in fails]
-        assert "PermissionError" in details[0]
+        assert '"error": "permission"' in details[0]
+        assert all("PermissionError" not in item for item in details)
         assert "still_present" in details[1]
         assert all(planted not in item for item in details)
         assert all("ocr" not in item for item in details)

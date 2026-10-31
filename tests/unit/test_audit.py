@@ -1,4 +1,4 @@
-"""Audit detail is an allowlist per kind; keys are normalised and nested."""
+"""Audit detail is an allowlist per kind; keys are normalised and values constrained."""
 
 from __future__ import annotations
 
@@ -8,17 +8,25 @@ import pytest
 
 from tests.replay_support import open_test_db
 from watson.privacy.audit import (
+    ERROR_PERMISSION,
+    ERROR_STILL_PRESENT,
+    ERROR_UNLINK_FAILED,
     KIND_DELETE_FAILED,
     KIND_DELETED,
     KIND_INGESTED,
     KIND_REPLAY,
     KIND_SKIPPED,
     KIND_VERIFIED,
+    SCOPE_EXCLUDED,
     AuditError,
+    audit_error_class,
     iter_audit_keys,
     normalize_audit_key,
     record_audit,
 )
+
+SAMPLE_FRAME_ID = "11111111-1111-4111-8111-111111111111"
+SAMPLE_PNG_SHA256 = "ab" * 32
 
 
 @pytest.mark.parametrize(
@@ -92,7 +100,7 @@ def test_skipped_audit_rejects_content_key_variants(
 ) -> None:
     conn = open_test_db(data_dir)
     try:
-        with pytest.raises(AuditError, match="content fields|not allowed"):
+        with pytest.raises(AuditError, match="content fields|not allowed|scalars"):
             record_audit(conn, kind=KIND_SKIPPED, detail=detail)
         assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
     finally:
@@ -121,12 +129,27 @@ def test_unknown_kind_is_rejected(data_dir: Path, key_provider: object) -> None:
     "kind, detail",
     [
         (KIND_SKIPPED, {"reason": "excluded_app"}),
-        (KIND_INGESTED, {"frame_id": "abc", "png_sha256": "def"}),
-        (KIND_DELETED, {"frame_id": "abc", "png": 1, "sidecar": 1}),
-        (KIND_VERIFIED, {"frame_id": "abc"}),
+        (KIND_INGESTED, {"frame_id": SAMPLE_FRAME_ID, "png_sha256": SAMPLE_PNG_SHA256}),
+        (KIND_DELETED, {"frame_id": SAMPLE_FRAME_ID, "png": 1, "sidecar": 1}),
+        (KIND_VERIFIED, {"frame_id": SAMPLE_FRAME_ID}),
         (
             KIND_DELETE_FAILED,
-            {"error": "PermissionError", "reason": "excluded_app", "scope": "excluded"},
+            {"error": ERROR_PERMISSION, "reason": "excluded_app", "scope": SCOPE_EXCLUDED},
+        ),
+        (
+            KIND_DELETE_FAILED,
+            {
+                "error": ERROR_STILL_PRESENT,
+                "reason": "excluded_title",
+                "scope": SCOPE_EXCLUDED,
+            },
+        ),
+        (
+            KIND_DELETE_FAILED,
+            {
+                "frame_id": SAMPLE_FRAME_ID,
+                "error": ERROR_UNLINK_FAILED,
+            },
         ),
         (
             KIND_REPLAY,
@@ -154,3 +177,160 @@ def test_allowed_payloads_per_kind_are_accepted(
         assert str(row["kind"]) == kind
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["bundle_id_leak", "excluded_bundle", "PermissionError", "", "EXCLUDED_APP"],
+    ids=["bundle_id_leak", "excluded_bundle", "exception_type", "empty", "wrong_case"],
+)
+def test_invalid_reason_raises_audit_error(
+    data_dir: Path, key_provider: object, value: str
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="invalid audit reason"):
+            record_audit(conn, kind=KIND_SKIPPED, detail={"reason": value})
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["PermissionError", "denied", "OSError", "FileNotFoundError", "error"],
+    ids=["exception_type", "exception_message", "OSError", "FileNotFoundError", "generic"],
+)
+def test_invalid_error_raises_audit_error(data_dir: Path, key_provider: object, value: str) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="invalid audit error"):
+            record_audit(
+                conn,
+                kind=KIND_DELETE_FAILED,
+                detail={"error": value, "reason": "excluded_app", "scope": SCOPE_EXCLUDED},
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["spool", "all", "EXCLUDED", ""],
+    ids=["spool", "all", "case", "empty"],
+)
+def test_invalid_scope_raises_audit_error(data_dir: Path, key_provider: object, value: str) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="invalid audit scope"):
+            record_audit(
+                conn,
+                kind=KIND_DELETE_FAILED,
+                detail={"error": ERROR_PERMISSION, "reason": "excluded_app", "scope": value},
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"nested": 1},
+        [1, 2],
+        (1, 2),
+        {1, 2},
+        frozenset({1}),
+        None,
+        b"bytes",
+    ],
+    ids=["dict", "list", "tuple", "set", "frozenset", "none", "bytes"],
+)
+def test_non_scalar_reason_raises_audit_error(
+    data_dir: Path, key_provider: object, value: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="scalars"):
+            record_audit(conn, kind=KIND_SKIPPED, detail={"reason": value})
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_set_value_on_allowed_key_raises_audit_error_not_typeerror(
+    data_dir: Path, key_provider: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="scalars"):
+            record_audit(
+                conn,
+                kind=KIND_DELETE_FAILED,
+                detail={
+                    "error": {ERROR_PERMISSION},
+                    "reason": "excluded_app",
+                    "scope": SCOPE_EXCLUDED,
+                },
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "frame_id",
+    ["abc", "not-a-uuid", "", "123", "11111111111141118111111111111111x"],
+    ids=["abc", "not-a-uuid", "empty", "digits", "almost_hex"],
+)
+def test_invalid_frame_id_raises_audit_error(
+    data_dir: Path, key_provider: object, frame_id: str
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="must be a UUID"):
+            record_audit(conn, kind=KIND_VERIFIED, detail={"frame_id": frame_id})
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "digest",
+    ["def", "ab" * 31, "gg" * 32, "ab" * 32 + "0", 1],
+    ids=["short", "63_hex", "non_hex", "65_hex", "int"],
+)
+def test_invalid_png_sha256_raises_audit_error(
+    data_dir: Path, key_provider: object, digest: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="64-char hex"):
+            record_audit(
+                conn,
+                kind=KIND_INGESTED,
+                detail={"frame_id": SAMPLE_FRAME_ID, "png_sha256": digest},
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (PermissionError("denied"), ERROR_PERMISSION),
+        (OSError("disk"), ERROR_UNLINK_FAILED),
+        (RuntimeError("files still present after unlink"), ERROR_STILL_PRESENT),
+    ],
+    ids=["permission", "oserror", "still_present"],
+)
+def test_audit_error_class_maps_exceptions_to_codes(exc: BaseException, expected: str) -> None:
+    assert audit_error_class(exc) == expected
+
+
+def test_audit_error_class_walks_cause_for_permission() -> None:
+    wrapped = RuntimeError("excluded spool delete failed")
+    wrapped.__cause__ = PermissionError("denied")
+    assert audit_error_class(wrapped) == ERROR_PERMISSION

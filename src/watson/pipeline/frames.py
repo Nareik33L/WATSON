@@ -18,11 +18,14 @@ from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.jobs import enqueue
 from watson.privacy.audit import (
+    ERROR_STILL_PRESENT,
     KIND_DELETE_FAILED,
     KIND_DELETED,
     KIND_INGESTED,
     KIND_SKIPPED,
     KIND_VERIFIED,
+    SCOPE_EXCLUDED,
+    audit_error_class,
     record_audit,
 )
 
@@ -149,7 +152,7 @@ def reject_excluded_pair(
     try:
         unlink_spool_pair(pair.png_path, pair.sidecar_path, fixture_dir=fixture_dir)
     except FrameError as exc:
-        _record_excluded_unlink_failure(conn, reason=reason, error=_excluded_unlink_error(exc))
+        _record_excluded_unlink_failure(conn, reason=reason, error=audit_error_class(exc))
         raise
     record_audit(
         conn,
@@ -181,20 +184,11 @@ def unlink_spool_pair(
         raise FrameError(f"excluded spool files still present after unlink for {png_path.name}")
 
 
-def _excluded_unlink_error(exc: FrameError) -> str:
-    cause = exc.__cause__
-    if isinstance(cause, OSError):
-        return type(cause).__name__
-    if "still present" in str(exc):
-        return "still_present"
-    return "unlink_failed"
-
-
 def _record_excluded_unlink_failure(conn: sqlcipher.Connection, *, reason: str, error: str) -> None:
     record_audit(
         conn,
         kind=KIND_DELETE_FAILED,
-        detail={"error": error, "reason": reason, "scope": "excluded"},
+        detail={"error": error, "reason": reason, "scope": SCOPE_EXCLUDED},
         commit=True,
     )
     log.info("excluded spool delete failed", extra={"error": error, "reason": reason})
@@ -318,13 +312,13 @@ def delete_and_verify(
         if sidecar_existed:
             sidecar.unlink()
     except OSError as exc:
-        _record_delete_failure(conn, frame_id, type(exc).__name__)
+        _record_delete_failure(conn, frame_id, audit_error_class(exc))
         raise FrameError(f"spool delete failed for frame {frame_id}") from exc
 
     png_gone = _path_gone(png_path)
     sidecar_gone = _path_gone(sidecar)
     if not (png_gone and sidecar_gone):
-        _record_delete_failure(conn, frame_id, "still_present")
+        _record_delete_failure(conn, frame_id, ERROR_STILL_PRESENT)
         raise FrameError(f"spool files still present after unlink for frame {frame_id}")
 
     if already_verified:
