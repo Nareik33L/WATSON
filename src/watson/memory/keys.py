@@ -63,15 +63,11 @@ class KeychainKeyProvider:
         except ValueError as exc:
             raise KeyProviderError("Keychain entry is not a hex key") from exc
         if len(key) != KEY_BYTES:
-            raise KeyProviderError(
-                f"Keychain entry is {len(key)} bytes; expected {KEY_BYTES}"
-            )
+            raise KeyProviderError(f"Keychain entry is {len(key)} bytes; expected {KEY_BYTES}")
         return key
 
     def __repr__(self) -> str:
-        return (
-            f"KeychainKeyProvider(service={self._service!r}, account={self._account!r})"
-        )
+        return f"KeychainKeyProvider(service={self._service!r}, account={self._account!r})"
 
 
 _override: KeyProvider | None = None

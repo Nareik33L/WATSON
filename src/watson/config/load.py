@@ -24,6 +24,7 @@ _PATH_ENV = {
     "WATSON_SESSION_DIR": "session_dir",
 }
 
+
 class ConfigError(ValueError):
     """Invalid configuration. ``str(error)`` names the bad key."""
 
@@ -70,9 +71,7 @@ def load_config(
         if loaded is None:
             loaded = {}
         if not isinstance(loaded, dict):
-            raise ConfigError(
-                f"Invalid config: {resolved_config_path}: root must be a table"
-            )
+            raise ConfigError(f"Invalid config: {resolved_config_path}: root must be a table")
         file_data = loaded
 
     data_dir = _env_path(env, "WATSON_DATA_DIR") or _as_path(

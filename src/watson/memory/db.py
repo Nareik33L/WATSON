@@ -11,7 +11,7 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
-from watson.memory.keys import KeyProvider
+from watson.memory.keys import KEY_BYTES, KeyProvider
 
 
 class DatabaseError(RuntimeError):
@@ -33,10 +33,13 @@ def connect(
     *,
     load_vec: bool = True,
 ) -> sqlcipher.Connection:
-    """Open ``path`` with SQLCipher, apply the raw key, enable WAL.
+    """Open ``path`` with SQLCipher, apply a 32-byte raw key, enable WAL.
 
-    The key is applied via a bound parameter and is never logged.
+    Only the raw-key form ``x'<64 hex chars>'`` is used. Keys that are not
+    exactly 32 bytes are rejected — there is no passphrase fallback.
+    The PRAGMA key statement is never logged.
     """
+    _require_raw_key(key)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlcipher.connect(str(path))
     try:
@@ -53,9 +56,16 @@ def connect(
     return conn
 
 
+def _require_raw_key(key: bytes) -> None:
+    if not isinstance(key, (bytes, bytearray)) or len(key) != KEY_BYTES:
+        raise DatabaseError(
+            f"database key must be exactly {KEY_BYTES} bytes; passphrase fallback is not allowed"
+        )
+
+
 def _apply_key(conn: sqlcipher.Connection, key: bytes) -> None:
     # SQLCipher rejects bound parameters for PRAGMA key ("near '?'").
-    # The statement is never logged; do not wrap this execute in tracing.
+    # Raw-key form only (x'<hex>'); never a passphrase. Never log this statement.
     conn.execute(f"""PRAGMA key = "x'{key.hex()}'" """)
 
 

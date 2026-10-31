@@ -191,9 +191,7 @@ def _reject_lookup(host: object, *, error_prefix: str, lookup_hint: str) -> None
     host_s = _as_text(host)
     if is_loopback_host(host_s):
         return
-    raise NetworkGuardError(
-        f"{error_prefix} blocked a DNS/lookup for {host_s!r}. {lookup_hint}"
-    )
+    raise NetworkGuardError(f"{error_prefix} blocked a DNS/lookup for {host_s!r}. {lookup_hint}")
 
 
 def _reject_destination(
@@ -216,9 +214,7 @@ def _reject_destination(
         )
     if allowed_port is not None and port is not None and port != allowed_port:
         extra = port_hint or f"(only port {allowed_port} is allowed)."
-        raise NetworkGuardError(
-            f"{error_prefix} blocked loopback {kind} to port {port} {extra}"
-        )
+        raise NetworkGuardError(f"{error_prefix} blocked loopback {kind} to port {port} {extra}")
 
 
 def _address_parts(address: object) -> tuple[str | None, int | None]:

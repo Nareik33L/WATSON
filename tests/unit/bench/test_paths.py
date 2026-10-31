@@ -33,9 +33,7 @@ def test_default_outputs_are_in_the_checkout() -> None:
     checkout = _checkout()
     assert repo_root() == checkout
     assert default_results_dir() == checkout / "tools" / "bench" / "results"
-    assert default_report_path("2026-10-31") == (
-        checkout / "docs" / "benchmarks" / "2026-10-31.md"
-    )
+    assert default_report_path("2026-10-31") == (checkout / "docs" / "benchmarks" / "2026-10-31.md")
     assert ".venv" not in default_results_dir().parts
     assert "site-packages" not in default_results_dir().parts
 

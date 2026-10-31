@@ -23,9 +23,7 @@ def test_cli_imports_and_version(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 @pytest.mark.parametrize("command", ["run", "replay", "models"])
-def test_stub_commands_not_implemented(
-    command: str, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_stub_commands_not_implemented(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main([command]) == 1
     assert "not implemented" in capsys.readouterr().err
 
@@ -73,11 +71,9 @@ def test_db_without_subcommand_is_help(capsys: pytest.CaptureFixture[str]) -> No
     assert "upgrade" in capsys.readouterr().err
 
 
-def test_bad_config_exits_2(
-    data_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_bad_config_exits_2(data_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (data_dir / "config.toml").write_text(
-        "[capture]\ninterval_seconds = \"nope\"\n",
+        '[capture]\ninterval_seconds = "nope"\n',
         encoding="utf-8",
     )
     assert cli.main(["doctor"]) == 2

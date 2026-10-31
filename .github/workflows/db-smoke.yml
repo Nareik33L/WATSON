@@ -27,13 +27,14 @@ on:
 permissions:
   contents: read
 
-# macos-14 minutes are costly. This job only proves the sqlcipher3 + sqlite-vec
+# macos-15 minutes are costly. This job only proves the sqlcipher3 + sqlite-vec
 # wheels on macOS arm64 (FTS5, extension load, unreadable without the key).
+# GitHub retired macos-14 images (brownout / 2026-11-02 sunset).
 
 jobs:
   db-smoke-macos:
-    name: SQLCipher smoke (macos-14)
-    runs-on: macos-14
+    name: SQLCipher smoke (macos-15)
+    runs-on: macos-15
     steps:
       - name: Check out
         uses: actions/checkout@v4

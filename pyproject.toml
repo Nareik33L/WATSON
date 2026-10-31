@@ -75,6 +75,10 @@ packages = ["src/watson"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+# Fixtures must keep .format / % / concat forms the AST scanner is proving.
+"tests/unit/logging_scan_fixtures/**" = ["UP031", "UP032"]
+
 [tool.mypy]
 python_version = "3.12"
 mypy_path = "src, tools/fixture_gen"

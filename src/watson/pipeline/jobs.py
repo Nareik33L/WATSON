@@ -25,6 +25,10 @@ class JobState(StrEnum):
     FAILED = "failed"
 
 
+class JobLeaseError(RuntimeError):
+    """complete/fail did not match an active lease owned by this worker."""
+
+
 @dataclass(frozen=True)
 class Job:
     id: str
@@ -116,9 +120,7 @@ def get_job(conn: sqlcipher.Connection, job_id: str) -> Job:
     return Job.from_row(row)
 
 
-def recover_expired_leases(
-    conn: sqlcipher.Connection, *, now: datetime | None = None
-) -> int:
+def recover_expired_leases(conn: sqlcipher.Connection, *, now: datetime | None = None) -> int:
     """Return expired claims to pending so another worker can take them."""
     stamp = iso_now(now)
     cursor = conn.execute(
@@ -175,17 +177,44 @@ def claim(
     return Job.from_row(row)
 
 
-def complete(conn: sqlcipher.Connection, job_id: str, *, now: datetime | None = None) -> Job:
+_ACTIVE_LEASE = """
+    id = ?
+    AND state = ?
+    AND claimed_by = ?
+    AND leased_until IS NOT NULL
+    AND leased_until >= ?
+"""
+
+
+def complete(
+    conn: sqlcipher.Connection,
+    job_id: str,
+    *,
+    worker_id: str,
+    now: datetime | None = None,
+) -> Job:
+    """Mark a job completed. No-op/error unless this worker holds a live lease."""
     stamp = iso_now(now)
-    conn.execute(
-        """
+    cursor = conn.execute(
+        f"""
         UPDATE jobs
         SET state = ?, leased_until = NULL, updated_at = ?
-        WHERE id = ?
+        WHERE {_ACTIVE_LEASE}
         """,
-        (JobState.COMPLETED.value, stamp, job_id),
+        (
+            JobState.COMPLETED.value,
+            stamp,
+            job_id,
+            JobState.CLAIMED.value,
+            worker_id,
+            stamp,
+        ),
     )
     conn.commit()
+    if cursor.rowcount != 1:
+        raise JobLeaseError(
+            f"complete did not match an active lease for job {job_id} worker {worker_id}"
+        )
     return get_job(conn, job_id)
 
 
@@ -194,29 +223,54 @@ def fail(
     job_id: str,
     error: str,
     *,
+    worker_id: str,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     now: datetime | None = None,
 ) -> Job:
-    job = get_job(conn, job_id)
-    moment = now or datetime.now(UTC)
-    attempts = job.attempts + 1
-    if attempts >= max_attempts:
-        state = JobState.FAILED
-        run_after = job.run_after
-    else:
-        state = JobState.PENDING
-        run_after = iso_now(moment + timedelta(seconds=backoff_seconds(attempts)))
-    stamp = iso_now(moment)
-    conn.execute(
-        """
+    """Fail or re-queue a claimed job. Never mutates a completed/foreign/expired row."""
+    stamp = iso_now(now)
+    cursor = conn.execute(
+        f"""
         UPDATE jobs
-        SET state = ?, attempts = ?, run_after = ?, last_error = ?,
-            claimed_by = NULL, leased_until = NULL, updated_at = ?
-        WHERE id = ?
+        SET
+            attempts = attempts + 1,
+            last_error = ?,
+            claimed_by = NULL,
+            leased_until = NULL,
+            updated_at = ?,
+            state = CASE
+                WHEN attempts + 1 >= ? THEN ?
+                ELSE ?
+            END,
+            run_after = CASE
+                WHEN attempts + 1 >= ? THEN run_after
+                ELSE strftime(
+                    '%Y-%m-%dT%H:%M:%SZ',
+                    replace(?, 'Z', ''),
+                    '+' || MIN(300, (1 << (attempts + 1))) || ' seconds'
+                )
+            END
+        WHERE {_ACTIVE_LEASE}
         """,
-        (state.value, attempts, run_after, error, stamp, job_id),
+        (
+            error,
+            stamp,
+            max_attempts,
+            JobState.FAILED.value,
+            JobState.PENDING.value,
+            max_attempts,
+            stamp,
+            job_id,
+            JobState.CLAIMED.value,
+            worker_id,
+            stamp,
+        ),
     )
     conn.commit()
+    if cursor.rowcount != 1:
+        raise JobLeaseError(
+            f"fail did not match an active lease for job {job_id} worker {worker_id}"
+        )
     return get_job(conn, job_id)
 
 
