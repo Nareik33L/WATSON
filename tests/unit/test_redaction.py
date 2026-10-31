@@ -311,7 +311,56 @@ OTP_CORPUS: list[tuple[str, str, str]] = [
         "Codes of conduct updated 2025",
         "r6 fp: year after 'codes of conduct'",
     ),
-    ("code 2026-11", "code 2026-11", "r6 fp: year-month after code"),
+    # Round 7: 'of' between label and code; label beats date; no year-month exemption
+    (
+        "Your verification code of 482913",
+        "Your verification code of [OTP]",
+        "r7: 'code of N' is an OTP",
+    ),
+    (
+        "A code of 482913 was sent",
+        "A code of [OTP] was sent",
+        "r7: 'code of N' mid-sentence",
+    ),
+    (
+        "Your one-time code of 482913 expires",
+        "Your one-time code of [OTP] expires",
+        "r7: one-time code of N",
+    ),
+    ("Use a code of 4821", "Use a code of [OTP]", "r7: 4-digit 'code of N'"),
+    (
+        "Your code: 2019-04-12",
+        "Your code: [OTP]",
+        "r7: labelled valid date: label wins",
+    ),
+    (
+        "Your code is 2019-12-31",
+        "Your code is [OTP]",
+        "r7: labelled valid date, 'is' form",
+    ),
+    (
+        "Your code: 2019-04",
+        "Your code: [OTP]",
+        "r7: labelled year-month (b77217a redacted)",
+    ),
+    ("Your code: 1999-11", "Your code: [OTP]", "r7: labelled year-month 19xx"),
+    ("Due 2026-11-03", "Due 2026-11-03", "r7 fp: unlabelled real date kept"),
+    # Unlabelled invalid ISO-shaped must differ from a valid date (kills date-check mutant)
+    (
+        "Due 2019-02-30",
+        "Due [OTP]",
+        "r7: unlabelled impossible ISO-shaped is not a date",
+    ),
+    (
+        "Due 2019-04-31",
+        "Due [OTP]",
+        "r7: unlabelled Apr 31 is not a calendar date",
+    ),
+    (
+        "Due 2025-02-29",
+        "Due [OTP]",
+        "r7: unlabelled non-leap Feb 29 is not a date",
+    ),
 ]
 
 

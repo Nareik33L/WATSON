@@ -58,19 +58,7 @@ _OTP_TOKEN = re.compile(
 _ISO_DATE = re.compile(
     r"(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])(?![0-9])"
 )
-_YEAR_MONTH = re.compile(r"(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])\Z")
-_OTP_STRONG_HINTS = frozenset(
-    {
-        "pin",
-        "pins",
-        "passcode",
-        "passcodes",
-        "otp",
-        "2fa",
-        "verification",
-        "confirmation",
-    }
-)
+_ISO_SHAPED = re.compile(r"(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\Z")
 _OTP_ORDINARY_PREFIX = frozenset(
     {"line", "lines", "invoice", "invoices", "room", "po", "amount", "section"}
 )
@@ -106,6 +94,7 @@ _OTP_FILLERS = frozenset(
         "id",
         "use",
         "#",
+        "of",
     }
 )
 _OTP_FALSE_PREFIX = frozenset(
@@ -316,12 +305,12 @@ def _otp_related(text: str, start: int, end: int) -> bool:
         prev_start = text.rfind("\n", 0, prev_end) + 1
         labelled = _previous_line_is_otp_label(text[prev_start:prev_end])
     if _is_real_calendar_date(raw):
+        # Valid civil date: labelled → OTP, unlabelled → keep.
         return labelled
-    if not labelled:
-        return False
-    if _YEAR_MONTH.fullmatch(raw) and not _has_strong_hint(before, after):
-        return False
-    return True
+    if _ISO_SHAPED.fullmatch(raw) and not labelled:
+        # Regex-shaped but impossible (2019-02-30): not a date, redact.
+        return True
+    return labelled
 
 
 def _otp_tokens(fragment: str) -> list[str]:
@@ -341,10 +330,6 @@ def _is_real_calendar_date(raw: str) -> bool:
     except ValueError:
         return False
     return True
-
-
-def _has_strong_hint(before: list[str], after: list[str]) -> bool:
-    return any(word in _OTP_STRONG_HINTS for word in (*before, *after))
 
 
 def _ticket_number(line: str, local_start: int) -> bool:
@@ -398,7 +383,7 @@ def _window_has_hint(toward: list[str]) -> bool:
             or passed_suffix
             or nxt in _OTP_FALSE_SUFFIX
             or nxt in _OTP_FALSE_PREFIX
-            or "of" in toward[:index]
+            or ("conduct" in toward[:index] and "of" in toward[:index])
         ):
             return False
         if word in {"pin", "pins"} and toward[:index] and toward[0] in {"the", "a", "this", "that"}:
