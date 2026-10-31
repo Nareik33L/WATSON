@@ -64,12 +64,12 @@ final class SelftestTests: XCTestCase {
         )
 
         source.armGate()
-        async let outcome = engine.tick()
+        async let inflight = engine.tick()
         await source.waitUntilCaptureStarted()
         handleStdinLine(#"{"cmd":"pause"}"#, state: state, emit: { box.append($0) })
         source.releaseCapture()
-
-        XCTAssertEqual(await outcome, .skipped(.paused, afterCapture: true))
+        let outcome = await inflight
+        XCTAssertEqual(outcome, .skipped(.paused, afterCapture: true))
         XCTAssertEqual(state.snapshot().written, 0)
         let day = try? dayDir(spool)
         if let day {
