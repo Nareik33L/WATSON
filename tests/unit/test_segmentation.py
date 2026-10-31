@@ -14,6 +14,7 @@ from tests.replay_support import (
     write_mini_fixture,
     write_png,
 )
+from watson.config.schema import DEFAULT_MERGED_TEXT_MAX_CHARS
 from watson.pipeline.redaction import PLACEHOLDER_CARD, redact_ocr_text
 from watson.pipeline.replay import replay_fixture
 from watson.pipeline.segmentation import (
@@ -65,9 +66,7 @@ def _write_custom_fixture(
             "height": 2,
         }
     manifest = {"name": name, "date": date, "seed": 1, "frames": entries}
-    (fixture / "manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-    )
+    (fixture / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return fixture
 
 
@@ -215,9 +214,7 @@ def test_twenty_minute_dwell_closes_without_splitting(
         conn.close()
 
 
-def test_rerun_is_idempotent(
-    data_dir: Path, key_provider: object, tmp_path: Path
-) -> None:
+def test_rerun_is_idempotent(data_dir: Path, key_provider: object, tmp_path: Path) -> None:
     fixture = write_mini_fixture(tmp_path, frames=2)
     conn = open_test_db(data_dir)
     try:
@@ -312,9 +309,162 @@ def test_config_threshold_can_force_a_split(
         replay_fixture(fixture, conn, instant=True, spool_dir=data_dir / "spool")
         # Default grouping already assigned both frames. Re-run with a
         # hostile threshold is a no-op because membership is unique.
-        assert segment_extracted_frames(
-            conn, config=SegmentConfig(similarity_threshold=0.99)
-        ) == 0
+        assert segment_extracted_frames(conn, config=SegmentConfig(similarity_threshold=0.99)) == 0
         assert conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+def _replay_custom(
+    data_dir: Path,
+    tmp_path: Path,
+    specs: list[dict[str, Any]],
+    *,
+    name: str,
+) -> list[Any]:
+    fixture = _write_custom_fixture(tmp_path / name, specs, name=name)
+    conn = open_test_db(data_dir / name)
+    try:
+        replay_fixture(fixture, conn, instant=True, spool_dir=data_dir / name / "spool")
+        return _segment_rows(conn)
+    finally:
+        conn.close()
+
+
+def test_window_key_splits_with_identical_text(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    shared = "shared proposal draft paragraph one"
+    title_change = _replay_custom(
+        data_dir,
+        tmp_path,
+        [
+            {
+                "captured_at": "2026-10-31T09:00:00Z",
+                "window_title": "Inbox",
+                "ocr": shared,
+            },
+            {
+                "captured_at": "2026-10-31T09:01:00Z",
+                "window_title": "Acme Q4 Proposal — Draft",
+                "ocr": shared,
+            },
+        ],
+        name="day_key_title",
+    )
+    assert len(title_change) == 2
+    assert [int(row["frame_count"]) for row in title_change] == [1, 1]
+
+    bundle_change = _replay_custom(
+        data_dir,
+        tmp_path,
+        [
+            {
+                "captured_at": "2026-10-31T09:00:00Z",
+                "window_title": "Inbox",
+                "bundle_id": "com.lumen.mail",
+                "ocr": shared,
+            },
+            {
+                "captured_at": "2026-10-31T09:01:00Z",
+                "window_title": "Inbox",
+                "bundle_id": "com.lumen.quill",
+                "app_name": "Lumen Quill",
+                "ocr": shared,
+            },
+        ],
+        name="day_key_bundle",
+    )
+    assert len(bundle_change) == 2
+    assert [str(row["bundle_id"]) for row in bundle_change] == [
+        "com.lumen.mail",
+        "com.lumen.quill",
+    ]
+
+    folded_title = _replay_custom(
+        data_dir,
+        tmp_path,
+        [
+            {
+                "captured_at": "2026-10-31T09:00:00Z",
+                "window_title": "Inbox",
+                "ocr": shared,
+            },
+            {
+                "captured_at": "2026-10-31T09:01:00Z",
+                "window_title": "  INBOX ",
+                "ocr": shared,
+            },
+        ],
+        name="day_key_norm",
+    )
+    assert len(folded_title) == 1
+    assert int(folded_title[0]["frame_count"]) == 2
+
+
+def test_merged_text_rescue_at_threshold(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    rows = _replay_custom(
+        data_dir,
+        tmp_path,
+        [
+            {
+                "captured_at": "2026-10-31T09:00:00Z",
+                "ocr": "w1 w2 w3 w4 w5 w6 w7 w8",
+            },
+            {
+                "captured_at": "2026-10-31T09:01:00Z",
+                "ocr": "w1 w2 w3 w4 x1 x2 x3 x4",
+            },
+            {
+                "captured_at": "2026-10-31T09:02:00Z",
+                "ocr": "w5 w6 w7 w8 y1 y2",
+            },
+        ],
+        name="day_merged_rescue",
+    )
+    assert len(rows) == 1
+    assert int(rows[0]["frame_count"]) == 3
+
+
+def test_previous_frame_rescue(data_dir: Path, key_provider: object, tmp_path: Path) -> None:
+    def words(start: int, end: int) -> str:
+        return " ".join(f"a{index}" for index in range(start, end + 1))
+
+    rows = _replay_custom(
+        data_dir,
+        tmp_path,
+        [
+            {"captured_at": "2026-10-31T09:00:00Z", "ocr": words(1, 8)},
+            {"captured_at": "2026-10-31T09:01:00Z", "ocr": words(5, 12)},
+            {"captured_at": "2026-10-31T09:02:00Z", "ocr": words(9, 16)},
+            {"captured_at": "2026-10-31T09:03:00Z", "ocr": words(13, 20)},
+        ],
+        name="day_prev_rescue",
+    )
+    assert len(rows) == 1
+    assert int(rows[0]["frame_count"]) == 4
+
+
+def test_merged_text_cap_is_line_boundary_and_32k(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    assert merge_lines("aaaa\nbbbb", "cccc", cap=12) == "aaaa\nbbbb"
+    assert DEFAULT_MERGED_TEXT_MAX_CHARS == 32768
+
+    lines = [f"cap-line-{index:04d}-" + ("q" * 40) for index in range(700)]
+    rows = _replay_custom(
+        data_dir,
+        tmp_path,
+        [
+            {
+                "captured_at": "2026-10-31T09:00:00Z",
+                "ocr": "\n".join(lines),
+            }
+        ],
+        name="day_cap",
+    )
+    merged = str(rows[0]["merged_text"])
+    assert len(merged) <= 32768
+    assert merged.splitlines()[-1] in lines

@@ -1,4 +1,4 @@
-"""M2b eval: ≤ 5% over-segmentation on all five V1 day fixtures, plus §11.3 traps."""
+"""M2b eval: ≤ 5% over- and under-segmentation on all five V1 day fixtures, plus §11.3 traps."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from watson.pipeline.segeval import score_segmentation
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures"
 OVER_SEG_MAX = 0.05
+UNDER_SEG_MAX = 0.05
 PLANTED_CARD = "4111111111111111"
 PLANTED_OTP = "482913"
 PLANTED_PASSWORD = "cedar-trap-pass-9f3"
@@ -29,9 +30,7 @@ def _truth_frame_ids(fixture: Path) -> list[list[str]]:
 
 
 def _predicted_frame_ids(conn: object) -> list[list[str]]:
-    segments = conn.execute(
-        "SELECT id FROM segments ORDER BY started_at, id"
-    ).fetchall()
+    segments = conn.execute("SELECT id FROM segments ORDER BY started_at, id").fetchall()
     predicted: list[list[str]] = []
     for row in segments:
         frames = conn.execute(
@@ -55,9 +54,7 @@ def test_fixture_over_segmentation_at_most_five_percent(
     assert truth_ids, f"{name}: truth.yaml is missing expected_segments"
     conn = open_test_db(data_dir)
     try:
-        result = replay_fixture(
-            fixture, conn, instant=True, spool_dir=data_dir / f"spool-{name}"
-        )
+        result = replay_fixture(fixture, conn, instant=True, spool_dir=data_dir / f"spool-{name}")
         predicted = _predicted_frame_ids(conn)
         score = score_segmentation(predicted, truth_ids)
         assert result.segments == score["n_pred"]
@@ -66,13 +63,15 @@ def test_fixture_over_segmentation_at_most_five_percent(
             f"{name}: over-segmentation {score['over_segmentation']:.3f} "
             f"exceeds {OVER_SEG_MAX} ({score})"
         )
+        assert score["under_segmentation"] <= UNDER_SEG_MAX, (
+            f"{name}: under-segmentation {score['under_segmentation']:.3f} "
+            f"exceeds {UNDER_SEG_MAX} ({score})"
+        )
     finally:
         conn.close()
 
 
-def test_sensitive_traps_exclude_and_redact(
-    data_dir: Path, key_provider: object
-) -> None:
+def test_sensitive_traps_exclude_and_redact(data_dir: Path, key_provider: object) -> None:
     fixture = FIXTURES / "day_sensitive_traps"
     truth = yaml.safe_load((fixture / "truth.yaml").read_text(encoding="utf-8"))
     skipped_ids = {row["frame_id"] for row in truth["skipped"]}
@@ -81,20 +80,14 @@ def test_sensitive_traps_exclude_and_redact(
 
     conn = open_test_db(data_dir)
     try:
-        result = replay_fixture(
-            fixture, conn, instant=True, spool_dir=data_dir / "spool-traps"
-        )
+        result = replay_fixture(fixture, conn, instant=True, spool_dir=data_dir / "spool-traps")
         assert result.skipped_excluded == len(skipped_ids)
 
-        stored = {
-            str(row[0])
-            for row in conn.execute("SELECT id FROM frames").fetchall()
-        }
+        stored = {str(row[0]) for row in conn.execute("SELECT id FROM frames").fetchall()}
         assert stored.isdisjoint(skipped_ids)
 
         text_ids = {
-            str(row[0])
-            for row in conn.execute("SELECT frame_id FROM frame_text").fetchall()
+            str(row[0]) for row in conn.execute("SELECT frame_id FROM frame_text").fetchall()
         }
         assert text_ids.isdisjoint(skipped_ids)
 
