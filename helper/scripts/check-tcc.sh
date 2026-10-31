@@ -12,9 +12,9 @@ usage() {
   cat <<'EOF'
   helper/scripts/check-tcc.sh [--identity NAME]
 
-1. swift package clean
+1. rm -rf .build (do not invoke SwiftPM; CLT 16.2 cannot load Package.swift)
 2. build + sign (build 1) → watson-capture --preflight
-3. swift package clean
+3. rm -rf .build
 4. build + sign (build 2) → watson-capture --preflight
 5. Compare codesign identifier + designated requirement; require granted=true both times.
 
@@ -72,18 +72,12 @@ preflight() {
 echo "=== TCC persistence: two rebuilds (identity='$IDENTITY') ==="
 
 echo "--- clean + build 1 ---"
-(
-  cd "$ROOT"
-  swift package clean
-)
+rm -rf "$ROOT/.build"
 BIN1="$("$ROOT/scripts/build.sh" --release --identity "$IDENTITY" | tail -n 1)"
 preflight build1 "$BIN1"
 
 echo "--- clean + build 2 ---"
-(
-  cd "$ROOT"
-  swift package clean
-)
+rm -rf "$ROOT/.build"
 BIN2="$("$ROOT/scripts/build.sh" --release --identity "$IDENTITY" | tail -n 1)"
 preflight build2 "$BIN2"
 

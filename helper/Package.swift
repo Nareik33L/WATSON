@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
-// WATSON capture helper — SwiftPM only, macOS 14+, no Xcode project.
-// Build with Command Line Tools: `swift build` (see README.md).
+// WATSON capture helper — macOS 14+, no Xcode project.
+// Default build is helper/scripts/build.sh (swiftc). SwiftPM is --spm / CI.
 
 import PackageDescription
 

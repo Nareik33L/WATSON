@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Codesign watson-capture with a stable identifier and a named local identity.
 # Never generates or writes certificates. Pass the identity via --identity or
-# WATSON_CODESIGN_IDENTITY (default: WATSON Dev).
+# WATSON_CODESIGN_IDENTITY (default: WATSON Dev). --identity '-' is ad-hoc (CI).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,9 +11,10 @@ IDENTIFIER="com.watson.capture"
 
 usage() {
   cat <<'EOF'
-  helper/scripts/sign.sh --bin PATH [--identity NAME]
+  helper/scripts/sign.sh --bin PATH [--identity NAME] [--identifier ID]
 
 Default identity: WATSON Dev (override with --identity or WATSON_CODESIGN_IDENTITY).
+Pass --identity '-' for ad-hoc signing (CI; no certificate).
 Uses --timestamp=none so signing works offline. No hardened runtime (local cert).
 EOF
 }
@@ -62,12 +63,15 @@ if ! command -v codesign >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! security find-identity -v -p codesigning | grep -F "$IDENTITY" >/dev/null; then
-  echo "no codesigning identity named '$IDENTITY'." >&2
-  echo "Create it with Keychain Access (see helper/README.md) then retry." >&2
-  echo "Available identities:" >&2
-  security find-identity -v -p codesigning >&2 || true
-  exit 1
+# '-' is ad-hoc (no cert). It will not appear in the keychain.
+if [[ "$IDENTITY" != "-" ]]; then
+  if ! security find-identity -v -p codesigning | grep -F "$IDENTITY" >/dev/null; then
+    echo "no codesigning identity named '$IDENTITY'." >&2
+    echo "Create it with Keychain Access (see helper/README.md) then retry." >&2
+    echo "Available identities:" >&2
+    security find-identity -v -p codesigning >&2 || true
+    exit 1
+  fi
 fi
 
 # --timestamp=none: local identity, no Apple timestamp server (no network).

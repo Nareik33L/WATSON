@@ -2,7 +2,7 @@
 
 Signed Swift CLI that owns screen capture. It is the D5 / D1 spike: **frontmost window only** (ScreenCaptureKit `SCContentFilter`, never the full desktop), Vision OCR, PNG + JSON sidecar, pause over stdin, lock / sleep / idle probes, and a **stable code signature** so the Screen Recording TCC grant survives rebuilds.
 
-This directory is a SwiftPM package. There is no `.xcodeproj`. It is meant to build with **Command Line Tools only** (no full Xcode) on the development Mac: Apple M1, 8 GB, macOS 14.5, Swift 6.0.3.
+This directory is a SwiftPM package, but **`scripts/build.sh` compiles with `swiftc` by default**. There is no `.xcodeproj`. It is meant to build with **Command Line Tools only** (no full Xcode) on the development Mac: Apple M1, 8 GB, macOS 14.5, Swift 6.0.3 / CLT 16.2. That CLT cannot load `Package.swift` (ManifestAPI: `PackageDescription.Package.__allocating_init` is undefined); SwiftPM remains `--spm` opt-in for CI / full Xcode.
 
 Python under `src/watson` is not used here. The helper has **no network code**.
 
@@ -19,7 +19,7 @@ helper/
 └── scripts/                      build.sh, sign.sh, check-tcc.sh, cleanup-spool.sh, test-cleanup-spool.sh
 ```
 
-CI (`swift build` + unit tests + `--selftest`) runs only when this directory changes. Live ScreenCaptureKit and the TCC grant are **Mac-only**; this runbook is what the person at the Mac executes.
+CI (macos-15, Xcode 16.2: both `swiftc` and SwiftPM builds + unit tests + `--selftest` on the swiftc binary) runs only when this directory changes. Live ScreenCaptureKit and the TCC grant are **Mac-only**; this runbook is what the person at the Mac executes.
 
 ---
 
@@ -188,28 +188,35 @@ export WATSON_CODESIGN_IDENTITY="Your Cert Name"
 
 ### 2. Build and sign
 
+Default is **plain `swiftc`**, not SwiftPM. CLT 16.2 on the development Mac (no Xcode) fails every `swift build` / `swift test` while linking the manifest (`undefined symbol: PackageDescription.Package.__allocating_init`). `build.sh` therefore compiles `Sources/watson-capture` as the `WatsonCapture` module, then the `@main` executable, with `-O -target arm64-apple-macosx14.0 -swift-version 6` and the Apple frameworks the sources import. Output stays `helper/.build/release/watson-capture` so steps 3–6, `check-tcc.sh`, and `--selftest` are unchanged.
+
 ```bash
 chmod +x helper/scripts/*.sh
 helper/scripts/build.sh
 # equivalent:
 #   helper/scripts/build.sh --release --identity 'WATSON Dev'
+# SwiftPM (needs a toolchain that can load Package.swift, e.g. Xcode):
+#   helper/scripts/build.sh --spm --release --identity 'WATSON Dev'
 ```
 
-That runs `swift build -c release` from `helper/`, embeds `helper/Info.plist` via
+That embeds `helper/Info.plist` via
 
 ```
 -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker helper/Info.plist
 ```
 
-and codesigns with `--identifier com.watson.capture --timestamp=none`. Offline-safe: no Apple timestamp server.
+codesigns with `--identifier com.watson.capture --timestamp=none` (offline-safe: no Apple timestamp server; no hardened runtime on this local identity), then checks `codesign -dv` and `otool -s __TEXT __info_plist`.
 
-Unsigned (CI-style) build:
+Unsigned (CI-style) build. CI then ad-hoc signs both binaries (`sign.sh --identity - --identifier com.watson.capture`); there is no WATSON Dev cert on the runner.
 
 ```bash
-cd helper
-swift build
-swift test
-.build/debug/watson-capture --selftest
+helper/scripts/build.sh --release --no-sign
+helper/.build/release/watson-capture --selftest
+# unit tests stay on SwiftPM (CI / Xcode) and run before compare:
+#   cd helper && swift test
+#   helper/scripts/build.sh --spm --release --no-sign
+#   helper/scripts/sign.sh --bin helper/.build/release/watson-capture \
+#     --identity - --identifier com.watson.capture
 ```
 
 Confirm the signature:
@@ -218,6 +225,7 @@ Confirm the signature:
 codesign -dv --verbose=4 helper/.build/release/watson-capture
 # Identifier=com.watson.capture
 # Authority=WATSON Dev
+otool -s __TEXT __info_plist helper/.build/release/watson-capture
 ```
 
 ### 3. First-run Screen Recording grant
@@ -350,7 +358,7 @@ If build 2 flips to `granted=false`, that is the §13 TCC risk materialising —
 9. One **metadata-only** sidecar summary from the snippet in §5 (ids, sizes, `ocr_line_count` — not `ocr.lines` or `window_title`)
 10. Confirmation that `cleanup-spool.sh` printed `PASS` for the grant spool, the 1-hour spool, and `/tmp/watson-selftest`
 11. Decision notes:
-    - **Decision 3** (Swift helper vs PyObjC): did `swift build` under CLT work? Did SCK + Vision produce a sidecar (`captured` event with `ocr_lines` > 0 is enough)?
+    - **Decision 3** (Swift helper vs PyObjC): did `helper/scripts/build.sh` (swiftc, not SwiftPM) work under CLT 16.2? Did SCK + Vision produce a sidecar (`captured` event with `ocr_lines` > 0 is enough)?
     - **Decision 5** (macOS 14 minimum): any API missing on 14.5?
 
 Do not send certificates. Do not send `1h.jsonl` if it contains `window_title` or OCR (the stock events do not).
