@@ -11,6 +11,7 @@ from pathlib import Path
 
 from watson_bench.candidates import PROFILES, ROLES, RUNTIMES, load_candidates
 from watson_bench.fetch import FetchError, fetch_candidate
+from watson_bench.frames import load_frame_id_list
 from watson_bench.hardware import HardwareInfo, detect_hardware, format_hardware
 from watson_bench.paths import default_models_dir, default_report_path, set_repo_root
 from watson_bench.report import load_run_manifest, write_report
@@ -71,7 +72,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--frames",
         type=Path,
         default=None,
-        help="Directory of PNG + optional OCR sidecars",
+        help="Directory of PNG + optional OCR sidecars (recurses if needed)",
+    )
+    run.add_argument(
+        "--frame-list",
+        type=Path,
+        default=None,
+        help="Optional frame-id list (e.g. tests/fixtures/<name>/sample50.txt)",
     )
     run.add_argument("--out", type=Path, default=None, help="Run output directory")
     run.add_argument("--models-dir", type=Path, default=None)
@@ -158,9 +165,11 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     report_path = _resolve_report_flag(args.report)
+    frame_ids = load_frame_id_list(args.frame_list) if args.frame_list is not None else None
     out = run_bakeoff(
         profile=args.profile,
         frames_dir=args.frames,
+        frame_ids=frame_ids,
         out_dir=args.out,
         models_dir=args.models_dir,
         runtimes=args.runtimes,

@@ -30,10 +30,14 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check
-        run: uv run mypy src/watson
+        run: uv run mypy src/watson tools/fixture_gen
 
       - name: Tests
         run: uv run pytest
+        # Playwright regen is .github/workflows/fixture-regen.yml and runs by
+        # default on PRs/pushes that touch tools/fixture_gen or tests/fixtures.
+        # This job validates committed sidecars, PNG↔sidecar binding, and the
+        # 12 MB/day budget without installing Chromium.
 
       - name: Fake-runtime bench smoke
         run: >

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block css %}
+.thread { padding: 12px 18px; }
+.msg { margin: 0 0 12px; }
+.msg .who { font-weight: 600; }
+.msg .when { color: #66707c; font-size: 12px; margin-left: 8px; }
+.composer { margin-top: auto; border-top: 1px solid #d5d8de; padding: 10px 14px; background: #f7f8fa; }
+{% endblock %}
+{% block app %}
+<div class="app">
+  <aside class="sidebar">
+    <h2 class="ocr" data-ocr>{{ content.workspace }}</h2>
+    {% for room in content.rooms %}
+    <div class="room-item{% if room == content.room %} active{% endif %} ocr" data-ocr>{{ room }}</div>
+    {% endfor %}
+  </aside>
+  <section class="main">
+    <div class="toolbar">
+      <span class="ocr" data-ocr>{{ content.room }}</span>
+      <span class="badge ocr" data-ocr>{{ content.topic }}</span>
+    </div>
+    <div class="thread">
+      {% for msg in content.messages %}
+      <div class="msg">
+        <div>
+          <span class="who ocr" data-ocr>{{ msg.author }}</span>
+          <span class="when ocr" data-ocr>{{ msg.time }}</span>
+        </div>
+        <div class="wrap ocr" data-ocr>{{ msg.text }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="composer">
+      <div class="ocr" data-ocr>Message {{ content.room }}</div>
+      <div class="ocr" data-ocr>{{ content.draft }}</div>
+    </div>
+  </section>
+</div>
+{% endblock %}

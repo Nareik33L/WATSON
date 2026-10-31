@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://watson.local/schemas/sidecar.schema.json",
+  "title": "WATSON capture sidecar",
+  "description": "Machine-readable source of truth for helper PNG sidecars (plan §3.1). Matches helper/README.md field names, types, and nullability.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "frame_id",
+    "captured_at",
+    "display_id",
+    "bundle_id",
+    "app_name",
+    "window_title",
+    "window_id",
+    "is_private_browsing",
+    "url",
+    "ocr",
+    "phash",
+    "width",
+    "height",
+    "capture_mode"
+  ],
+  "properties": {
+    "frame_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Lowercase UUID"
+    },
+    "captured_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "ISO-8601 UTC ending in Z"
+    },
+    "display_id": {
+      "type": ["integer", "null"],
+      "description": "CGDirectDisplayID"
+    },
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Frontmost application bundle id"
+    },
+    "app_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Frontmost application name"
+    },
+    "window_title": {
+      "type": "string",
+      "description": "Empty if the OS withholds it"
+    },
+    "window_id": {
+      "type": "integer",
+      "description": "CGWindowID"
+    },
+    "is_private_browsing": {
+      "type": "boolean"
+    },
+    "url": {
+      "type": "null",
+      "description": "Always null in M0-B. Browser URLs wait for Accessibility (M5 / plan §14 #6)."
+    },
+    "ocr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lines"],
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "bbox", "confidence"],
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bbox": {
+                "type": "array",
+                "description": "[x_min, y_min, x_max, y_max] integer pixels, top-left origin",
+                "minItems": 4,
+                "maxItems": 4,
+                "prefixItems": [
+                  { "type": "integer" },
+                  { "type": "integer" },
+                  { "type": "integer" },
+                  { "type": "integer" }
+                ]
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "phash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "16 lowercase hex chars; 64-bit average hash"
+    },
+    "width": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "description": "PNG pixel width"
+    },
+    "height": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "description": "PNG pixel height"
+    },
+    "capture_mode": {
+      "type": "string",
+      "enum": ["frontmost", "selftest", "fixture"]
+    }
+  }
+}

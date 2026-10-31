@@ -13,6 +13,7 @@ dependencies = []
 [project.scripts]
 watson = "watson.cli:main"
 watson-bench = "watson_bench.cli:main"
+watson-fixturegen = "watson_fixturegen.cli:main"
 
 [project.optional-dependencies]
 # Runtime extras are optional so a missing backend is skipped, not a crash.
@@ -26,20 +27,32 @@ bench = [
     "pillow>=10.0",
     "pyyaml>=6.0",
 ]
+fixturegen = [
+    "jinja2>=3.1",
+    "pillow>=13.0",
+    "playwright==1.55.0",
+    "pyyaml>=6.0",
+    "types-pyyaml>=6.0",
+]
 dev = [
+    "jsonschema>=4.23",
     "mypy>=1.13",
     "pytest>=8.0",
     "ruff>=0.8",
     {include-group = "bench"},
+    {include-group = "fixturegen"},
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tools/bench"]
+pythonpath = ["src", "tools/bench", "tools/fixture_gen"]
+markers = [
+    "fixture_regen: regenerate a fixture with Playwright Chromium and diff sidecars/truth",
+]
 
 [tool.ruff]
 target-version = "py312"
-src = ["src", "tests", "tools/bench"]
+src = ["src", "tests", "tools/bench", "tools/fixture_gen"]
 line-length = 100
 
 [tool.hatch.build.targets.wheel]
@@ -49,13 +62,15 @@ packages = ["src/watson"]
 "tools/bench/watson_bench" = "watson_bench"
 "tools/bench/candidates" = "watson_bench/data/candidates"
 "tools/bench/samples" = "watson_bench/data/samples"
+"tools/fixture_gen/watson_fixturegen" = "watson_fixturegen"
+# fonts/ and scenarios/ live inside watson_fixturegen and ship in the wheel.
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-mypy_path = "src"
-packages = ["watson"]
+mypy_path = "src, tools/fixture_gen"
+packages = ["watson", "watson_fixturegen"]
 explicit_package_bases = true
 warn_unused_ignores = true

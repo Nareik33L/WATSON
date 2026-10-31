@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>{{ app_name }} — {{ window_title }}</title>
+  <style>
+    {% include "common.css" %}
+    {% block css %}{% endblock %}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="titlebar">
+      <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="win-title ocr" data-ocr>{{ app_name }} — {{ window_title }}</div>
+      <div class="clock ocr" data-ocr>{{ clock }}</div>
+    </div>
+    {% block app %}{% endblock %}
+  </div>
+</body>
+</html>

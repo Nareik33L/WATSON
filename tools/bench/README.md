@@ -91,7 +91,7 @@ uv run watson-bench list --profile 16gb --runtime ollama
 uv run watson-bench run --profile 8gb --runtime fake --report /tmp/watson-bench.md
 ```
 
-`run` defaults `--frames` to `tools/bench/samples/frames` (five committed synthetic PNGs + OCR JSON). `tools/bench/samples/generate.py` recreates them.
+`run` defaults `--frames` to `tools/bench/samples/frames` (five committed synthetic PNGs + OCR JSON). `tools/bench/samples/generate.py` recreates them. To hand-score a golden day, pass `--frames tests/fixtures/<name>` (PNG search recurses) and `--frame-list tests/fixtures/<name>/sample50.txt`.
 
 Regenerate a report from an existing run directory:
 

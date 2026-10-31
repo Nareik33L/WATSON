@@ -1,0 +1,199 @@
+{
+  "frame_id": "3cc69a98-45aa-56a1-abfc-6f95ea9fc853",
+  "captured_at": "2026-10-31T15:36:30Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.relay",
+  "app_name": "Lumen Relay",
+  "window_title": "Relay \u2014 Tom Ashworth",
+  "window_id": 2301,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Relay \u2014 Relay \u2014 Tom Ashworth",
+        "bbox": [
+          66,
+          9,
+          308,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:36",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "LUMEN DELIVERY",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya Natarajan",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery desk",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          234,
+          46,
+          323,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme Q4",
+        "bbox": [
+          333,
+          46,
+          398,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          89,
+          266,
+          108
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:36",
+        "bbox": [
+          278,
+          92,
+          308,
+          107
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pricing draft to Priya is in Lumen Mail. Still using the three-tier rate card.",
+        "bbox": [
+          238,
+          109,
+          1262,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          238,
+          143,
+          344,
+          162
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:38",
+        "bbox": [
+          356,
+          146,
+          386,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Good. Leave the commitment open until it actually goes out Friday.",
+        "bbox": [
+          238,
+          163,
+          1262,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          197,
+          266,
+          216
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:40",
+        "bbox": [
+          278,
+          200,
+          309,
+          215
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Onboarding Guide section 3 is published. Proposal still in draft.",
+        "bbox": [
+          238,
+          217,
+          1262,
+          238
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Message Tom Ashworth",
+        "bbox": [
+          234,
+          769,
+          1266,
+          790
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "007f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

@@ -1,0 +1,219 @@
+{
+  "frame_id": "2ef1d03e-ec67-56bf-9126-da9e395e735c",
+  "captured_at": "2026-10-31T15:32:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.mail",
+  "app_name": "Lumen Mail",
+  "window_title": "Compose \u2014 Revised pricing for Acme",
+  "window_id": 2102,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Mail \u2014 Compose \u2014 Revised pricing for Acme",
+        "bbox": [
+          66,
+          9,
+          390,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:32",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FOLDERS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Inbox",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Sent",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Drafts",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "ACCOUNT",
+        "bbox": [
+          14,
+          170,
+          205,
+          186
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "you@lumen.example",
+        "bbox": [
+          0,
+          194,
+          219,
+          227
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          232,
+          46,
+          507,
+          67
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Revised pricing for Acme Q4",
+        "bbox": [
+          232,
+          67,
+          507,
+          88
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:22 \u00b7 Draft to Priya Natarajan",
+        "bbox": [
+          232,
+          88,
+          507,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Revised pricing for Acme Q4",
+        "bbox": [
+          540,
+          52,
+          1260,
+          77
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "From: You <you@lumen.example>",
+        "bbox": [
+          540,
+          85,
+          1260,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "To: you@lumen.example",
+        "bbox": [
+          540,
+          106,
+          1260,
+          127
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Time: 15:22",
+        "bbox": [
+          540,
+          127,
+          1260,
+          148
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          540,
+          162,
+          1260,
+          182
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya \u2014",
+        "bbox": [
+          540,
+          182,
+          1260,
+          203
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Please find the published three-tier rate card. The Current tier at 18500 is the line we recommend.",
+        "bbox": [
+          540,
+          211,
+          1260,
+          232
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Demo is agreed for 14 Nov. I still owe you the risks appendix; that stays in the draft proposal.",
+        "bbox": [
+          540,
+          240,
+          1260,
+          261
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "I will send this by Friday as promised.",
+        "bbox": [
+          540,
+          269,
+          1260,
+          290
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "1f7f677f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

@@ -1,0 +1,524 @@
+# Focused single-project day — Lumen Delivery works the Acme Q4 proposal.
+# Fictional people, firms, and hosts only (*.example). Plan §11.1 / §15.4.
+
+meta:
+  name: day_acme_q4
+  date: "2026-10-31"
+  tz_offset: "+00:00"
+  seed: 42
+  display_id: 1
+  width: 1280
+  height: 800
+  description: Focused single-project day
+
+cadence:
+  default_seconds: 45
+  stretch_seconds: 120
+  tighten_seconds: 30
+  stretch_after_stable: 3
+
+windows:
+  mail_priya:
+    template: mail
+    bundle_id: com.lumen.mail
+    app_name: Lumen Mail
+    window_title: "Re: Acme Q4 Proposal — Priya Natarajan"
+    window_id: 2101
+  mail_compose:
+    template: mail
+    bundle_id: com.lumen.mail
+    app_name: Lumen Mail
+    window_title: "Compose — Revised pricing for Acme"
+    window_id: 2102
+  proposal:
+    template: document
+    bundle_id: com.lumen.quill
+    app_name: Lumen Quill
+    window_title: "Acme Q4 Proposal — Draft"
+    window_id: 2201
+  chat_tom:
+    template: chat
+    bundle_id: com.lumen.relay
+    app_name: Lumen Relay
+    window_title: "Relay — Tom Ashworth"
+    window_id: 2301
+  news:
+    template: browser
+    bundle_id: com.lumen.compass
+    app_name: Lumen Compass
+    window_title: "Cedar Daily — Harbor ferry changes"
+    window_id: 2401
+    url: https://news.cedardaily.example/harbor-ferry
+  calendar:
+    template: browser
+    bundle_id: com.lumen.compass
+    app_name: Lumen Compass
+    window_title: "Pocket Calendar — Today"
+    window_id: 2402
+    url: https://calendar.pocket.example/today
+  sheet:
+    template: spreadsheet
+    bundle_id: com.lumen.grid
+    app_name: Lumen Grid
+    window_title: "Acme rate card — Grid"
+    window_id: 2501
+  intranet:
+    template: browser
+    bundle_id: com.lumen.compass
+    app_name: Lumen Compass
+    window_title: "Onboarding Guide — Section 3"
+    window_id: 2403
+    url: https://intranet.lumen.example/onboarding/section-3
+  ide:
+    template: ide
+    bundle_id: com.lumen.anvil
+    app_name: Lumen Anvil
+    window_title: "anvil — proposals/acme_q4.md"
+    window_id: 2601
+
+timeline:
+  - window: mail_priya
+    start: "09:00:00"
+    end: "09:07:00"
+    states:
+      - at: "09:00:00"
+        content:
+          account: you@lumen.example
+          folder: Inbox
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: false
+          messages:
+            - sender: Priya Natarajan
+              email: priya@acme.example
+              subject: "Re: Acme Q4 Proposal"
+              time: "08:41"
+              preview: Can we move the demo to 14 Nov?
+              body:
+                - "Hello —"
+                - "Can we move the demo to 14 Nov? The procurement panel is travelling the week of the 7th."
+                - "Please send revised pricing by Friday so we can lock the Q4 statement of work."
+                - "— Priya Natarajan, Acme Procurement"
+            - sender: Tom Ashworth
+              email: tom@lumen.example
+              subject: Standup notes
+              time: "08:12"
+              preview: Flag Q4 delivery risks in the appendix
+              body:
+                - "Morning — standup recap."
+                - "Please flag Q4 delivery risks in the Acme appendix when you have a moment."
+            - sender: Lumen Desk
+              email: desk@lumen.example
+              subject: Building access this afternoon
+              time: "07:50"
+              preview: West stair closed until 16:00
+              body:
+                - "West stair closed until 16:00 for painting. Use the courtyard lift."
+
+  - window: proposal
+    start: "09:07:00"
+    end: "10:40:00"
+    states:
+      - at: "09:07:00"
+        content: &proposal_v1
+          filename: Acme-Q4-Proposal.quill
+          title: Acme Q4 Proposal
+          subtitle: Draft for Lumen Delivery · owner you
+          status: Draft
+          owner: you
+          current_section: 0
+          notes:
+            - Priya asked for 14 Nov
+            - Pricing still a placeholder
+            - Keep this as the focus of the day
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "This draft sets out how Lumen Delivery will run the Acme Q4 rollout, including discovery, the live demo, and a priced statement of work."
+                - "Audience: Priya Natarajan (Acme Procurement) and the Lumen delivery lead Tom Ashworth."
+            - heading: Open questions
+              paragraphs:
+                - "Demo date is still the week of 7 Nov in this draft — Priya asked for 14 Nov this morning."
+                - "Pricing table is a placeholder. Do not send until Tom confirms the rate card."
+      - at: "09:45:00"
+        content: &proposal_v2
+          filename: Acme-Q4-Proposal.quill
+          title: Acme Q4 Proposal
+          subtitle: Draft for Lumen Delivery · timeline added
+          status: Draft
+          owner: you
+          current_section: 1
+          notes:
+            - Timeline sketched
+            - Still waiting on Tom for rates
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "This draft sets out how Lumen Delivery will run the Acme Q4 rollout, including discovery, the live demo, and a priced statement of work."
+                - "Audience: Priya Natarajan (Acme Procurement) and the Lumen delivery lead Tom Ashworth."
+            - heading: Proposed timeline
+              paragraphs:
+                - "Week of 7 Nov: internal dry run. Week of 14 Nov: live demo with Acme (pending agreement)."
+                - "Week of 21 Nov: statement of work and named delivery team."
+            - heading: Open questions
+              paragraphs:
+                - "Demo date still pending Priya and Tom. Pricing table is a placeholder."
+
+  - window: news
+    start: "10:40:00"
+    end: "10:46:00"
+    states:
+      - at: "10:40:00"
+        content:
+          kind: article
+          address: https://news.cedardaily.example/harbor-ferry
+          kicker: Cedar Daily · civic
+          page_title: Harbor ferry timetable changes next week
+          badge: null
+          tabs:
+            - title: Cedar Daily
+              active: true
+            - title: Intranet
+              active: false
+          paragraphs:
+            - "The Harbor crossing will run a reduced Saturday timetable from next week while the north berth is repainted."
+            - "First boat 07:40, last return 21:10. No change to weekday commuter sailings."
+            - "This is a civic bulletin, not a Lumen Delivery work item."
+
+  - window: proposal
+    start: "10:46:00"
+    end: "11:20:00"
+    states:
+      - at: "10:46:00"
+        content: &proposal_v3
+          filename: Acme-Q4-Proposal.quill
+          title: Acme Q4 Proposal
+          subtitle: Draft for Lumen Delivery · pricing stub
+          status: Draft
+          owner: you
+          current_section: 2
+          notes:
+            - Back from a news glance
+            - Add a pricing stub only
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "This draft sets out how Lumen Delivery will run the Acme Q4 rollout, including discovery, the live demo, and a priced statement of work."
+            - heading: Proposed timeline
+              paragraphs:
+                - "Week of 7 Nov: internal dry run. Week of 14 Nov: live demo with Acme (pending agreement)."
+            - heading: Pricing (stub)
+              paragraphs:
+                - "Three named tiers will go here once Tom confirms we may use the published rate card rather than a custom quote."
+                - "Do not send this section to Priya yet."
+
+  - window: chat_tom
+    start: "13:00:00"
+    end: "13:12:00"
+    states:
+      - at: "13:00:00"
+        content: &chat_v1
+          workspace: Lumen Delivery
+          room: Tom Ashworth
+          rooms: [Tom Ashworth, Priya Natarajan, Delivery desk]
+          topic: Acme Q4
+          draft: ""
+          messages:
+            - author: Tom Ashworth
+              time: "13:00"
+              text: Priya wrote this morning — she wants the demo moved to 14 Nov.
+            - author: You
+              time: "13:02"
+              text: Agreed, 14 Nov works for the demo. I will update the draft.
+      - at: "13:05:00"
+        content: &chat_v2
+          workspace: Lumen Delivery
+          room: Tom Ashworth
+          rooms: [Tom Ashworth, Priya Natarajan, Delivery desk]
+          topic: Acme Q4
+          draft: I will send revised pricing today
+          messages:
+            - author: Tom Ashworth
+              time: "13:00"
+              text: Priya wrote this morning — she wants the demo moved to 14 Nov.
+            - author: You
+              time: "13:02"
+              text: Agreed, 14 Nov works for the demo. I will update the draft.
+            - author: Tom Ashworth
+              time: "13:05"
+              text: Thanks — flag Q4 delivery risks in the appendix, and use the published three-tier rate card, not a custom quote.
+            - author: You
+              time: "13:07"
+              text: Agreed on the three-tier rate card. I will send revised pricing to Priya by Friday and start the risks appendix.
+
+  - window: proposal
+    start: "13:12:00"
+    end: "14:20:00"
+    states:
+      - at: "13:12:00"
+        content: &proposal_v4
+          filename: Acme-Q4-Proposal.quill
+          title: Acme Q4 Proposal
+          subtitle: Draft · demo moved to 14 Nov
+          status: Draft
+          owner: you
+          current_section: 1
+          notes:
+            - Tom agreed 14 Nov
+            - Switch pricing to published card
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "This draft sets out how Lumen Delivery will run the Acme Q4 rollout for Priya Natarajan at Acme."
+            - heading: Proposed timeline
+              paragraphs:
+                - "Decision: live demo moves to 14 Nov (agreed with Tom Ashworth after Priya's request)."
+                - "Week of 21 Nov: statement of work and named delivery team."
+            - heading: Pricing (stub)
+              paragraphs:
+                - "Will follow the published three-tier rate card. Numbers still to paste from Lumen Grid."
+      - at: "13:50:00"
+        content: &proposal_v5
+          filename: Acme-Q4-Proposal.quill
+          title: Acme Q4 Proposal
+          subtitle: Draft · risks section started
+          status: Draft
+          owner: you
+          current_section: 3
+          notes:
+            - Risks started, not finished
+            - Still editing at day end
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "This draft sets out how Lumen Delivery will run the Acme Q4 rollout for Priya Natarajan at Acme."
+            - heading: Proposed timeline
+              paragraphs:
+                - "Decision: live demo moves to 14 Nov (agreed with Tom Ashworth after Priya's request)."
+            - heading: Pricing
+              paragraphs:
+                - "Published three-tier rate card — figures live in the Grid workbook."
+            - heading: Q4 delivery risks
+              paragraphs:
+                - "Harbor berth works could slip a weekday rehearsal. Mitigation: keep the dry run on the 10th remote-capable."
+                - "Named engineers are not locked. This appendix is still incomplete."
+
+  - window: calendar
+    start: "14:30:00"
+    end: "14:33:00"
+    states:
+      - at: "14:30:00"
+        content:
+          kind: calendar
+          address: https://calendar.pocket.example/today
+          kicker: Pocket Calendar · personal
+          page_title: Today — Sat 31 Oct
+          badge: null
+          tabs:
+            - title: Pocket Calendar
+              active: true
+          events:
+            - time: "12:00"
+              title: Lunch (already passed)
+              personal: false
+            - time: "17:30"
+              title: Piano lesson — Rowan Vale
+              personal: true
+            - time: "19:00"
+              title: Library hold expires
+              personal: true
+
+  - window: sheet
+    start: "14:33:00"
+    end: "15:05:00"
+    states:
+      - at: "14:33:00"
+        content: &sheet_v1
+          filename: Acme-rate-card.grid
+          sheet: Published tiers
+          sheets: ["Published tiers", Scratch]
+          formula: "=C2"
+          selected: [0, 2]
+          note: "Paste these three tiers into the proposal. Do not invent a custom quote."
+          headers: [Tier, Scope, Monthly, Notes]
+          rows:
+            - [Harbor, Discovery only, 12000, Two-week start]
+            - [Current, Delivery + demo, 18500, Default for Acme]
+            - [Beacon, Named team, 24000, If they want a resident lead]
+      - at: "14:50:00"
+        content:
+          filename: Acme-rate-card.grid
+          sheet: Published tiers
+          sheets: ["Published tiers", Scratch]
+          formula: "=C3"
+          selected: [1, 2]
+          note: "Current tier at 18500 is the three-tier rate card line to send Priya."
+          headers: [Tier, Scope, Monthly, Notes]
+          rows:
+            - [Harbor, Discovery only, 12000, Two-week start]
+            - [Current, Delivery + demo, 18500, Default for Acme]
+            - [Beacon, Named team, 24000, If they want a resident lead]
+            - [Check, Demo week, 0, 14 Nov — not a billed line]
+
+  - window: intranet
+    start: "15:05:00"
+    end: "15:22:00"
+    states:
+      - at: "15:05:00"
+        content:
+          kind: article
+          address: https://intranet.lumen.example/onboarding/section-3
+          kicker: Lumen Intranet · Internal Onboarding Guide
+          page_title: Section 3 — Access and tools
+          badge: Published this morning
+          tabs:
+            - title: Onboarding
+              active: true
+            - title: Cedar Daily
+              active: false
+          paragraphs:
+            - "Section 3 of the Internal Onboarding Guide is published this morning."
+            - "Covers desk access, Lumen Quill, Lumen Grid, and the Acme client folder."
+            - "This is complete. The Acme proposal is a separate draft and is not published."
+
+  - window: mail_compose
+    start: "15:22:00"
+    end: "15:36:00"
+    states:
+      - at: "15:22:00"
+        content:
+          account: you@lumen.example
+          folder: Drafts
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: true
+          messages:
+            - sender: You
+              email: you@lumen.example
+              subject: Revised pricing for Acme Q4
+              time: "15:22"
+              preview: Draft to Priya Natarajan
+              body:
+                - "Priya —"
+                - "Please find the published three-tier rate card. The Current tier at 18500 is the line we recommend."
+                - "Demo is agreed for 14 Nov. I still owe you the risks appendix; that stays in the draft proposal."
+                - "I will send this by Friday as promised."
+
+  - window: chat_tom
+    start: "15:36:00"
+    end: "15:48:00"
+    states:
+      - at: "15:36:00"
+        content:
+          workspace: Lumen Delivery
+          room: Tom Ashworth
+          rooms: [Tom Ashworth, Priya Natarajan, Delivery desk]
+          topic: Acme Q4
+          draft: ""
+          messages:
+            - author: You
+              time: "15:36"
+              text: Pricing draft to Priya is in Lumen Mail. Still using the three-tier rate card.
+            - author: Tom Ashworth
+              time: "15:38"
+              text: Good. Leave the commitment open until it actually goes out Friday.
+            - author: You
+              time: "15:40"
+              text: Onboarding Guide section 3 is published. Proposal still in draft.
+
+  - window: ide
+    start: "15:48:00"
+    end: "16:02:00"
+    states:
+      - at: "15:48:00"
+        content: &ide_v1
+          project: lumen-delivery
+          filename: proposals/acme_q4.md
+          language: markdown
+          files:
+            - proposals/acme_q4.md
+            - rates/published.yaml
+            - README.md
+          lines:
+            - "# Acme Q4 notes"
+            - ""
+            - "Demo: 14 Nov (agreed with Tom Ashworth)."
+            - "Card: published three-tier rate card, Current 18500."
+            - "TODO: finish Q4 delivery risks appendix."
+          terminal:
+            - "anvil: opened proposals/acme_q4.md"
+            - "anvil: no tests in this tree"
+      - at: "15:55:00"
+        content:
+          project: lumen-delivery
+          filename: proposals/acme_q4.md
+          language: markdown
+          files:
+            - proposals/acme_q4.md
+            - rates/published.yaml
+            - README.md
+          lines:
+            - "# Acme Q4 notes"
+            - ""
+            - "Demo: 14 Nov (agreed with Tom Ashworth)."
+            - "Card: published three-tier rate card, Current 18500."
+            - "TODO: finish Q4 delivery risks appendix."
+            - "Risk stub: harbor berth works / unnamed engineers."
+          terminal:
+            - "anvil: opened proposals/acme_q4.md"
+            - "anvil: saved 15:55"
+
+  - window: proposal
+    start: "16:02:00"
+    end: "16:18:00"
+    states:
+      - at: "16:02:00"
+        content:
+          filename: Acme-Q4-Proposal.quill
+          title: Acme Q4 Proposal
+          subtitle: Draft — still editing at day end
+          status: Draft
+          owner: you
+          current_section: 3
+          notes:
+            - Day end: still a draft
+            - Risks appendix unfinished
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "How Lumen Delivery will run the Acme Q4 rollout for Priya Natarajan."
+            - heading: Proposed timeline
+              paragraphs:
+                - "Live demo on 14 Nov. Statement of work the week of 21 Nov."
+            - heading: Pricing
+              paragraphs:
+                - "Published three-tier rate card. Recommended line: Current at 18500. Draft mail to Priya is waiting."
+            - heading: Q4 delivery risks
+              paragraphs:
+                - "Harbor berth works and unnamed engineers remain open. This appendix is not finished."
+                - "The Acme proposal is still editing at day end and is not complete."
+
+truth:
+  projects:
+    - Acme Q4 Proposal
+    - Internal Onboarding Guide
+  people:
+    - Priya Natarajan (Acme)
+    - Tom Ashworth (Delivery)
+  decisions:
+    - text: Agreed to move the Acme demo to 14 Nov
+      evidence_contains: "Agreed, 14 Nov works for the demo"
+    - text: Adopt the published three-tier rate card for Acme
+      evidence_contains: "Agreed on the three-tier rate card"
+  commitments:
+    - text: Send revised pricing to Priya by Friday
+      status: open
+    - text: Flag Q4 delivery risks in the proposal appendix
+      status: open
+  completed:
+    - Onboarding Guide section 3 published
+  not_completed:
+    - Acme proposal (still editing at day end)
+  noise:
+    - Cedar Daily 10:40–10:46
+    - Pocket Calendar glance 14:30–14:33
