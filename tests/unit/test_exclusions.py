@@ -218,7 +218,8 @@ def test_excluded_unlink_failure_audits_and_status(
         ).fetchall()
         assert len(fails) == 1
         detail = str(fails[0][0])
-        assert "PermissionError" in detail
+        assert '"error": "permission"' in detail
+        assert "PermissionError" not in detail
         assert "excluded_app" in detail
         assert "com.apple.Passwords" not in detail
         assert "Passwords" not in detail

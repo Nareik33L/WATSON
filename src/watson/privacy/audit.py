@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
+import uuid
 from collections.abc import Iterator
 from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
+from watson.capture.exclusions import (
+    REASON_EXCLUDED_APP,
+    REASON_EXCLUDED_TITLE,
+    REASON_PRIVATE,
+)
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 
@@ -17,6 +24,21 @@ KIND_VERIFIED = "frame_deletion_verified"
 KIND_DELETE_FAILED = "frame_deletion_failed"
 KIND_SKIPPED = "frame_skipped"
 KIND_REPLAY = "replay_completed"
+
+# Closed sets for enum-like audit values. ``error`` is an error-class code,
+# never a free-text exception message or ``type(exc).__name__``.
+REASON_VALUES = frozenset({REASON_EXCLUDED_APP, REASON_EXCLUDED_TITLE, REASON_PRIVATE})
+SCOPE_EXCLUDED = "excluded"
+SCOPE_VALUES = frozenset({SCOPE_EXCLUDED})
+ERROR_PERMISSION = "permission"
+ERROR_STILL_PRESENT = "still_present"
+ERROR_UNLINK_FAILED = "unlink_failed"
+ERROR_VALUES = frozenset({ERROR_PERMISSION, ERROR_STILL_PRESENT, ERROR_UNLINK_FAILED})
+
+_SCALAR_TYPES = (str, int, float, bool)
+_HEX64 = re.compile(r"[0-9a-fA-F]{64}")
+_UUID_KEY_STEMS = frozenset({"frameid"})
+_HEX64_KEY_STEMS = frozenset({"pngsha256"})
 
 # Normalised keys (casefold, strip, drop ``_`` / ``-`` / space) permitted per kind.
 _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
@@ -77,10 +99,25 @@ def iter_audit_keys(value: object) -> Iterator[str]:
             yield from iter_audit_keys(child)
 
 
+def audit_error_class(exc: BaseException) -> str:
+    """Map an exception to a closed audit error-class code."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, PermissionError):
+            return ERROR_PERMISSION
+        current = current.__cause__ or current.__context__
+    if "still present" in str(exc).casefold():
+        return ERROR_STILL_PRESENT
+    return ERROR_UNLINK_FAILED
+
+
 def _validate_detail(kind: str, detail: dict[str, Any]) -> None:
     allowed = _ALLOWED_DETAIL_KEYS.get(kind)
     if allowed is None:
         raise AuditError(f"unknown audit kind {kind!r}")
+    _validate_values(detail)
     leaked = _forbidden_content_keys(detail)
     if leaked:
         raise AuditError("audit detail must not include content fields")
@@ -88,6 +125,37 @@ def _validate_detail(kind: str, detail: dict[str, Any]) -> None:
     extras.discard("")
     if extras:
         raise AuditError("audit detail includes keys not allowed for this event kind")
+
+
+def _validate_values(detail: dict[str, Any]) -> None:
+    for key, value in detail.items():
+        if not isinstance(value, _SCALAR_TYPES):
+            raise AuditError(f"audit detail values must be scalars; {key!r} is not")
+        normalized = normalize_audit_key(str(key))
+        if normalized == "reason" and value not in REASON_VALUES:
+            raise AuditError(f"invalid audit reason {value!r}")
+        if normalized == "error" and value not in ERROR_VALUES:
+            raise AuditError(f"invalid audit error {value!r}")
+        if normalized == "scope" and value not in SCOPE_VALUES:
+            raise AuditError(f"invalid audit scope {value!r}")
+        if _is_id_key(normalized):
+            try:
+                uuid.UUID(str(value))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise AuditError(f"audit {key} must be a UUID") from exc
+        if _is_hex_key(normalized):
+            if not isinstance(value, str) or _HEX64.fullmatch(value) is None:
+                raise AuditError(f"audit {key} must be a 64-char hex digest")
+
+
+def _is_id_key(normalized: str) -> bool:
+    return normalized in _UUID_KEY_STEMS or (
+        normalized.endswith("id") and normalized not in _FORBIDDEN_CONTENT_STEMS
+    )
+
+
+def _is_hex_key(normalized: str) -> bool:
+    return normalized in _HEX64_KEY_STEMS or "sha256" in normalized
 
 
 def _forbidden_content_keys(detail: dict[str, Any]) -> set[str]:
@@ -119,6 +187,10 @@ def record_audit(
     if actor not in ("system", "user"):
         raise AuditError(f"invalid audit actor {actor!r}")
     _validate_detail(kind, detail)
+    try:
+        detail_json = json.dumps(detail, sort_keys=True)
+    except TypeError as exc:
+        raise AuditError("audit detail values must be scalars") from exc
     stamp = iso_now()
     event_id = new_id()
     conn.execute(
@@ -131,7 +203,7 @@ def record_audit(
             stamp,
             stamp,
             kind,
-            json.dumps(detail, sort_keys=True),
+            detail_json,
             actor,
         ),
     )
