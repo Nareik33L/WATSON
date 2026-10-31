@@ -38,7 +38,7 @@ ERROR_VALUES = frozenset({ERROR_PERMISSION, ERROR_STILL_PRESENT, ERROR_UNLINK_FA
 
 _SCALAR_TYPES = (str, int, float, bool)
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
-# Lowercase slug, 1–64 chars. Covers day_acme_q4, day_fragmented_multi, day_mini.
+# Lowercase slug, 1–64 chars. Covers day_acme_q4, day_sensitive_traps, day_mini.
 _FIXTURE_SLUG = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 _UUID_KEY_STEMS = frozenset({"frameid"})
 _HEX64_KEY_STEMS = frozenset({"pngsha256"})
@@ -51,6 +51,7 @@ _COUNT_KEY_STEMS = frozenset(
         "deletionverified",
         "skippedexcluded",
         "deduped",
+        "segments",
         "distance",
         "threshold",
         "png",
@@ -76,6 +77,7 @@ _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
             "deletionverified",
             "skippedexcluded",
             "deduped",
+            "segments",
         }
     ),
 }

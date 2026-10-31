@@ -16,6 +16,13 @@ from watson.memory.migrate import upgrade_head
 
 REPO = Path(__file__).resolve().parent.parent
 DAY_ACME_Q4 = REPO / "tests" / "fixtures" / "day_acme_q4"
+V1_DAY_FIXTURES = (
+    "day_acme_q4",
+    "day_fragmented_multi",
+    "day_meeting_heavy",
+    "day_sensitive_traps",
+    "day_near_empty",
+)
 TEST_KEY = bytes.fromhex("11" * 32)
 
 

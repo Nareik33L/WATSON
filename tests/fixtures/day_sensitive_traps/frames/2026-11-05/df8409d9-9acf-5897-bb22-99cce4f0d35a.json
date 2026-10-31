@@ -1,0 +1,109 @@
+{
+  "frame_id": "df8409d9-9acf-5897-bb22-99cce4f0d35a",
+  "captured_at": "2026-11-05T09:40:30Z",
+  "display_id": 1,
+  "bundle_id": "com.apple.Passwords",
+  "app_name": "Passwords",
+  "window_title": "Passwords \u2014 Personal vault",
+  "window_id": 5701,
+  "is_private_browsing": true,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Passwords \u2014 Passwords \u2014 Personal vault",
+        "bbox": [
+          66,
+          9,
+          328,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:40",
+        "bbox": [
+          1234,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Vault",
+        "bbox": [
+          8,
+          42,
+          68,
+          75
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://vault.cedar.example/unlock",
+        "bbox": [
+          32,
+          84,
+          278,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Passwords \u00b7 private",
+        "bbox": [
+          40,
+          137,
+          1240,
+          158
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Unlock personal vault",
+        "bbox": [
+          40,
+          170,
+          1240,
+          204
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Private",
+        "bbox": [
+          40,
+          212,
+          1240,
+          231
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Personal vault unlock. This window is excluded and must never be stored.",
+        "bbox": [
+          40,
+          246,
+          1240,
+          267
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "No work project lives here.",
+        "bbox": [
+          40,
+          297,
+          1240,
+          318
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "00ffffffffffffff",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

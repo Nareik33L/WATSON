@@ -1,0 +1,152 @@
+projects: [Acme Q4 Proposal, Harbor planning]
+people: [Priya Natarajan (Acme), Tom Ashworth (Delivery), Samira Cole (Design), Ned Quinn (Harbor), Ellis
+    Voss (Harbor Line)]
+decisions:
+- text: Keep the Harbor walkthrough on Thursday
+  evidence_frames: [1e60c42d-7076-59bf-a4ab-1a2c1b9553aa, 39830a89-8a2f-52c5-9cc3-abdd1e13e8ab, 55cfdef8-3c43-5fd6-b35e-6a73b276b5c7,
+    d4f998d2-8563-57f2-bd66-8f092c353c8b, f8d772d4-a5f8-58c3-a377-98177af34d6a, 02c4b679-ff77-56bf-aab8-ce01ba6f5915,
+    675eecc9-fb91-5790-a60f-2703aa0aa7bf]
+- text: Acme demo stays 14 Nov
+  evidence_frames: [f1d7aebd-d2e4-5083-b502-1b966abd0582, deb31b3a-a0fb-5204-807c-52b50e2dc173, 6dc961c0-8d1b-5984-b8f6-0d75ef00ff12,
+    e84e55c1-c193-5b33-957b-4483bf6341bd, 18fa9da7-d2ee-5898-9fd5-a66a1b30e703, 0f9d8568-80b9-5789-ac3a-62ba079b386f,
+    100eecd8-16c0-5fb2-b89c-91b41a9c7728, fc7b3443-a39c-5f49-bbc1-5e138f548005, e4cf4582-46a6-5463-9152-fe8e385c0c38]
+commitments:
+- text: Send Priya the slide outline tomorrow
+  status: open
+- text: Samira Cole still owes the slide order
+  status: open
+completed: [Acme demo prep call]
+not_completed: [Acme proposal (still a draft), Slide order (still a draft)]
+noise: []
+expected_segments:
+- start: '2026-11-04T09:00:00Z'
+  end: '2026-11-04T09:10:00Z'
+  start_frame: 1dc7f710-8e14-5d5c-92a2-ce7c210c7a6b
+  end_frame: 5f5c5694-b794-5a4e-b823-c5d29f2aff9b
+  fixture_index:
+  - 1
+  - 8
+  bundle_id: com.lumen.room
+  window_title: Lumen Room — Delivery standup
+  frame_ids: [1dc7f710-8e14-5d5c-92a2-ce7c210c7a6b, d69fe636-eee9-516d-9482-7f96575a3b4d, 85808c5e-ea1a-5d0e-9874-43bc5776eac1,
+    e99014e9-b0c4-5fc5-becd-93df66b23b39, 245e8528-69f0-57fd-8dc2-18bfed20ca46, 6f404f8c-738e-59c0-8114-27c023d141ec,
+    c10b039d-547c-516b-bab9-0eb0658a8a7f, 5f5c5694-b794-5a4e-b823-c5d29f2aff9b]
+- start: '2026-11-04T09:12:00Z'
+  end: '2026-11-04T09:20:00Z'
+  start_frame: 1e60c42d-7076-59bf-a4ab-1a2c1b9553aa
+  end_frame: 675eecc9-fb91-5790-a60f-2703aa0aa7bf
+  fixture_index:
+  - 9
+  - 15
+  bundle_id: com.lumen.quill
+  window_title: Standup notes — 4 Nov
+  frame_ids: [1e60c42d-7076-59bf-a4ab-1a2c1b9553aa, 39830a89-8a2f-52c5-9cc3-abdd1e13e8ab, 55cfdef8-3c43-5fd6-b35e-6a73b276b5c7,
+    d4f998d2-8563-57f2-bd66-8f092c353c8b, f8d772d4-a5f8-58c3-a377-98177af34d6a, 02c4b679-ff77-56bf-aab8-ce01ba6f5915,
+    675eecc9-fb91-5790-a60f-2703aa0aa7bf]
+- start: '2026-11-04T09:30:00Z'
+  end: '2026-11-04T09:50:00Z'
+  start_frame: d1d4f7de-39cd-572b-b003-772737d31bfc
+  end_frame: eecc8ce7-c766-5247-9715-ad963b5bf4db
+  fixture_index:
+  - 16
+  - 28
+  bundle_id: com.lumen.room
+  window_title: Lumen Room — Harbor planning
+  frame_ids: [d1d4f7de-39cd-572b-b003-772737d31bfc, 22fe9381-b8ef-5d8d-955e-bdb7dc197cc9, 23c3ad93-c80f-5d13-93be-46ffee0553d2,
+    1bd29964-e2d3-57b4-a26f-da15c2be8ca4, 5ef4478f-b9e8-54b7-b187-fee2f49e8983, 3583221e-d89c-5bd1-9456-6a6a2e260fa2,
+    b5eee17e-0491-583c-b695-3ed0bbc23a2a, 4468710a-959a-5d46-80b9-64a75ccc1737, bd6e8e1c-f8e4-5469-8d65-b3cfd44e4044,
+    162e9adb-6be5-59a0-bbb5-9feeabf26df6, 394eaa82-d7f1-5518-b724-894f85ca49c8, 1df1a8d4-bd23-5ca9-8425-d1b56ddc706a,
+    eecc8ce7-c766-5247-9715-ad963b5bf4db]
+- start: '2026-11-04T09:52:00Z'
+  end: '2026-11-04T10:04:00Z'
+  start_frame: 2bfbb45e-1720-5b9d-9a84-263f389218f5
+  end_frame: fea93e1a-e52d-5af9-a6cf-ebbe83ea6718
+  fixture_index:
+  - 29
+  - 37
+  bundle_id: com.lumen.quill
+  window_title: Harbor planning — Notes
+  frame_ids: [2bfbb45e-1720-5b9d-9a84-263f389218f5, 00b32b27-6886-5132-9077-de430c3d3c43, f0b05d16-ba0a-5f90-ae80-d0bf1121eae0,
+    a79618ae-dac9-5c5c-8abf-de0cca3a5eb6, d8e19abc-55a9-5363-881c-8eb0e329e417, be936f01-fcf2-54c2-8943-6e43c75ca987,
+    f5b5e918-ff2a-564b-8600-1d028e638430, f7f8d0f9-31d1-57fe-acb9-579f1fc49ff4, fea93e1a-e52d-5af9-a6cf-ebbe83ea6718]
+- start: '2026-11-04T10:06:00Z'
+  end: '2026-11-04T10:12:00Z'
+  start_frame: 8d636bb3-63a1-52b9-8432-d8836214a3db
+  end_frame: 02ddfbfe-9706-5e30-909c-f302efe4924c
+  fixture_index:
+  - 38
+  - 43
+  bundle_id: com.lumen.relay
+  window_title: Relay — Tom Ashworth
+  frame_ids: [8d636bb3-63a1-52b9-8432-d8836214a3db, 99eb302a-9829-59c1-9efb-41702f764050, 588e740b-a978-5570-b9a1-9ace7d5d6180,
+    d60eb9d4-3166-56ab-88eb-2673672d70ec, 5c0c5308-c2b5-5914-8d52-df1b4a212d6a, 02ddfbfe-9706-5e30-909c-f302efe4924c]
+- start: '2026-11-04T11:00:00Z'
+  end: '2026-11-04T11:16:00Z'
+  start_frame: 19ce7f66-6799-5019-95e9-9fbffd697e84
+  end_frame: 98e33fec-8c9e-549a-82b4-2a88a71dc225
+  fixture_index:
+  - 44
+  - 54
+  bundle_id: com.lumen.room
+  window_title: Lumen Room — Acme demo prep
+  frame_ids: [19ce7f66-6799-5019-95e9-9fbffd697e84, 51eba740-25dd-5408-9524-44375058ed77, 50cae5fe-b401-50eb-b233-360873d4c992,
+    37ad87cf-c1de-5cf6-baf4-f915ca7d402e, cf764f43-e0e1-59b1-ab01-8f9264a4ae31, 1ae8f5a6-b220-5617-8ff4-b98ef1cb73be,
+    071eed89-e3c5-5502-9fbf-bb13eebc3736, 9c7d2cd2-6c19-53f3-b9e5-ce1ac417d089, 88f4521e-5b96-53c6-8f5a-45e30bf5bc55,
+    c8d3451e-8153-5b06-b3fc-160ca5e1acfb, 98e33fec-8c9e-549a-82b4-2a88a71dc225]
+- start: '2026-11-04T11:18:00Z'
+  end: '2026-11-04T11:30:00Z'
+  start_frame: a6fc3d6b-f804-5c9f-9cd2-08425ae64a97
+  end_frame: bf6fce29-a166-5eb8-af30-c1fb0892d1bc
+  fixture_index:
+  - 55
+  - 63
+  bundle_id: com.lumen.quill
+  window_title: Acme Q4 Proposal — Draft
+  frame_ids: [a6fc3d6b-f804-5c9f-9cd2-08425ae64a97, 769c342c-672d-597a-b61f-b2896b99010c, 6b3381ea-c0ac-5681-9f4e-e32f48cd7bc9,
+    7dd40802-60c8-5f29-8a9c-01202a064c8b, 28fbf50f-b0c4-5db0-a001-998f1ff8aefb, b88699ec-0537-5e98-b8a7-241ad03b645b,
+    69498565-25e7-5539-afda-be77ab1c0c33, 82fe4f26-77e3-55b7-8a2b-168e6d0c7bb1, bf6fce29-a166-5eb8-af30-c1fb0892d1bc]
+- start: '2026-11-04T13:00:00Z'
+  end: '2026-11-04T13:18:00Z'
+  start_frame: 060ebe1a-22d7-5321-ab92-e633ffa3627f
+  end_frame: caa706c9-69e6-5901-8c15-88d5039f4b68
+  fixture_index:
+  - 64
+  - 75
+  bundle_id: com.lumen.room
+  window_title: Lumen Room — Priya Natarajan
+  frame_ids: [060ebe1a-22d7-5321-ab92-e633ffa3627f, c19d928d-6251-58ce-a90f-830a80622ad6, 63f6d5f0-ee7a-5584-b6e3-8ea8af8cce0d,
+    abcb0fa5-c028-5885-af99-dfe60993d115, 85bc9ad7-5491-50f2-81d3-326d143177b8, cd35f96c-010b-5e80-a6f1-1992e79b135b,
+    f44542f3-dfad-5c69-b56c-8ad2f3e54dc7, 3090aca2-62b3-58d2-8fcd-6ddecc52e5d7, 4ae6acfa-6b3a-5dee-95da-ccf5a0f81f00,
+    934d9eaa-b6c7-5e3e-ba4f-8f4ca3865b2c, 763656f0-055b-5ef7-875b-7ae62182d633, caa706c9-69e6-5901-8c15-88d5039f4b68]
+- start: '2026-11-04T13:20:00Z'
+  end: '2026-11-04T13:32:00Z'
+  start_frame: f1d7aebd-d2e4-5083-b502-1b966abd0582
+  end_frame: e4cf4582-46a6-5463-9152-fe8e385c0c38
+  fixture_index:
+  - 76
+  - 84
+  bundle_id: com.lumen.mail
+  window_title: Compose — Demo recap for Priya
+  frame_ids: [f1d7aebd-d2e4-5083-b502-1b966abd0582, deb31b3a-a0fb-5204-807c-52b50e2dc173, 6dc961c0-8d1b-5984-b8f6-0d75ef00ff12,
+    e84e55c1-c193-5b33-957b-4483bf6341bd, 18fa9da7-d2ee-5898-9fd5-a66a1b30e703, 0f9d8568-80b9-5789-ac3a-62ba079b386f,
+    100eecd8-16c0-5fb2-b89c-91b41a9c7728, fc7b3443-a39c-5f49-bbc1-5e138f548005, e4cf4582-46a6-5463-9152-fe8e385c0c38]
+- start: '2026-11-04T15:00:00Z'
+  end: '2026-11-04T15:18:00Z'
+  start_frame: 3b25f7ac-4233-5ab6-a4ec-a9811181b2ed
+  end_frame: 50b50198-51ba-57fc-8c01-f531f4d0fdb0
+  fixture_index:
+  - 85
+  - 96
+  bundle_id: com.lumen.room
+  window_title: Lumen Room — 1:1 Samira Cole
+  frame_ids: [3b25f7ac-4233-5ab6-a4ec-a9811181b2ed, 514d7da3-70a9-519e-97f6-225ab2fda24c, 9e610e65-00f5-570d-be7e-b2cc17bad392,
+    2bb5f8ab-6bc6-5506-a910-cc71833a962b, 8a5d09f7-0f5a-549f-9598-7d96dbedc070, b92c6d99-7617-5329-9f38-e4c5364ecba7,
+    b0fdf5c6-7a7b-53bc-a6b5-d60808688a15, 15d0d4ec-0575-5bbb-a790-6ef4b1854427, 514e0970-9eaa-5d61-a3c4-6b5ea613feae,
+    e0f47a74-86a6-5913-bb8b-cc8e890e2b0b, 5329b96d-af94-581e-97b1-c69e948330ac, 50b50198-51ba-57fc-8c01-f531f4d0fdb0]
+meta:
+  name: day_meeting_heavy
+  date: '2026-11-04'
+  seed: 11
+  frame_count: 96
+  first_frame: 1dc7f710-8e14-5d5c-92a2-ce7c210c7a6b
+  last_frame: 50b50198-51ba-57fc-8c01-f531f4d0fdb0

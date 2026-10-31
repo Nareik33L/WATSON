@@ -1,0 +1,109 @@
+{
+  "frame_id": "83805439-4482-5fda-b005-ce6e1f317a62",
+  "captured_at": "2026-11-05T10:14:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.compass",
+  "app_name": "Cedar Compass",
+  "window_title": "North Pier \u2014 Invoice checklist",
+  "window_id": 5402,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Compass \u2014 North Pier \u2014 Invoice checklist",
+        "bbox": [
+          66,
+          9,
+          370,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:14",
+        "bbox": [
+          1239,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North Pier",
+        "bbox": [
+          8,
+          42,
+          104,
+          75
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://intranet.cedar.example/north-pier/invoice",
+        "bbox": [
+          32,
+          84,
+          377,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Works \u00b7 intranet",
+        "bbox": [
+          40,
+          137,
+          1240,
+          158
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North Pier invoice checklist",
+        "bbox": [
+          40,
+          170,
+          1240,
+          204
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          40,
+          212,
+          1240,
+          231
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Checklist for the North Pier Civic invoice. Hours grid is the remaining item.",
+        "bbox": [
+          40,
+          246,
+          1240,
+          267
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "This page has no payment cards or one-time codes.",
+        "bbox": [
+          40,
+          297,
+          1240,
+          318
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "80ffffffffffffff",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

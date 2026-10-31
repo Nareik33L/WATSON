@@ -33,6 +33,7 @@ from watson.pipeline.frames import (
     ingest_pair,
 )
 from watson.pipeline.jobs import JobLeaseError, claim, complete, fail
+from watson.pipeline.segmentation import SegmentConfig, segment_extracted_frames
 from watson.privacy.audit import KIND_REPLAY, record_audit
 
 log = logging.getLogger("watson.pipeline.replay")
@@ -59,6 +60,7 @@ class ReplayResult:
     skipped_existing: int
     skipped_excluded: int
     deduped: int
+    segments: int
     finished_at: str
     instant: bool
     speed: float
@@ -183,6 +185,11 @@ def replay_fixture(
         extracted = _drain_extract_jobs(
             conn, fixture_dir=fixture, dedup_threshold=threshold
         )
+        segment_extracted_frames(
+            conn,
+            working_day_id=working_day_id,
+            config=_segment_config(),
+        )
         for pair in pairs:
             delete_and_verify(
                 conn,
@@ -223,6 +230,12 @@ def replay_fixture(
                 (working_day_id,),
             ).fetchone()[0]
         )
+        segments = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM segments WHERE working_day_id = ?",
+                (working_day_id,),
+            ).fetchone()[0]
+        )
         finished_at = iso_now()
         result = ReplayResult(
             fixture_name=name,
@@ -237,6 +250,7 @@ def replay_fixture(
             skipped_existing=skipped,
             skipped_excluded=skipped_excluded,
             deduped=deduped,
+            segments=segments,
             finished_at=finished_at,
             instant=instant,
             speed=speed,
@@ -253,6 +267,7 @@ def replay_fixture(
                 "deletion_verified": verified,
                 "skipped_excluded": skipped_excluded,
                 "deduped": deduped,
+                "segments": segments,
             },
         )
         return result
@@ -271,6 +286,12 @@ def _default_dedup_threshold() -> int:
     from watson.config import load_config
 
     return load_config().capture.dedup_threshold
+
+
+def _segment_config() -> SegmentConfig:
+    from watson.config import load_config
+
+    return SegmentConfig.from_settings(load_config().segmentation)
 
 
 def _pace(
@@ -328,6 +349,7 @@ def _store_last_replay(conn: sqlcipher.Connection, result: ReplayResult) -> None
         "deletion_verified": result.deletion_verified,
         "skipped_excluded": result.skipped_excluded,
         "deduped": result.deduped,
+        "segments": result.segments,
         "instant": result.instant,
         "speed": result.speed,
     }
@@ -352,6 +374,7 @@ def _store_last_replay(conn: sqlcipher.Connection, result: ReplayResult) -> None
             "deletion_verified": result.deletion_verified,
             "skipped_excluded": result.skipped_excluded,
             "deduped": result.deduped,
+            "segments": result.segments,
         },
         commit=False,
     )

@@ -189,6 +189,7 @@ def test_unknown_kind_is_rejected(data_dir: Path, key_provider: object) -> None:
                 "deletion_verified": 1,
                 "skipped_excluded": 0,
                 "deduped": 0,
+                "segments": 0,
             },
         ),
         (

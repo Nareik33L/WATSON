@@ -29,7 +29,7 @@ The `dev` group includes `fixturegen` so mypy and unit tests can import the pack
 
 ## Render a day
 
-Committed days: `day_acme_q4` (focused single-project) and `day_fragmented_multi` (three projects, frequent switches, lunch gap, mid-day idle, excluded private window).
+Committed days: `day_acme_q4` (focused single-project), `day_fragmented_multi` (three projects, frequent switches, lunch gap, mid-day idle, excluded private window), `day_meeting_heavy`, `day_sensitive_traps` (fake banking tab, fake password manager, planted card/secret/OTP), and `day_near_empty`.
 
 ```bash
 uv run watson-fixturegen render \
@@ -38,6 +38,15 @@ uv run watson-fixturegen render \
 uv run watson-fixturegen render \
   tools/fixture_gen/watson_fixturegen/scenarios/day_fragmented_multi.yaml \
   --out tests/fixtures/day_fragmented_multi
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_meeting_heavy.yaml \
+  --out tests/fixtures/day_meeting_heavy
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_sensitive_traps.yaml \
+  --out tests/fixtures/day_sensitive_traps
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_near_empty.yaml \
+  --out tests/fixtures/day_near_empty
 ```
 
 Same scenario + seed (default `meta.seed`) yields byte-identical sidecar **text** fields, `truth.yaml`, and `sample50.txt`. OCR `bbox` values may move by ±2 px and `phash` Hamming distance may be ≤ 4 across machines.
@@ -64,6 +73,15 @@ uv run watson-fixturegen render \
 uv run watson-fixturegen render \
   tools/fixture_gen/watson_fixturegen/scenarios/day_fragmented_multi.yaml \
   --out tests/fixtures/day_fragmented_multi
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_meeting_heavy.yaml \
+  --out tests/fixtures/day_meeting_heavy
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_sensitive_traps.yaml \
+  --out tests/fixtures/day_sensitive_traps
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_near_empty.yaml \
+  --out tests/fixtures/day_near_empty
 ```
 
 CI runs this check by default when `tools/fixture_gen` or `tests/fixtures` change (needs Chromium):

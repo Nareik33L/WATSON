@@ -1,0 +1,294 @@
+# Meeting-heavy day — Lumen Delivery spends most of the day in Lumen Room.
+# Fictional people, firms, and hosts only (*.example). Plan §11.1.
+
+meta:
+  name: day_meeting_heavy
+  date: "2026-11-04"
+  tz_offset: "+00:00"
+  seed: 11
+  display_id: 1
+  width: 1280
+  height: 800
+  description: Meeting-heavy day
+
+cadence:
+  default_seconds: 45
+  stretch_seconds: 120
+  tighten_seconds: 30
+  stretch_after_stable: 3
+
+windows:
+  standup:
+    template: videocall
+    bundle_id: com.lumen.room
+    app_name: Lumen Room
+    window_title: "Lumen Room — Delivery standup"
+    window_id: 4101
+  notes_standup:
+    template: document
+    bundle_id: com.lumen.quill
+    app_name: Lumen Quill
+    window_title: "Standup notes — 4 Nov"
+    window_id: 4201
+  harbor_call:
+    template: videocall
+    bundle_id: com.lumen.room
+    app_name: Lumen Room
+    window_title: "Lumen Room — Harbor planning"
+    window_id: 4102
+  harbor_doc:
+    template: document
+    bundle_id: com.lumen.quill
+    app_name: Lumen Quill
+    window_title: "Harbor planning — Notes"
+    window_id: 4202
+  chat_tom:
+    template: chat
+    bundle_id: com.lumen.relay
+    app_name: Lumen Relay
+    window_title: "Relay — Tom Ashworth"
+    window_id: 4301
+  acme_prep:
+    template: videocall
+    bundle_id: com.lumen.room
+    app_name: Lumen Room
+    window_title: "Lumen Room — Acme demo prep"
+    window_id: 4103
+  proposal:
+    template: document
+    bundle_id: com.lumen.quill
+    app_name: Lumen Quill
+    window_title: "Acme Q4 Proposal — Draft"
+    window_id: 4203
+  client_call:
+    template: videocall
+    bundle_id: com.lumen.room
+    app_name: Lumen Room
+    window_title: "Lumen Room — Priya Natarajan"
+    window_id: 4104
+  mail_priya:
+    template: mail
+    bundle_id: com.lumen.mail
+    app_name: Lumen Mail
+    window_title: "Compose — Demo recap for Priya"
+    window_id: 4401
+  one_to_one:
+    template: videocall
+    bundle_id: com.lumen.room
+    app_name: Lumen Room
+    window_title: "Lumen Room — 1:1 Samira Cole"
+    window_id: 4105
+
+timeline:
+  - window: standup
+    start: "09:00:00"
+    end: "09:12:00"
+    states:
+      - at: "09:00:00"
+        content:
+          meeting: Delivery standup
+          status: Live · 6 on the call
+          placeholder: Video tiles only. No transcript in V1.
+          participants:
+            - {name: You, caption: Host, speaking: true}
+            - {name: Tom Ashworth, caption: Delivery, speaking: false}
+            - {name: Samira Cole, caption: Design, speaking: false}
+            - {name: Ned Quinn, caption: Harbor, speaking: false}
+
+  - window: notes_standup
+    start: "09:12:00"
+    end: "09:22:00"
+    states:
+      - at: "09:12:00"
+        content:
+          filename: Standup-4-Nov.quill
+          title: Standup notes
+          subtitle: Lumen Delivery · 4 Nov
+          status: Draft
+          owner: you
+          current_section: 0
+          notes:
+            - Harbor walkthrough still Thursday
+            - Acme demo prep at 11:00
+          sections:
+            - heading: Decisions
+              paragraphs:
+                - "Keep the Harbor walkthrough on Thursday. Ned Quinn will bring the latch notes."
+                - "Acme demo prep stays at 11:00 with Tom Ashworth."
+            - heading: Open
+              paragraphs:
+                - "Samira Cole still owes the slide order. Not marked complete."
+
+  - window: harbor_call
+    start: "09:30:00"
+    end: "09:52:00"
+    states:
+      - at: "09:30:00"
+        content:
+          meeting: Harbor planning
+          status: Live · 4 on the call
+          placeholder: Video tiles only. Planning the Thursday walkthrough.
+          participants:
+            - {name: You, caption: Host, speaking: false}
+            - {name: Ned Quinn, caption: Harbor Line, speaking: true}
+            - {name: Tom Ashworth, caption: Delivery, speaking: false}
+            - {name: Ellis Voss, caption: Harbor Line, speaking: false}
+
+  - window: harbor_doc
+    start: "09:52:00"
+    end: "10:06:00"
+    states:
+      - at: "09:52:00"
+        content:
+          filename: Harbor-planning.quill
+          title: Harbor planning
+          subtitle: Notes after the live call
+          status: Draft
+          owner: you
+          current_section: 0
+          notes:
+            - Thursday walkthrough confirmed
+            - Checklist still due Wednesday
+          sections:
+            - heading: Agreed
+              paragraphs:
+                - "Harbor walkthrough remains Thursday. Ellis Voss will meet at the north berth."
+            - heading: Still open
+              paragraphs:
+                - "Life-ring mounts and the tide-gate latch stay on the checklist."
+
+  - window: chat_tom
+    start: "10:06:00"
+    end: "10:14:00"
+    states:
+      - at: "10:06:00"
+        content:
+          workspace: Lumen Delivery
+          room: Tom Ashworth
+          rooms: [Tom Ashworth, Samira Cole, Delivery desk]
+          topic: Acme demo prep
+          draft: ""
+          messages:
+            - author: Tom Ashworth
+              time: "10:06"
+              text: Standup was useful. Can we still do the Acme demo prep at 11:00?
+            - author: You
+              time: "10:08"
+              text: Yes. I will join the Lumen Room at 11:00.
+            - author: Tom Ashworth
+              time: "10:10"
+              text: Agreed. Bring the 14 Nov slide.
+
+  - window: acme_prep
+    start: "11:00:00"
+    end: "11:18:00"
+    states:
+      - at: "11:00:00"
+        content:
+          meeting: Acme demo prep
+          status: Live · 3 on the call
+          placeholder: Dry run for the 14 Nov Acme demo.
+          participants:
+            - {name: You, caption: Host, speaking: true}
+            - {name: Tom Ashworth, caption: Delivery, speaking: false}
+            - {name: Samira Cole, caption: Design, speaking: false}
+
+  - window: proposal
+    start: "11:18:00"
+    end: "11:32:00"
+    states:
+      - at: "11:18:00"
+        content:
+          filename: Acme-Q4-Proposal.quill
+          title: Acme Q4 Proposal
+          subtitle: Draft · demo prep notes pasted
+          status: Draft
+          owner: you
+          current_section: 1
+          notes:
+            - Demo still 14 Nov
+            - Slides not finished
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "How Lumen Delivery will run the Acme Q4 rollout for Priya Natarajan."
+            - heading: Demo
+              paragraphs:
+                - "Live demo stays 14 Nov. Prep call done this morning with Tom Ashworth."
+                - "Slide order is still a draft. The proposal is not complete."
+
+  - window: client_call
+    start: "13:00:00"
+    end: "13:20:00"
+    states:
+      - at: "13:00:00"
+        content:
+          meeting: Priya Natarajan
+          status: Live · 3 on the call
+          placeholder: Client call. Video tiles only.
+          participants:
+            - {name: You, caption: Host, speaking: false}
+            - {name: Priya Natarajan, caption: Acme, speaking: true}
+            - {name: Tom Ashworth, caption: Delivery, speaking: false}
+
+  - window: mail_priya
+    start: "13:20:00"
+    end: "13:34:00"
+    states:
+      - at: "13:20:00"
+        content:
+          account: you@lumen.example
+          folder: Drafts
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: true
+          messages:
+            - sender: You
+              email: you@lumen.example
+              subject: Recap of today's Acme call
+              time: "13:22"
+              preview: Draft to Priya Natarajan
+              body:
+                - "Priya —"
+                - "Thanks for the call. The live demo stays 14 Nov as agreed."
+                - "I will send the slide outline tomorrow. This recap is still a draft."
+
+  - window: one_to_one
+    start: "15:00:00"
+    end: "15:20:00"
+    states:
+      - at: "15:00:00"
+        content:
+          meeting: 1:1 Samira Cole
+          status: Live · 2 on the call
+          placeholder: Design 1:1. Video tiles only.
+          participants:
+            - {name: You, caption: Host, speaking: true}
+            - {name: Samira Cole, caption: Design, speaking: false}
+
+truth:
+  projects:
+    - Acme Q4 Proposal
+    - Harbor planning
+  people:
+    - Priya Natarajan (Acme)
+    - Tom Ashworth (Delivery)
+    - Samira Cole (Design)
+    - Ned Quinn (Harbor)
+    - Ellis Voss (Harbor Line)
+  decisions:
+    - text: Keep the Harbor walkthrough on Thursday
+      evidence_contains: "Keep the Harbor walkthrough on Thursday"
+    - text: Acme demo stays 14 Nov
+      evidence_contains: "The live demo stays 14 Nov as agreed"
+  commitments:
+    - text: Send Priya the slide outline tomorrow
+      status: open
+    - text: Samira Cole still owes the slide order
+      status: open
+  completed:
+    - Acme demo prep call
+  not_completed:
+    - Acme proposal (still a draft)
+    - Slide order (still a draft)
+  noise: []

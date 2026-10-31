@@ -1,0 +1,37 @@
+projects: []
+people: []
+decisions: []
+commitments: []
+completed: []
+not_completed: []
+noise: ['Pocket Calendar glance 14:00–14:05']
+expected_segments:
+- start: '2026-11-06T09:30:00Z'
+  end: '2026-11-06T09:36:00Z'
+  start_frame: fb9b7aa8-612e-5eb1-a042-a8e301208095
+  end_frame: c3bd5358-ce2e-5389-a86b-a1b8d1d568a2
+  fixture_index:
+  - 1
+  - 6
+  bundle_id: com.lumen.mail
+  window_title: Inbox — Lumen Desk
+  frame_ids: [fb9b7aa8-612e-5eb1-a042-a8e301208095, 93d33f8c-33cb-56ea-9f3c-17e262af9f93, 7ec5eeda-e4be-5c3a-83c4-b54e91965612,
+    b3290261-ff32-5f55-8809-899b8c0dcc20, 071a67d6-0d74-5557-8d7c-dcbc9047af44, c3bd5358-ce2e-5389-a86b-a1b8d1d568a2]
+- start: '2026-11-06T14:00:00Z'
+  end: '2026-11-06T14:04:00Z'
+  start_frame: 4229a1a2-a639-512c-b509-af8c28a432de
+  end_frame: e80dec57-9c02-5184-b06f-3ff7765ba8ec
+  fixture_index:
+  - 7
+  - 11
+  bundle_id: com.lumen.compass
+  window_title: Pocket Calendar — Today
+  frame_ids: [4229a1a2-a639-512c-b509-af8c28a432de, 1ccbad70-4da5-5fe2-bf53-7a11ebd7ab82, 40a295e8-39ab-55fc-a7a1-26044ddf5585,
+    a22b58b9-5111-5356-9ee2-d2daba59da86, e80dec57-9c02-5184-b06f-3ff7765ba8ec]
+meta:
+  name: day_near_empty
+  date: '2026-11-06'
+  seed: 17
+  frame_count: 11
+  first_frame: fb9b7aa8-612e-5eb1-a042-a8e301208095
+  last_frame: e80dec57-9c02-5184-b06f-3ff7765ba8ec

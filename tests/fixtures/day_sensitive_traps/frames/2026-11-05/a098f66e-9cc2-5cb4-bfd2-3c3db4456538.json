@@ -1,0 +1,199 @@
+{
+  "frame_id": "a098f66e-9cc2-5cb4-bfd2-3c3db4456538",
+  "captured_at": "2026-11-05T09:00:30Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.mail",
+  "app_name": "Cedar Mail",
+  "window_title": "Re: North Pier invoice \u2014 Mina Okonkwo",
+  "window_id": 5101,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Mail \u2014 Re: North Pier invoice \u2014 Mina Okonkwo",
+        "bbox": [
+          66,
+          9,
+          397,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:00",
+        "bbox": [
+          1234,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FOLDERS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Inbox",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Sent",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Drafts",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "ACCOUNT",
+        "bbox": [
+          14,
+          170,
+          205,
+          186
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "you@cedar.example",
+        "bbox": [
+          0,
+          194,
+          219,
+          227
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Mina Okonkwo",
+        "bbox": [
+          232,
+          46,
+          507,
+          67
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Re: North Pier invoice",
+        "bbox": [
+          232,
+          67,
+          507,
+          88
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "08:40 \u00b7 Can you send the hours grid today?",
+        "bbox": [
+          232,
+          88,
+          507,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Re: North Pier invoice",
+        "bbox": [
+          540,
+          52,
+          1260,
+          77
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "From: Mina Okonkwo <mina@northpier.example>",
+        "bbox": [
+          540,
+          85,
+          1260,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "To: you@cedar.example",
+        "bbox": [
+          540,
+          106,
+          1260,
+          127
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Time: 08:40",
+        "bbox": [
+          540,
+          127,
+          1260,
+          148
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hello \u2014",
+        "bbox": [
+          540,
+          162,
+          1260,
+          183
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Can you send the hours grid today? I need it before the Friday invoice run.",
+        "bbox": [
+          540,
+          191,
+          1260,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "\u2014 Mina Okonkwo, North Pier Civic",
+        "bbox": [
+          540,
+          220,
+          1260,
+          241
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "1f7f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

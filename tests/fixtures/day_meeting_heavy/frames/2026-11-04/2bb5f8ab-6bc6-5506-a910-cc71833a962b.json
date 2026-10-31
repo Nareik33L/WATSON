@@ -1,0 +1,109 @@
+{
+  "frame_id": "2bb5f8ab-6bc6-5506-a910-cc71833a962b",
+  "captured_at": "2026-11-04T15:02:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.room",
+  "app_name": "Lumen Room",
+  "window_title": "Lumen Room \u2014 1:1 Samira Cole",
+  "window_id": 4105,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Room \u2014 Lumen Room \u2014 1:1 Samira Cole",
+        "bbox": [
+          66,
+          9,
+          360,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:02",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "1:1 Samira Cole",
+        "bbox": [
+          14,
+          46,
+          106,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Live \u00b7 2 on the call",
+        "bbox": [
+          116,
+          46,
+          226,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          191,
+          230,
+          217,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Host",
+        "bbox": [
+          188,
+          251,
+          220,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Samira Cole",
+        "bbox": [
+          537,
+          230,
+          623,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Design",
+        "bbox": [
+          555,
+          251,
+          605,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Design 1:1. Video tiles only.",
+        "bbox": [
+          24,
+          338,
+          1256,
+          359
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "80f8f88000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

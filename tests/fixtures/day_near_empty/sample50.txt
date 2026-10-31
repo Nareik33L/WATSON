@@ -1,0 +1,12 @@
+# M0-A hand-scored quality sample (evenly spaced frame ids)
+fb9b7aa8-612e-5eb1-a042-a8e301208095
+93d33f8c-33cb-56ea-9f3c-17e262af9f93
+7ec5eeda-e4be-5c3a-83c4-b54e91965612
+b3290261-ff32-5f55-8809-899b8c0dcc20
+071a67d6-0d74-5557-8d7c-dcbc9047af44
+c3bd5358-ce2e-5389-a86b-a1b8d1d568a2
+4229a1a2-a639-512c-b509-af8c28a432de
+1ccbad70-4da5-5fe2-bf53-7a11ebd7ab82
+40a295e8-39ab-55fc-a7a1-26044ddf5585
+a22b58b9-5111-5356-9ee2-d2daba59da86
+e80dec57-9c02-5184-b06f-3ff7765ba8ec

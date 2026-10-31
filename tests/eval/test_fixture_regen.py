@@ -12,7 +12,13 @@ from watson_fixturegen.phash import hamming_distance
 from watson_fixturegen.render import render_scenario
 
 REPO = Path(__file__).resolve().parents[2]
-DAYS = ("day_acme_q4", "day_fragmented_multi")
+DAYS = (
+    "day_acme_q4",
+    "day_fragmented_multi",
+    "day_meeting_heavy",
+    "day_sensitive_traps",
+    "day_near_empty",
+)
 BBOX_TOLERANCE_PX = 2
 PHASH_HAMMING_MAX = 4
 TEXT_FIELDS = (

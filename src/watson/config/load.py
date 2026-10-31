@@ -117,6 +117,7 @@ def _defaults_for(data_dir: Path, config_path: Path) -> dict[str, Any]:
         "capture": {},
         "exclusions": {},
         "retention": {},
+        "segmentation": {},
     }
 
 
