@@ -2,9 +2,9 @@
 
 **Status:** Accepted (Ollama as V1.0 **dev** runtime); provisional (8 GB model defaults); remainder deferred  
 **Date:** 2026-10-31  
-**Decides:** Engineering plan §14 #1 for M0-A (dev runtime = Ollama) and §14 #2 (provisional 8 GB VLM / LLM / embedding defaults)  
+**Decides:** §14 #2 (provisional 8 GB VLM / LLM / embedding defaults). Partially decides §14 #1: V1.0 **dev** runtime is Ollama; the packaged llama.cpp-versus-MLX comparison is deferred to M3 (plan §14 #10).  
 **Related:** §0.1, §7.2, §11.2, §11.4, §14 #9, D2, D6, M0-A  
-**Evidence:** `docs/benchmarks/2026-10-31.md`, `tools/bench/results/8gb-20261031T143012Z/`  
+**Evidence:** `docs/benchmarks/2026-10-31.md`, `tools/bench/results/8gb-20261031T143012Z/` (`run.json` is the Mac dump; post-run notes are in `run.notes.json`)  
 **Owner of deferred items:** Watson Lead
 
 ## Decision
@@ -36,13 +36,13 @@ On the V1 machine (Apple M1, **8 GB**, macOS 14.5):
 | Per-model RSS (weights + worker, §11.4 worker peak RSS < 3 GB) | **Not measured.** The 56–62 MiB column is the Ollama Python client. | Watson Lead | **M3** | Client RSS is not worker RSS. |
 | 50 hand-scored fixture frames | **Not done.** This run used 5 sample frames. `scoring.csv` is blank. `tests/fixtures/day_acme_q4/sample50.txt` exists for the later pass. | Watson Lead | **M3** | §12 M0-A asked for 50 hand-scored frames; quality here is schema validity of 5 JSONs only. |
 | True §11.4 understanding < 20 s/**segment** | **Not measured.** Times below are a **per-frame proxy**. | Watson Lead | **M3** | Segment input is merged ≤20 min text plus retrieved context (§3.5). Prompt tokens were not recorded. |
-| Ollama version and model digests | **Not captured** on the original run. | Watson Lead | **M3** | Added as nulls on `run.json`; next bake-off must persist them. |
+| Ollama version and model digests | **Not captured** on the original run. | Watson Lead | **M3** | Recorded as nulls in `run.notes.json`, not in `run.json`. Next bake-off must persist them. |
 
 ## Evidence
 
 Hardware: macOS 14.5 / Apple M1 / 8 GB / arm64 / Python 3.12.16. Profile `8gb`. Five committed sample frames (`tools/bench/samples/frames`). All four Ollama candidates `ok`.
 
-Harness settings reconstructed from the committed adapter (not persisted by the Mac process): temperature **0**, `num_ctx` **8192**, `keep_alive` **5m**, LLM prompt `bench-understanding-v1`, VLM prompt `bench-vlm-v1`. Ollama version, model digests, and prompt-token counts were **not recorded**.
+Harness settings reconstructed from the committed adapter live in `run.notes.json` (not `run.json`): temperature **0**, `num_ctx` **8192**, `keep_alive` **5m**, LLM prompt `bench-understanding-v1`, VLM prompt `bench-vlm-v1`. Ollama version, model digests, and prompt-token counts were **not recorded**.
 
 ### Speed (per-frame proxy, not segment latency)
 

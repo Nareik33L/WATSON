@@ -1,0 +1,33 @@
+{
+  "note": "Post-run annotation. Does not alter measured fields in run.json.",
+  "run_json": "tools/bench/results/8gb-20261031T143012Z/run.json",
+  "paths_as_recorded": {
+    "frames_dir": "/Users/eversign/WATSON/tools/bench/samples/frames",
+    "scoring_csv": "/Users/eversign/WATSON/tools/bench/results/8gb-20261031T143012Z/scoring.csv"
+  },
+  "paths_repo_relative": {
+    "frames_dir": "tools/bench/samples/frames",
+    "scoring_csv": "tools/bench/results/8gb-20261031T143012Z/scoring.csv"
+  },
+  "harness_reconstructed_from_committed_adapter": {
+    "source": [
+      "tools/bench/watson_bench/adapters/ollama.py",
+      "tools/bench/watson_bench/prompts.py"
+    ],
+    "temperature": 0,
+    "num_ctx": 8192,
+    "keep_alive": "5m",
+    "llm_prompt_version": "bench-understanding-v1",
+    "vlm_prompt_version": "bench-vlm-v1"
+  },
+  "not_captured_on_the_mac_run": {
+    "ollama_version": null,
+    "model_digests": {
+      "nomic-embed-text": null,
+      "llama3.2:3b": null,
+      "qwen2.5:3b": null,
+      "qwen2.5vl:3b": null
+    },
+    "prompt_tokens": null
+  }
+}
