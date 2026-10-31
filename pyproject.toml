@@ -14,6 +14,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "jsonschema>=4.23",
     "keyring>=25.0",
+    "pillow>=13.0",
     "pydantic>=2.10",
     "python-multipart>=0.0.32",
     "sqlalchemy>=2.0",
@@ -129,7 +130,7 @@ follow_imports = "skip"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["sqlcipher3", "sqlcipher3.*", "sqlite_vec"]
+module = ["sqlcipher3", "sqlcipher3.*", "sqlite_vec", "PIL", "PIL.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

@@ -23,6 +23,7 @@ KIND_DELETED = "frame_deleted"
 KIND_VERIFIED = "frame_deletion_verified"
 KIND_DELETE_FAILED = "frame_deletion_failed"
 KIND_SKIPPED = "frame_skipped"
+KIND_DEDUPED = "frame_deduped"
 KIND_REPLAY = "replay_completed"
 
 # Closed sets for enum-like audit values. ``error`` is an error-class code,
@@ -49,6 +50,9 @@ _COUNT_KEY_STEMS = frozenset(
         "deleted",
         "deletionverified",
         "skippedexcluded",
+        "deduped",
+        "distance",
+        "threshold",
         "png",
         "sidecar",
     }
@@ -61,6 +65,7 @@ _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
     KIND_VERIFIED: frozenset({"frameid"}),
     KIND_DELETE_FAILED: frozenset({"frameid", "error", "reason", "scope"}),
     KIND_SKIPPED: frozenset({"reason"}),
+    KIND_DEDUPED: frozenset({"frameid", "previousframeid", "distance", "threshold"}),
     KIND_REPLAY: frozenset(
         {
             "fixture",
@@ -70,6 +75,7 @@ _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
             "deleted",
             "deletionverified",
             "skippedexcluded",
+            "deduped",
         }
     ),
 }

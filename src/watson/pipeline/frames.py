@@ -16,9 +16,19 @@ from watson.capture.spool import SpoolPair, assert_not_fixture_file, sha256_file
 from watson.config.schema import ExclusionsConfig
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
+from watson.pipeline.dedup import (
+    DEFAULT_DEDUP_THRESHOLD,
+    DedupDecision,
+    DedupError,
+    FrameHashes,
+    decide_duplicate,
+    hash_png,
+)
 from watson.pipeline.jobs import enqueue
+from watson.pipeline.redaction import redact_ocr_text
 from watson.privacy.audit import (
     ERROR_STILL_PRESENT,
+    KIND_DEDUPED,
     KIND_DELETE_FAILED,
     KIND_DELETED,
     KIND_INGESTED,
@@ -203,12 +213,14 @@ def extract_fixture_stub(
     job_payload: dict[str, Any],
     *,
     fixture_dir: Path,
-) -> None:
-    """Record sidecar OCR as fixture-only ``frame_text``, then delete spool files.
+    dedup_threshold: int = DEFAULT_DEDUP_THRESHOLD,
+) -> DedupDecision | None:
+    """Redact sidecar OCR, hash the PNG, persist tier-2 text, then delete spool files.
 
-    This is not a real extractor. It exists so M1 can exercise D4 on golden
-    fixtures before Apple Vision / VLM land in M2. Sidecar JSON is Tier 0
-    (raw OCR) and is removed with the PNG once extraction is persisted.
+    Sidecar JSON is Tier 0 (raw OCR) and is removed with the PNG once extraction
+    is persisted. Redaction runs before any ``frame_text`` write. pHash/dHash
+    are taken from the spool PNG before deletion; a near-duplicate of the
+    previous consecutive frame is audited with ids/counts only.
     """
     if not job_payload.get("fixture_only"):
         raise FrameError("M1 extract stub only accepts fixture_only jobs")
@@ -224,46 +236,65 @@ def extract_fixture_stub(
 
     lines = list(sidecar["ocr"]["lines"])
     ocr_joined = "\n".join(str(line["text"]) for line in lines)
+    text_redacted = redact_ocr_text(ocr_joined)
     confidences = [float(line["confidence"]) for line in lines]
     ocr_confidence = (sum(confidences) / len(confidences)) if confidences else None
-    ocr_sha256 = hashlib.sha256(ocr_joined.encode("utf-8")).hexdigest()
+    ocr_sha256 = hashlib.sha256(text_redacted.encode("utf-8")).hexdigest()
     stamp = iso_now()
 
+    try:
+        hashes = hash_png(png_path)
+    except DedupError as exc:
+        raise FrameError(f"extract hash failed for frame {frame_id}") from exc
+
+    decision: DedupDecision | None = None
     existing_text = conn.execute(
         "SELECT id FROM frame_text WHERE frame_id = ?", (frame_id,)
     ).fetchone()
-    if existing_text is None:
-        captured_at = datetime.fromisoformat(str(sidecar["captured_at"]).replace("Z", "+00:00"))
-        expires_at = iso_now(captured_at.astimezone(UTC) + timedelta(days=7))
+    try:
+        if existing_text is None:
+            captured_at = datetime.fromisoformat(str(sidecar["captured_at"]).replace("Z", "+00:00"))
+            expires_at = iso_now(captured_at.astimezone(UTC) + timedelta(days=7))
+            conn.execute(
+                """
+                INSERT INTO frame_text (
+                    id, created_at, updated_at, frame_id, text_redacted,
+                    ocr_confidence, expires_at, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id(),
+                    stamp,
+                    stamp,
+                    frame_id,
+                    text_redacted,
+                    ocr_confidence,
+                    expires_at,
+                    FIXTURE_TEXT_SOURCE,
+                ),
+            )
+            decision = _record_dedup(
+                conn,
+                frame_id,
+                hashes,
+                threshold=dedup_threshold,
+                stamp=stamp,
+            )
         conn.execute(
             """
-            INSERT INTO frame_text (
-                id, created_at, updated_at, frame_id, text_redacted,
-                ocr_confidence, expires_at, source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            UPDATE frames
+            SET state = CASE WHEN state = 'captured' THEN 'extracted' ELSE state END,
+                phash = ?,
+                dhash = COALESCE(dhash, ?),
+                updated_at = ?
+            WHERE id = ? AND state IN ('captured', 'extracted')
             """,
-            (
-                new_id(),
-                stamp,
-                stamp,
-                frame_id,
-                ocr_joined,
-                ocr_confidence,
-                expires_at,
-                FIXTURE_TEXT_SOURCE,
-            ),
+            (hashes.phash, hashes.dhash, stamp, frame_id),
         )
-
-    conn.execute(
-        """
-        UPDATE frames
-        SET state = CASE WHEN state = 'captured' THEN 'extracted' ELSE state END,
-            updated_at = ?
-        WHERE id = ? AND state IN ('captured', 'extracted')
-        """,
-        (stamp, frame_id),
-    )
-    conn.commit()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     log.info(
         "fixture extract stub wrote frame_text",
         extra={
@@ -271,6 +302,9 @@ def extract_fixture_stub(
             "source": FIXTURE_TEXT_SOURCE,
             "ocr_sha256": ocr_sha256,
             "ocr_line_count": len(lines),
+            "phash": hashes.phash,
+            "dhash": hashes.dhash,
+            "deduped": int(decision.duplicate) if decision is not None else 0,
         },
     )
     delete_and_verify(
@@ -280,6 +314,86 @@ def extract_fixture_stub(
         fixture_dir=fixture_dir,
         sidecar_path=sidecar_path,
     )
+    return decision
+
+
+def _record_dedup(
+    conn: sqlcipher.Connection,
+    frame_id: str,
+    hashes: FrameHashes,
+    *,
+    threshold: int,
+    stamp: str,
+) -> DedupDecision | None:
+    """Compare to the previous consecutive frame; audit a hit with ids/counts only."""
+    previous = conn.execute(
+        """
+        SELECT id, phash, dhash
+        FROM frames
+        WHERE working_day_id = (SELECT working_day_id FROM frames WHERE id = ?)
+          AND captured_at < (SELECT captured_at FROM frames WHERE id = ?)
+          AND state IN ('extracted', 'deleted')
+        ORDER BY captured_at DESC, id DESC
+        LIMIT 1
+        """,
+        (frame_id, frame_id),
+    ).fetchone()
+    conn.execute(
+        """
+        UPDATE frames
+        SET phash = ?, dhash = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (hashes.phash, hashes.dhash, stamp, frame_id),
+    )
+    if previous is None or previous["phash"] is None or previous["dhash"] is None:
+        return None
+    decision = decide_duplicate(
+        hashes,
+        FrameHashes(phash=str(previous["phash"]), dhash=str(previous["dhash"])),
+        frame_id=frame_id,
+        previous_frame_id=str(previous["id"]),
+        threshold=threshold,
+    )
+    if not decision.duplicate:
+        return decision
+    conn.execute(
+        """
+        UPDATE frames
+        SET duplicate_of = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (decision.previous_frame_id, stamp, frame_id),
+    )
+    conn.execute(
+        """
+        UPDATE frames
+        SET duplicate_count = duplicate_count + 1, updated_at = ?
+        WHERE id = ?
+        """,
+        (stamp, decision.previous_frame_id),
+    )
+    record_audit(
+        conn,
+        kind=KIND_DEDUPED,
+        detail={
+            "frame_id": decision.frame_id,
+            "previous_frame_id": decision.previous_frame_id,
+            "distance": decision.distance,
+            "threshold": decision.threshold,
+        },
+        commit=False,
+    )
+    log.info(
+        "near-duplicate frame",
+        extra={
+            "frame_id": decision.frame_id,
+            "previous_frame_id": decision.previous_frame_id,
+            "distance": decision.distance,
+            "threshold": decision.threshold,
+        },
+    )
+    return decision
 
 
 def delete_and_verify(

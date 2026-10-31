@@ -69,6 +69,12 @@ class CaptureConfig(_StrictModel):
     interval_seconds: int = Field(default=45, ge=5, le=600)
     interval_min_seconds: int = Field(default=30, ge=5, le=600)
     interval_max_seconds: int = Field(default=120, ge=5, le=3600)
+    dedup_threshold: int = Field(
+        default=4,
+        ge=0,
+        le=64,
+        description="Hamming distance at or below which consecutive frames are near-duplicates.",
+    )
 
 
 def _clean_ids(value: object) -> tuple[str, ...]:

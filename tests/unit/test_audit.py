@@ -15,6 +15,7 @@ from watson.privacy.audit import (
     ERROR_PERMISSION,
     ERROR_STILL_PRESENT,
     ERROR_UNLINK_FAILED,
+    KIND_DEDUPED,
     KIND_DELETE_FAILED,
     KIND_DELETED,
     KIND_INGESTED,
@@ -111,6 +112,28 @@ def test_skipped_audit_rejects_content_key_variants(
         conn.close()
 
 
+def test_deduped_audit_rejects_hash_and_content_keys(
+    data_dir: Path, key_provider: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="not allowed|content"):
+            record_audit(
+                conn,
+                kind=KIND_DEDUPED,
+                detail={
+                    "frame_id": SAMPLE_FRAME_ID,
+                    "previous_frame_id": "22222222-2222-4222-8222-222222222222",
+                    "distance": 0,
+                    "threshold": 4,
+                    "phash": "0123456789abcdef",
+                },
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
 def test_skipped_audit_rejects_unknown_key(data_dir: Path, key_provider: object) -> None:
     conn = open_test_db(data_dir)
     try:
@@ -165,6 +188,16 @@ def test_unknown_kind_is_rejected(data_dir: Path, key_provider: object) -> None:
                 "deleted": 1,
                 "deletion_verified": 1,
                 "skipped_excluded": 0,
+                "deduped": 0,
+            },
+        ),
+        (
+            KIND_DEDUPED,
+            {
+                "frame_id": SAMPLE_FRAME_ID,
+                "previous_frame_id": "22222222-2222-4222-8222-222222222222",
+                "distance": 2,
+                "threshold": 4,
             },
         ),
     ],
