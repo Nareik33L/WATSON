@@ -17,7 +17,8 @@ helper/
 ├── Sources/watson-capture-cli/   main.swift
 ├── Tests/WatsonCaptureTests/     protocol, sidecar, filters, selftest, permissions
 └── scripts/                      build.sh, sign.sh, check-tcc.sh, cleanup-spool.sh,
-                                  test-cleanup-spool.sh, test-clt-overlay.sh
+                                  test-cleanup-spool.sh, test-clt-overlay.sh,
+                                  ci-clt-overlay-e2e.sh
 ```
 
 CI (macos-15, Xcode 16.2: both `swiftc` and SwiftPM builds + unit tests + `--selftest` on the swiftc binary) runs only when this directory changes. Live ScreenCaptureKit and the TCC grant are **Mac-only**; this runbook is what the person at the Mac executes.
@@ -391,7 +392,9 @@ On the development Mac (Command Line Tools 16.2, Swift 6.0.3, no full Xcode) the
 
 Cause: a stale August 2023 `/Library/Developer/CommandLineTools/usr/include/swift/module.modulemap` redefines `SwiftBridging`, and `bridging.modulemap` (December 2024) defines it again.
 
-`scripts/build.sh` detects that pair (both files present, and `module.modulemap` contains `SwiftBridging`), writes an empty modulemap plus a clang VFS overlay under `helper/.build/` (absolute paths, `version: 0` / `roots`), and passes `-vfsoverlay` / `-Xcc -ivfsoverlay` to `swiftc`. The `--spm` path gets the same overlay via `-Xswiftc -vfsoverlay` and `-Xcc -ivfsoverlay`. It prints one line: `CLT SwiftBridging overlay applied: …`. Pass `--no-clt-overlay` to turn this off.
+`scripts/build.sh` detects that pair (both files present, and `module.modulemap` has a `module SwiftBridging` declaration — not just the word in a comment), writes an **empty** modulemap plus a clang VFS overlay under `helper/.build/` (absolute paths, `version: 0` / `roots`), and passes `-vfsoverlay` / `-Xcc -ivfsoverlay` to `swiftc`. The empty file hides the **entire** stale `module.modulemap`, not only the SwiftBridging entry. The `--spm` path gets the same overlay via `-Xswiftc -vfsoverlay` and `-Xcc -ivfsoverlay`. It prints one line: `CLT SwiftBridging overlay applied: …` and echoes `swiftc-argv:` / `swift-build-argv:` so CI can see the flags. Pass `--no-clt-overlay` to turn this off.
+
+`WATSON_CLT_ROOT` is a **test-only** override (honoured only when `CI` is set) that points detection at a fake tree so the overlay remaps that path and never the real SDK. Do not set it on the development Mac. macos-15 CI runs `build.sh` end-to-end with a fake root for swiftc, `--spm`, and `--no-clt-overlay`.
 
 Alternative if you prefer to fix the toolchain instead: move the stale file aside (needs sudo) and keep using `--no-clt-overlay`:
 

@@ -23,7 +23,15 @@ CLT_OVERLAY_FILE=""
 # which bridging.modulemap (Dec 2024) also defines. That breaks
 # `could not build module 'Foundation'` via CoreAudio CATapDescription.h.
 # Workaround: clang VFS overlay mapping the stale file to an empty modulemap.
-# WATSON_CLT_ROOT overrides the detection root (CI overlay test only).
+# The empty file hides the *whole* stale module.modulemap (every module in
+# that file), not only SwiftBridging. bridging.modulemap is left as-is.
+# WATSON_CLT_ROOT is test-only: honoured only when CI is set (GitHub Actions
+# or CI=1). It must point at a fake tree so the overlay never remaps the
+# real SDK.
+
+_abs_norm() {
+  python3 -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).expanduser().resolve())' "$1"
+}
 
 _abs_existing() {
   local p="$1"
@@ -32,19 +40,21 @@ _abs_existing() {
   elif [[ -e "$p" ]]; then
     echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
   else
-    if [[ "$p" == /* ]]; then
-      printf '%s\n' "$p"
-    else
-      printf '%s\n' "$(pwd)/$p"
-    fi
+    _abs_norm "$p"
   fi
 }
 
 resolve_clt_root() {
   local raw=""
   if [[ -n "${WATSON_CLT_ROOT:-}" ]]; then
-    raw="$WATSON_CLT_ROOT"
-  elif command -v xcode-select >/dev/null 2>&1; then
+    if [[ -z "${CI:-}" ]]; then
+      echo "warning: WATSON_CLT_ROOT is test-only and ignored unless CI is set" >&2
+    else
+      echo "warning: WATSON_CLT_ROOT is a test-only override; overlay maps only that fake tree" >&2
+      raw="$WATSON_CLT_ROOT"
+    fi
+  fi
+  if [[ -z "$raw" ]] && command -v xcode-select >/dev/null 2>&1; then
     raw="$(xcode-select -p 2>/dev/null || true)"
   fi
   if [[ -z "$raw" ]]; then
@@ -60,20 +70,18 @@ clt_has_stale_swiftbridging() {
   if [[ ! -f "$mm" || ! -f "$bm" ]]; then
     return 1
   fi
-  grep -q 'SwiftBridging' "$mm"
+  # Require a module declaration, not a comment that mentions SwiftBridging.
+  grep -Eq '^[[:space:]]*module[[:space:]]+SwiftBridging' "$mm"
 }
 
 _assert_under_build_dir() {
   local dest="$1"
   local build="$ROOT/.build"
   mkdir -p "$build"
-  local abs_build
-  abs_build="$(cd "$build" && pwd)"
-  if [[ "$dest" != /* ]]; then
-    dest="$(pwd)/$dest"
-  fi
-  dest="${dest%/}"
-  case "$dest" in
+  local abs_build abs_dest
+  abs_build="$(_abs_norm "$build")"
+  abs_dest="$(_abs_norm "$dest")"
+  case "$abs_dest" in
     "$abs_build"|"$abs_build"/*) ;;
     *)
       echo "refusing to write CLT overlay outside $abs_build" >&2
@@ -92,20 +100,28 @@ write_clt_overlay() {
   swift_inc="$(_abs_existing "$root/usr/include/swift")"
   empty="$dest/empty.modulemap"
   ov="$dest/overlay.yaml"
-  # Empty on purpose: hide the stale SwiftBridging redefinition.
+  # Empty on purpose: hide the entire stale module.modulemap.
   : > "$empty"
   empty="$(_abs_existing "$empty")"
   ov="$(_abs_existing "$ov")"
-  cat > "$ov" <<EOF
-version: 0
-roots:
-  - type: directory
-    name: "${swift_inc}"
-    contents:
-      - type: file
-        name: module.modulemap
-        external-contents: "${empty}"
-EOF
+  python3 - "$ov" "$swift_inc" "$empty" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+ov, swift_inc, empty = sys.argv[1], sys.argv[2], sys.argv[3]
+Path(ov).write_text(
+    "version: 0\n"
+    "roots:\n"
+    "  - type: directory\n"
+    f"    name: {json.dumps(swift_inc)}\n"
+    "    contents:\n"
+    "      - type: file\n"
+    "        name: module.modulemap\n"
+    f"        external-contents: {json.dumps(empty)}\n",
+    encoding="utf-8",
+)
+PY
   CLT_OVERLAY_FILE="$ov"
 }
 
@@ -152,6 +168,9 @@ writes a clang VFS overlay under helper/.build and passes
 
 Environment:
   WATSON_CODESIGN_IDENTITY   codesign identity (default: WATSON Dev)
+  WATSON_CLT_ROOT            test-only fake CLT/SDK root. Honoured only when
+                             CI is set. Overlay maps that fake tree, not the
+                             real SDK. Do not set this on the development Mac.
 
 The Info.plist (CFBundleIdentifier com.watson.capture) is embedded in __TEXT,__info_plist.
 EOF
@@ -249,25 +268,48 @@ verify_binary() {
 }
 
 # Overlay flags last so empty-array `set -u` on bash 3.2 is never an issue.
+# Echo the argv so CI can assert -vfsoverlay / -ivfsoverlay were (or were not) passed.
+_echo_argv() {
+  local label="$1"
+  shift
+  local buf="$label"
+  local a
+  for a in "$@"; do
+    buf+=" $(printf '%q' "$a")"
+  done
+  echo "$buf"
+}
+
 run_swiftc() {
   if [[ -n "${CLT_OVERLAY_FILE:-}" ]]; then
+    _echo_argv "swiftc-argv:" "$@" \
+      -vfsoverlay "$CLT_OVERLAY_FILE" \
+      -Xcc -ivfsoverlay \
+      -Xcc "$CLT_OVERLAY_FILE"
     swiftc "$@" \
       -vfsoverlay "$CLT_OVERLAY_FILE" \
       -Xcc -ivfsoverlay \
       -Xcc "$CLT_OVERLAY_FILE"
   else
+    _echo_argv "swiftc-argv:" "$@"
     swiftc "$@"
   fi
 }
 
 run_swift_build() {
   if [[ -n "${CLT_OVERLAY_FILE:-}" ]]; then
+    _echo_argv "swift-build-argv:" "$@" \
+      -Xswiftc -vfsoverlay \
+      -Xswiftc "$CLT_OVERLAY_FILE" \
+      -Xcc -ivfsoverlay \
+      -Xcc "$CLT_OVERLAY_FILE"
     swift build "$@" \
       -Xswiftc -vfsoverlay \
       -Xswiftc "$CLT_OVERLAY_FILE" \
       -Xcc -ivfsoverlay \
       -Xcc "$CLT_OVERLAY_FILE"
   else
+    _echo_argv "swift-build-argv:" "$@"
     swift build "$@"
   fi
 }

@@ -158,3 +158,14 @@ jobs:
           helper/scripts/compare-embedded-identity.sh
           /tmp/watson-capture-ci/watson-capture-swiftc
           /tmp/watson-capture-ci/watson-capture-spm
+
+      # After the no-overlay compare so these do not disturb those binaries.
+      # Fake WATSON_CLT_ROOT remaps only /tmp/watson-ci-fake-clt, not the SDK.
+      - name: Overlay e2e — swiftc + fake WATSON_CLT_ROOT
+        run: helper/scripts/ci-clt-overlay-e2e.sh swiftc
+
+      - name: Overlay e2e — SwiftPM + fake WATSON_CLT_ROOT
+        run: helper/scripts/ci-clt-overlay-e2e.sh spm
+
+      - name: Overlay e2e — --no-clt-overlay + fake WATSON_CLT_ROOT
+        run: helper/scripts/ci-clt-overlay-e2e.sh no-overlay

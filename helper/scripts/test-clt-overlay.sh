@@ -5,6 +5,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# WATSON_CLT_ROOT is ignored unless CI is set (test-only override).
+export CI=1
 # shellcheck source=build.sh
 source "$ROOT/scripts/build.sh"
 
@@ -169,17 +171,36 @@ else
   echo "ok: --no-clt-overlay / CLT_OVERLAY=0 skips overlay"
 fi
 
-# (3) both files but module.modulemap does not define SwiftBridging
+# (3) both files but module.modulemap does not declare module SwiftBridging
 reset_state
 make_fake_clt "$FAKE" 0
+printf '%s\n' '// leftover SwiftBridging text in a comment' >> "$FAKE/usr/include/swift/module.modulemap"
 export WATSON_CLT_ROOT="$FAKE"
 mkdir -p "$TEST_DEST"
 prepare_clt_overlay_if_needed "$TEST_DEST/overlay" > "$TEST_DEST/prepare.log"
 out="$(cat "$TEST_DEST/prepare.log")"
 if [[ "$out" == *"overlay applied"* || -n "$CLT_OVERLAY_FILE" ]]; then
-  fail "overlay applied without SwiftBridging in module.modulemap: $out"
+  fail "overlay applied without 'module SwiftBridging' (comment-only mention): $out"
 else
-  echo "ok: no overlay when module.modulemap lacks SwiftBridging"
+  echo "ok: no overlay when module.modulemap lacks a SwiftBridging module declaration"
+fi
+
+# (3b) WATSON_CLT_ROOT ignored unless CI is set
+reset_state
+make_fake_clt "$FAKE" 1
+export WATSON_CLT_ROOT="$FAKE"
+unset CI
+mkdir -p "$TEST_DEST"
+prepare_clt_overlay_if_needed "$TEST_DEST/overlay" > "$TEST_DEST/prepare.log" 2>"$TEST_DEST/prepare.err"
+out="$(cat "$TEST_DEST/prepare.log")"
+err="$(cat "$TEST_DEST/prepare.err")"
+export CI=1
+if [[ "$out" == *"overlay applied"* || -n "$CLT_OVERLAY_FILE" ]]; then
+  fail "WATSON_CLT_ROOT applied overlay with CI unset: $out"
+elif [[ "$err" != *"ignored unless CI is set"* ]]; then
+  fail "expected ignore warning without CI, got: $err"
+else
+  echo "ok: WATSON_CLT_ROOT ignored unless CI is set"
 fi
 
 # (4) missing bridging.modulemap
@@ -212,6 +233,85 @@ else
   echo "ok: refuse dest outside helper/.build (exit=$outside_rc)"
 fi
 rm -rf /tmp/watson-clt-overlay-escape
+
+# (6) textual .build prefix must not allow ../ escape
+reset_state
+make_fake_clt "$FAKE" 1
+export WATSON_CLT_ROOT="$FAKE"
+set +e
+dotdot_out="$(write_clt_overlay "$FAKE" "$ROOT/.build/../escape-overlay" 2>&1)"
+dotdot_rc=$?
+set -e
+if [[ "$dotdot_rc" -eq 0 ]]; then
+  fail "write_clt_overlay allowed \$ROOT/.build/../ escape"
+elif [[ -e "$ROOT/escape-overlay" ]]; then
+  fail "dotdot escape created $ROOT/escape-overlay"
+  rm -rf "$ROOT/escape-overlay"
+else
+  echo "ok: refuse \$ROOT/.build/../ dest (exit=$dotdot_rc)"
+fi
+
+# (7) optional clang two-modulemap repro (macos-15 / any clang with modules)
+if command -v clang >/dev/null 2>&1; then
+  reset_state
+  CLANG_CLT="$TEST_DEST/clang-clt"
+  SWIFT_INC="$CLANG_CLT/usr/include/swift"
+  mkdir -p "$SWIFT_INC"
+  cat > "$SWIFT_INC/bridging.h" <<'EOF'
+#ifndef WATSON_BRIDGING_H
+#define WATSON_BRIDGING_H
+static inline int watson_bridging(void) { return 1; }
+#endif
+EOF
+  cat > "$SWIFT_INC/module.modulemap" <<'EOF'
+module SwiftBridging {
+  header "bridging.h"
+  export *
+}
+EOF
+  cat > "$SWIFT_INC/bridging.modulemap" <<'EOF'
+module SwiftBridging {
+  header "bridging.h"
+  export *
+}
+EOF
+  cat > "$SWIFT_INC/use.m" <<'EOF'
+@import SwiftBridging;
+int main(void) { return watson_bridging() == 1 ? 0 : 1; }
+EOF
+  export WATSON_CLT_ROOT="$CLANG_CLT"
+  write_clt_overlay "$CLANG_CLT" "$TEST_DEST/clang-overlay"
+  SWIFT_INC="$CLANG_CLT/usr/include/swift"
+  CACHE="$TEST_DEST/clang-cache"
+  mkdir -p "$CACHE"
+  set +e
+  clang -fmodules -fimplicit-module-maps \
+    -fmodules-cache-path="$CACHE/no-overlay" \
+    -fmodule-map-file="$SWIFT_INC/module.modulemap" \
+    -fmodule-map-file="$SWIFT_INC/bridging.modulemap" \
+    -I "$SWIFT_INC" \
+    -c "$SWIFT_INC/use.m" -o "$CACHE/use-no.o" >/tmp/watson-clang-no.log 2>&1
+  clang_no=$?
+  clang -fmodules -fimplicit-module-maps \
+    -fmodules-cache-path="$CACHE/overlay" \
+    -ivfsoverlay "$CLT_OVERLAY_FILE" \
+    -fmodule-map-file="$SWIFT_INC/module.modulemap" \
+    -fmodule-map-file="$SWIFT_INC/bridging.modulemap" \
+    -I "$SWIFT_INC" \
+    -c "$SWIFT_INC/use.m" -o "$CACHE/use-yes.o" >/tmp/watson-clang-yes.log 2>&1
+  clang_yes=$?
+  set -e
+  if [[ "$clang_no" -eq 0 ]]; then
+    echo "skip: clang did not reject dual SwiftBridging modulemaps"
+  elif [[ "$clang_yes" -ne 0 ]]; then
+    echo "skip: clang overlay compile failed (non-blocking repro):" >&2
+    cat /tmp/watson-clang-yes.log >&2 || true
+  else
+    echo "ok: clang rejects dual SwiftBridging maps and accepts the VFS overlay"
+  fi
+else
+  echo "skip: clang not on PATH (optional two-modulemap repro)"
+fi
 
 cleanup
 unset WATSON_CLT_ROOT
