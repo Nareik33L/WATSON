@@ -16,12 +16,12 @@ uv run mypy src/watson
 uv run pytest
 ```
 
-The M0-B capture helper (`watson-capture`) lives in [`helper/`](helper/README.md). It is SwiftPM-only (no Xcode project), macOS 14+, and builds with Command Line Tools. The Mac runbook — build, sign as `WATSON Dev`, first-run Screen Recording grant, 1-hour CPU, two-rebuild TCC check — is in that README.
+The M0-B capture helper (`watson-capture`) lives in [`helper/`](helper/README.md). It is macOS 14+ and builds with Command Line Tools via `swiftc` (SwiftPM is `--spm` opt-in; CLT 16.2 cannot load `Package.swift`). The Mac runbook — build, sign as `WATSON Dev`, first-run Screen Recording grant, 1-hour CPU, two-rebuild TCC check — is in that README.
 
 ```bash
-cd helper && swift build && swift test
-# signed Mac build (requires the WATSON Dev identity; see helper/README.md):
 helper/scripts/build.sh
+# SwiftPM + unit tests (CI / Xcode):
+#   helper/scripts/build.sh --spm && cd helper && swift test
 ```
 
 The M0-A model bake-off lives in [`tools/bench/`](tools/bench/README.md). On the 8 GB development Mac:

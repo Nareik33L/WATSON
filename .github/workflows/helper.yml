@@ -15,18 +15,18 @@ permissions:
 
 # macos-15 minutes are costly on a private repo. This workflow is the only
 # macOS job and it starts only when helper/ (or this file) changes.
-# No ScreenCaptureKit: build, unit tests, and --selftest only.
+# No ScreenCaptureKit: both build paths, unit tests, and --selftest only.
 # GitHub retired macos-14 images (brownout / 2026-11-02 sunset).
 
 jobs:
   helper:
-    name: swift build + tests
+    name: swiftc + SwiftPM + tests
     runs-on: macos-15
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Swift toolchain
+      - name: Pin Xcode 16.2
         working-directory: helper
         run: |
           # Package.swift is swift-tools-version 6.0 (dev Mac is 6.0.3 / CLT).
@@ -34,13 +34,19 @@ jobs:
           # (Swift 6.0.0): `ls | sort` ranks it after 16.2 and that compiler
           # rejects NSRunningApplication as non-Sendable.
           if [ -d /Applications/Xcode_16.2.app ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
           elif ls -d /Applications/Xcode_16.*.app >/dev/null 2>&1; then
             newest="$(ls -d /Applications/Xcode_16.*.app | sort -V | tail -n 1)"
             sudo xcode-select -s "$newest"
+          else
+            echo "Xcode 16.2+ not found" >&2
+            ls -d /Applications/Xcode*.app 2>/dev/null || true
+            exit 1
           fi
           xcode-select -p
+          xcodebuild -version
           swift --version
+          swiftc --version
           sw_vers
 
       - name: No network APIs in the helper
@@ -54,17 +60,84 @@ jobs:
             exit 1
           fi
 
-      - name: Build
-        working-directory: helper
-        run: swift build
+      - name: Build (swiftc default)
+        run: helper/scripts/build.sh --release --no-sign
 
-      - name: Test (protocol, sidecar, filters, selftest)
-        working-directory: helper
-        run: swift test
+      - name: Keep swiftc binary
+        run: |
+          mkdir -p /tmp/watson-capture-ci
+          cp helper/.build/release/watson-capture /tmp/watson-capture-ci/watson-capture-swiftc
+          chmod +x /tmp/watson-capture-ci/watson-capture-swiftc
 
-      - name: --selftest (no ScreenCaptureKit)
-        working-directory: helper
-        run: .build/debug/watson-capture --selftest
+      - name: --selftest (swiftc binary, no ScreenCaptureKit)
+        run: /tmp/watson-capture-ci/watson-capture-swiftc --selftest
 
       - name: cleanup-spool.sh refuses dangerous paths and cleans a fake spool
         run: helper/scripts/test-cleanup-spool.sh
+
+      - name: Build (SwiftPM --spm)
+        run: |
+          # Fresh .build so SwiftPM does not collide with the swiftc layout.
+          rm -rf helper/.build
+          helper/scripts/build.sh --spm --release --no-sign
+          cp helper/.build/release/watson-capture /tmp/watson-capture-ci/watson-capture-spm
+          chmod +x /tmp/watson-capture-ci/watson-capture-spm
+
+      - name: Compare Info.plist section and identifier
+        run: |
+          set -euo pipefail
+          SWIFTC=/tmp/watson-capture-ci/watson-capture-swiftc
+          SPM=/tmp/watson-capture-ci/watson-capture-spm
+
+          plist_hex() {
+            otool -s __TEXT __info_plist "$1" | awk 'NR>2 {
+              for (i = 2; i <= NF; i++) printf "%s", $i
+            }' | sed 's/00*$//'
+          }
+
+          ident() {
+            local from_codesign
+            from_codesign="$(codesign -dv "$1" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')"
+            if [[ -n "${from_codesign:-}" ]]; then
+              printf '%s\n' "$from_codesign"
+              return
+            fi
+            otool -P "$1" | awk '
+              /CFBundleIdentifier/ { found=1; next }
+              found && /<string>/ {
+                gsub(/.*<string>/, "")
+                gsub(/<\/string>.*/, "")
+                print
+                exit
+              }
+            '
+          }
+
+          echo "=== swiftc ==="
+          codesign -dv --verbose=4 "$SWIFTC" 2>&1 || true
+          otool -s __TEXT __info_plist "$SWIFTC"
+          echo "=== spm ==="
+          codesign -dv --verbose=4 "$SPM" 2>&1 || true
+          otool -s __TEXT __info_plist "$SPM"
+
+          H1="$(plist_hex "$SWIFTC")"
+          H2="$(plist_hex "$SPM")"
+          if [[ -z "$H1" || "$H1" != "$H2" ]]; then
+            echo "FAIL: Info.plist section differs or is empty" >&2
+            echo "swiftc hex length=${#H1} spm hex length=${#H2}" >&2
+            exit 1
+          fi
+
+          I1="$(ident "$SWIFTC")"
+          I2="$(ident "$SPM")"
+          echo "swiftc identifier=$I1"
+          echo "spm identifier=$I2"
+          if [[ "$I1" != "com.watson.capture" || "$I1" != "$I2" ]]; then
+            echo "FAIL: identifier mismatch or not com.watson.capture" >&2
+            exit 1
+          fi
+          echo "PASS: identical Info.plist section and identifier=$I1"
+
+      - name: Test (protocol, sidecar, filters, selftest) via SwiftPM
+        working-directory: helper
+        run: swift test
