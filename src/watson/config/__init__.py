@@ -1,0 +1,1 @@
+"""Settings schema and defaults."""
