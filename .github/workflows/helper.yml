@@ -167,5 +167,11 @@ jobs:
       - name: Overlay e2e — SwiftPM + fake WATSON_CLT_ROOT
         run: helper/scripts/ci-clt-overlay-e2e.sh spm
 
+      # if: so a SwiftPM overlay failure cannot skip the --no-clt-overlay claim.
       - name: Overlay e2e — --no-clt-overlay + fake WATSON_CLT_ROOT
+        if: success() || failure()
         run: helper/scripts/ci-clt-overlay-e2e.sh no-overlay
+
+      - name: Overlay e2e — --spm --no-clt-overlay + fake WATSON_CLT_ROOT
+        if: success() || failure()
+        run: helper/scripts/ci-clt-overlay-e2e.sh no-overlay-spm

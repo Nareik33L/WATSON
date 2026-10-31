@@ -138,7 +138,8 @@ prepare_clt_overlay_if_needed() {
   if ! clt_has_stale_swiftbridging "$root"; then
     return 0
   fi
-  local dest="${1:-$ROOT/.build/${CONFIG:-release}/clt-overlay}"
+  # Stay out of SwiftPM's .build/release and .build/<triple>/ trees.
+  local dest="${1:-$ROOT/.build/clt-overlay/${CONFIG:-release}}"
   write_clt_overlay "$root" "$dest"
   echo "CLT SwiftBridging overlay applied: $CLT_OVERLAY_FILE"
 }
@@ -261,9 +262,8 @@ verify_binary() {
   # already passed codesign --verify in sign.sh.
   codesign -dv --verbose=4 "$bin" 2>&1 || true
 
-  echo "--- otool -s __TEXT __info_plist ---"
-  otool -s __TEXT __info_plist "$bin"
-  # Do not grep otool headers ("of" in "Contents of" is [0-9a-f]{2}).
+  # verify-embedded-plist.sh reads the section; do not dump the hex here
+  # (the full otool listing drowns CI logs).
   "$ROOT/scripts/verify-embedded-plist.sh" "$bin"
 }
 
@@ -281,37 +281,24 @@ _echo_argv() {
 }
 
 run_swiftc() {
+  # One argv for echo and exec so overlay flags cannot drift.
+  local -a cmd
+  cmd=("$@")
   if [[ -n "${CLT_OVERLAY_FILE:-}" ]]; then
-    _echo_argv "swiftc-argv:" "$@" \
-      -vfsoverlay "$CLT_OVERLAY_FILE" \
-      -Xcc -ivfsoverlay \
-      -Xcc "$CLT_OVERLAY_FILE"
-    swiftc "$@" \
-      -vfsoverlay "$CLT_OVERLAY_FILE" \
-      -Xcc -ivfsoverlay \
-      -Xcc "$CLT_OVERLAY_FILE"
-  else
-    _echo_argv "swiftc-argv:" "$@"
-    swiftc "$@"
+    cmd+=(-vfsoverlay "$CLT_OVERLAY_FILE" -Xcc -ivfsoverlay -Xcc "$CLT_OVERLAY_FILE")
   fi
+  _echo_argv "swiftc-argv:" "${cmd[@]}"
+  swiftc "${cmd[@]}"
 }
 
 run_swift_build() {
+  local -a cmd
+  cmd=("$@")
   if [[ -n "${CLT_OVERLAY_FILE:-}" ]]; then
-    _echo_argv "swift-build-argv:" "$@" \
-      -Xswiftc -vfsoverlay \
-      -Xswiftc "$CLT_OVERLAY_FILE" \
-      -Xcc -ivfsoverlay \
-      -Xcc "$CLT_OVERLAY_FILE"
-    swift build "$@" \
-      -Xswiftc -vfsoverlay \
-      -Xswiftc "$CLT_OVERLAY_FILE" \
-      -Xcc -ivfsoverlay \
-      -Xcc "$CLT_OVERLAY_FILE"
-  else
-    _echo_argv "swift-build-argv:" "$@"
-    swift build "$@"
+    cmd+=(-Xswiftc -vfsoverlay -Xswiftc "$CLT_OVERLAY_FILE" -Xcc -ivfsoverlay -Xcc "$CLT_OVERLAY_FILE")
   fi
+  _echo_argv "swift-build-argv:" "${cmd[@]}"
+  swift build "${cmd[@]}"
 }
 
 build_spm() {

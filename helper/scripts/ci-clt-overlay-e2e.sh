@@ -3,7 +3,7 @@
 # overlay detection, flag injection, and --no-clt-overlay are actually
 # compiled. The fake tree is not the SDK — the overlay remaps only that path.
 #
-#   helper/scripts/ci-clt-overlay-e2e.sh prepare|swiftc|spm|no-overlay
+#   helper/scripts/ci-clt-overlay-e2e.sh prepare|swiftc|spm|no-overlay|no-overlay-spm
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -13,7 +13,7 @@ LOG="/tmp/watson-clt-overlay-e2e.log"
 BIN_DIR="/tmp/watson-capture-ci-overlay"
 
 usage() {
-  echo "usage: $0 {prepare|swiftc|spm|no-overlay}" >&2
+  echo "usage: $0 {prepare|swiftc|spm|no-overlay|no-overlay-spm}" >&2
   exit 2
 }
 
@@ -70,6 +70,13 @@ assert_overlay_maps_only_fake() {
     cat "$LOG" >&2
     exit 1
   fi
+  case "$ov" in
+    */.build/clt-overlay/*) ;;
+    *)
+      echo "FAIL: overlay path is not under .build/clt-overlay/: $ov" >&2
+      exit 1
+      ;;
+  esac
   if ! grep -F "$FAKE" "$ov"; then
     echo "FAIL: overlay YAML does not name the fake CLT path $FAKE" >&2
     cat "$ov" >&2
@@ -81,6 +88,30 @@ assert_overlay_maps_only_fake() {
     exit 1
   fi
   echo "ok: overlay maps only the fake tree"
+}
+
+assert_no_overlay_run() {
+  local argv_label="$1"
+  if grep -F 'CLT SwiftBridging overlay applied:' "$LOG"; then
+    echo "FAIL: --no-clt-overlay still printed overlay applied" >&2
+    exit 1
+  fi
+  if ! grep -E "^${argv_label}:" "$LOG"; then
+    echo "FAIL: --no-clt-overlay produced no ${argv_label}: line (assertion would be vacuous)" >&2
+    exit 1
+  fi
+  if grep -E "^${argv_label}:.*-vfsoverlay" "$LOG"; then
+    echo "FAIL: --no-clt-overlay still passed -vfsoverlay" >&2
+    exit 1
+  fi
+  if grep -E "^${argv_label}:.*-ivfsoverlay" "$LOG"; then
+    echo "FAIL: --no-clt-overlay still passed -ivfsoverlay" >&2
+    exit 1
+  fi
+  if [[ -e "$REPO/helper/.build/clt-overlay/release/overlay.yaml" ]]; then
+    echo "FAIL: --no-clt-overlay wrote overlay.yaml" >&2
+    exit 1
+  fi
 }
 
 run_build() {
@@ -146,25 +177,18 @@ case "$cmd" in
   no-overlay)
     prepare_fake
     run_build --no-clt-overlay
-    if grep -F 'CLT SwiftBridging overlay applied:' "$LOG"; then
-      echo "FAIL: --no-clt-overlay still printed overlay applied" >&2
-      exit 1
-    fi
-    if grep -E '^(swiftc-argv|swift-build-argv):.*-vfsoverlay' "$LOG"; then
-      echo "FAIL: --no-clt-overlay still passed -vfsoverlay" >&2
-      exit 1
-    fi
-    if grep -E '^(swiftc-argv|swift-build-argv):.*-ivfsoverlay' "$LOG"; then
-      echo "FAIL: --no-clt-overlay still passed -ivfsoverlay" >&2
-      exit 1
-    fi
-    if [[ -e "$REPO/helper/.build/release/clt-overlay/overlay.yaml" ]]; then
-      echo "FAIL: --no-clt-overlay wrote overlay.yaml" >&2
-      exit 1
-    fi
+    assert_no_overlay_run swiftc-argv
     bin="$(last_binary)"
     assert_signed "$bin"
-    echo "ok: --no-clt-overlay e2e"
+    echo "ok: --no-clt-overlay swiftc e2e"
+    ;;
+  no-overlay-spm)
+    prepare_fake
+    run_build --spm --no-clt-overlay
+    assert_no_overlay_run swift-build-argv
+    bin="$(last_binary)"
+    assert_signed "$bin"
+    echo "ok: --spm --no-clt-overlay e2e"
     ;;
   *)
     usage
