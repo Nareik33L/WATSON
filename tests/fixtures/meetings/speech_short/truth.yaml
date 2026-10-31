@@ -1,0 +1,17 @@
+name: speech_short
+kind: dialogue
+synthetic: true
+title: Short WER probe
+date: '2026-10-31'
+language: en
+participants: [Nora Voss]
+decisions: []
+commitments: []
+project_updates: []
+discussion_points: []
+traps: []
+notes: Known-text WER probe. Tiny faster-whisper on TTS should stay well under 50% WER.
+duration_ms: 2000
+meta:
+  script: speech_short.yaml
+  sample_rate: 16000

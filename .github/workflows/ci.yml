@@ -29,8 +29,19 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
+      - name: Ruff format (A0 harness)
+        run: >
+          uv run ruff format --check
+          tools/bench/watson_bench/transcription
+          tools/fixture_gen/watson_fixturegen/meetings
+          tests/unit/bench/test_transcription.py
+          tests/unit/bench/test_transcription_models.py
+          tests/eval/test_a0_macos_smoke.py
+
       - name: Type check
-        run: uv run mypy src/watson tools/fixture_gen
+        run: |
+          uv run mypy src/watson tools/fixture_gen
+          uv run mypy -p watson_bench.transcription
 
       - name: Allow unprivileged user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
@@ -53,6 +64,16 @@ jobs:
           --frames tools/bench/samples/frames
           --out /tmp/watson-bench-ci
           --report /tmp/watson-bench-ci/report.md
+
+      - name: Fake-runtime transcription smoke
+        run: >
+          uv run watson-bench transcribe
+          --profile 8gb
+          --engines fake
+          --sizes base
+          --fixtures tests/fixtures/meetings
+          --out /tmp/watson-transcribe-ci
+          --report /tmp/watson-transcribe-ci/report.md
 
   no-network:
     name: OS-level no-network replay
@@ -85,3 +106,16 @@ jobs:
           uv run python -m watson.privacy.netns --assert-isolated
           uv run python -m watson.privacy.netns -- .venv/bin/watson replay tests/fixtures/day_acme_q4 --instant
           uv run python -m watson.privacy.netns -- .venv/bin/watson db status
+
+      - name: Transcribe under no-network namespace
+        env:
+          WATSON_REQUIRE_NETNS: "1"
+        run: |
+          set -euo pipefail
+          uv run python -m watson.privacy.netns --assert-isolated
+          uv run python -m watson.privacy.netns -- .venv/bin/watson-bench transcribe \
+            --profile 8gb \
+            --engines fake \
+            --sizes base \
+            --fixtures tests/fixtures/meetings \
+            --out /tmp/watson-transcribe-netns

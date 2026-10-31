@@ -1,0 +1,16 @@
+name: corrupt
+kind: corrupt
+title: Corrupt audio file
+date: '2026-10-31'
+language: en
+participants: []
+decisions: []
+commitments: []
+project_updates: []
+discussion_points: []
+traps: []
+notes: Decoder must fail clearly. File is retained for inspection.
+duration_ms: 0
+meta:
+  script: corrupt.yaml
+  sample_rate: 16000

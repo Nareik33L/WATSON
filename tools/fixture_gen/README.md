@@ -68,6 +68,18 @@ That re-renders into a temp dir and asserts exact equality for sidecar text fiel
 
 Each committed day under `tests/fixtures/` must stay ≤ 10 MB. CI fails a day that exceeds 12 MB. No Git LFS.
 
+## Meeting audio (V1.1 A0)
+
+`watson-fixturegen meetings render <script>` turns YAML in [`meetings/`](meetings/) into 16 kHz mono WAV, optional AAC `.m4a` (`afconvert` ~32 kbps), a timestamped reference transcript, and `truth.yaml`. Dialogue TTS is **macOS-only** (`say` + distinct voice per speaker). Linux fails clearly; `--dry-run` still validates scripts.
+
+A0 scripts: 12-minute stand-up plus silence, tone, 1-second, corrupt, and unsupported-container edges. The 45- and 90-minute dialogues wait for A1. See [`meetings/README.md`](meetings/README.md) for the YAML fields and what is committed versus uploaded as a macOS CI artifact.
+
+```bash
+uv run watson-fixturegen meetings render --all --out tests/fixtures/meetings
+# Linux / no `say`:
+uv run watson-fixturegen meetings render --all --out /tmp/meetings --dry-run
+```
+
 ## M0-A sample list
 
 `tests/fixtures/<name>/sample50.txt` is 50 evenly spaced frame ids for the hand-scored quality check. `watson-bench run` accepts `--frame-list` pointing at that file (and will recurse for PNGs if `--frames` is the fixture root or `frames/` directory).

@@ -1,0 +1,18 @@
+# A6 hallucination gate: silence must transcribe to zero segments.
+kind: silence
+meta:
+  name: silence_only
+  title: Silence-only hallucination probe
+  date: "2026-10-31"
+  language: en
+  duration_s: 15
+  sample_rate: 16000
+
+truth:
+  participants: []
+  decisions: []
+  commitments: []
+  project_updates: []
+  discussion_points: []
+  traps: []
+  notes: Empty transcript required. Any non-empty text is a hallucination.

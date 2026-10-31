@@ -1,0 +1,75 @@
+name: Meetings A0
+
+on:
+  pull_request:
+    paths:
+      - "tools/fixture_gen/meetings/**"
+      - "tools/fixture_gen/watson_fixturegen/meetings/**"
+      - "tools/fixture_gen/watson_fixturegen/cli.py"
+      - "tools/bench/watson_bench/transcription/**"
+      - "tools/bench/watson_bench/cli.py"
+      - "tests/fixtures/meetings/**"
+      - "tests/unit/fixture_gen/test_meetings*.py"
+      - "tests/unit/bench/test_transcription*.py"
+      - "tests/eval/test_a0_macos_smoke.py"
+      - ".github/workflows/meetings-a0.yml"
+  push:
+    paths:
+      - "tools/fixture_gen/meetings/**"
+      - "tools/fixture_gen/watson_fixturegen/meetings/**"
+      - "tools/fixture_gen/watson_fixturegen/cli.py"
+      - "tools/bench/watson_bench/transcription/**"
+      - "tools/bench/watson_bench/cli.py"
+      - "tests/fixtures/meetings/**"
+      - "tests/unit/fixture_gen/test_meetings*.py"
+      - "tests/unit/bench/test_transcription*.py"
+      - "tests/eval/test_a0_macos_smoke.py"
+      - ".github/workflows/meetings-a0.yml"
+
+permissions:
+  contents: read
+
+# macos-15 minutes are costly. This job only starts when meeting scripts,
+# the meetings renderer, or the transcription harness change.
+
+jobs:
+  render:
+    name: render fixtures + tiny smoke
+    runs-on: macos-15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync fixture + bench deps
+        run: uv sync --locked --group fixturegen --group bench --extra transcribe
+
+      - name: Render A0 meeting scripts
+        run: >
+          uv run watson-fixturegen meetings render --all
+          --out tests/fixtures/meetings
+
+      - name: Upload rendered fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-meeting-fixtures
+          path: tests/fixtures/meetings
+          if-no-files-found: error
+
+      - name: Fetch faster-whisper tiny
+        env:
+          WATSON_ALLOW_NETWORK: "1"
+        run: >
+          uv run watson-bench transcribe
+          --profile 8gb
+          --engines faster-whisper
+          --sizes tiny
+          --fetch-only
+
+      - name: Tiny faster-whisper smoke (must not skip)
+        run: uv run pytest tests/eval/test_a0_macos_smoke.py -v --tb=short -s

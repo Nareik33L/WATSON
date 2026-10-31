@@ -89,6 +89,9 @@ uv run watson-bench list --profile 16gb --runtime ollama
 
 # Linux CI / no models: fake runtime exercises metrics + report generation
 uv run watson-bench run --profile 8gb --runtime fake --report /tmp/watson-bench.md
+
+# A0 transcription (fake runtime + committed edge fixtures)
+uv run watson-bench transcribe --profile 8gb --engines fake --sizes base --report /tmp/a0.md
 ```
 
 `run` defaults `--frames` to `tools/bench/samples/frames` (five committed synthetic PNGs + OCR JSON). `tools/bench/samples/generate.py` recreates them. To hand-score a golden day, pass `--frames tests/fixtures/<name>` (PNG search recurses) and `--frame-list tests/fixtures/<name>/sample50.txt`.
@@ -121,6 +124,61 @@ Quality: each scored frame gets a JSON output plus a blank row on `scoring.csv` 
 
 IDs and Hub filenames are in `tools/bench/candidates/*.yaml`. Treat Hub GGUF filenames as confirm-at-fetch-time.
 
+## V1.1 A0 — transcription bake-off (Device Ops)
+
+Harness for plan A5 / A0. `TranscriptionRuntime.transcribe(pcm16k, language_hint)` returns segments with `start_ms`, `end_ms`, `text`, `avg_logprob`, `no_speech_prob`, `compression_ratio`. Engines: `pywhispercpp`, `mlx-whisper`, `faster-whisper` (plus `fake` for Linux CI). Sizes: `base`, `small` on both RAM profiles (`tiny` is the macOS CI smoke only).
+
+Weights live at `<models_dir>/<engine>/<size>/` for fetch, readiness, and load (not the Hugging Face `models--*` cache layout). Each engine/size pair is measured in a **spawned child** so peak RSS is that child's `ru_maxrss` and unload is process exit. `mlx-whisper` `load()` constructs the model into `ModelHolder` (so `load_time_s` is real) and `unload()` clears the holder; the child is belt-and-suspenders if a global leak remains. `--fetch-only` is the only network use and requires `WATSON_ALLOW_NETWORK=1`. Measured `transcribe` runs install the same loopback socket guard as M0-A (no Ollama port) and **force** `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`.
+
+### Exact Mac commands (8 GB profile)
+
+Close other apps first. From the repo root:
+
+```bash
+# 1. deps (bench + WER + the three engines; mlx-whisper is Apple Silicon only)
+uv sync --group bench --extra transcribe --extra mlx-whisper --extra pywhispercpp --extra fetch
+
+# 2. render A0 meeting fixtures (macOS `say` + `afconvert`; ~2–5 min)
+uv run watson-fixturegen meetings render --all --out tests/fixtures/meetings
+
+# 3. download base + small for each engine (~1.5–3 GB, 10–20 min on a home link)
+WATSON_ALLOW_NETWORK=1 uv run watson-bench transcribe \
+  --profile 8gb \
+  --engines pywhispercpp,mlx-whisper,faster-whisper \
+  --sizes base,small \
+  --fetch-only
+
+# 4. offline bake-off on the rendered fixtures; write today's report
+uv run watson-bench transcribe \
+  --profile 8gb \
+  --engines pywhispercpp,mlx-whisper,faster-whisper \
+  --sizes base,small \
+  --fixtures tests/fixtures/meetings \
+  --report
+```
+
+That writes:
+
+- `tools/bench/results/transcribe-8gb-<timestamp>/run.json`
+- `docs/benchmarks/YYYY-MM-DD-transcription.md` (Recommendation left blank)
+
+16 GB profile is the same sizes; pass `--profile 16gb`. Do not fetch `medium` on the 8 GB Mac.
+
+### Expected duration and disk (8 GB / A0)
+
+| Step | Time on M1 8 GB | Disk |
+| --- | --- | --- |
+| `uv sync --group bench --extra transcribe --extra mlx-whisper --extra pywhispercpp --extra fetch` | 2–5 min | ~200–400 MB venv extras |
+| `meetings render --all` | 2–5 min (`say` per line) | ~23 MB WAV + ~3 MB m4a for the 12-minute stand-up; edges are tiny |
+| `--fetch-only` base+small × 3 engines | 10–20 min (network) | **~1.5–3 GB** under `~/Library/Application Support/WATSON/models` (faster-whisper CT2 + mlx snapshots + whisper.cpp ggml; some sizes overlap) |
+| `transcribe --profile 8gb` on A0 fixtures | **15–40 min** | results are tiny |
+
+Skip an engine that is not installed; the row records the reason. The macOS tiny smoke must **not** skip: fetch writes the canonical directory, then pytest asserts `skipped == False`, RTF > 0, and WER ≤ 50% on the `speech_short` `say` clip (WER/RTF are printed in the job log). Linux CI uses `--engines fake` plus the committed silence/tone/1-second/speech_short fixtures. The committed `speech_short` WAV is a synthetic tone placeholder (`synthetic: true`) so it cannot skew aggregate WER; per-fixture fake WER is still asserted.
+
+### Metrics (plan A0 / A5)
+
+Per engine and size: load time, real-time factor (wall / audio), WER vs the reference transcript (`jiwer`, speaker labels stripped), peak RSS, and hallucination on the silence and tone files (any non-empty text counts).
+
 ## Layout
 
 ```
@@ -128,6 +186,6 @@ tools/bench/
   candidates/          per-role YAML (vlm, llm, embeddings)
   samples/frames/      committed synthetic PNG + OCR sidecars
   samples/generate.py  recreates the samples
-  watson_bench/        harness package (CLI, adapters, report)
+  watson_bench/        harness package (CLI, adapters, report, transcription/)
   results/             gitignored run output
 ```

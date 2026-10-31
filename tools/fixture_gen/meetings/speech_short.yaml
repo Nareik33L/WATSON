@@ -1,0 +1,31 @@
+# Short known-text clip for A0 WER/RTF. macOS `say` renders real speech;
+# Linux CI commits a non-silent placeholder WAV plus this transcript.
+kind: dialogue
+meta:
+  name: speech_short
+  title: Short WER probe
+  date: "2026-10-31"
+  language: en
+  sample_rate: 16000
+  default_voice: Samantha
+  default_pause_ms: 200
+
+speakers:
+  Nora Voss:
+    voice: Samantha
+    role: engineering manager
+
+lines:
+  - speaker: Nora Voss
+    line: Good morning everyone. The Keel export lands Wednesday.
+    pause_ms: 200
+
+truth:
+  participants:
+    - Nora Voss
+  decisions: []
+  commitments: []
+  project_updates: []
+  discussion_points: []
+  traps: []
+  notes: Known-text WER probe. Tiny faster-whisper on TTS should stay well under 50% WER.

@@ -30,6 +30,7 @@ def test_installed_cli_help_from_outside_repo(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert "render" in proc.stdout
+    assert "meetings" in proc.stdout
 
 
 def test_installed_package_ships_fonts_and_scenarios(tmp_path: Path) -> None:

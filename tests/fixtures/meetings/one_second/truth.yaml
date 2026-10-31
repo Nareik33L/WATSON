@@ -1,0 +1,16 @@
+name: one_second
+kind: one_second
+title: One-second clip
+date: '2026-10-31'
+language: en
+participants: []
+decisions: []
+commitments: []
+project_updates: []
+discussion_points: []
+traps: []
+notes: One second of silence. Used to check short-file handling.
+duration_ms: 1000
+meta:
+  script: one_second.yaml
+  sample_rate: 16000

@@ -1,0 +1,17 @@
+# Decode failure: a container AVFoundation will not accept.
+kind: unsupported
+meta:
+  name: unsupported
+  title: Unsupported container
+  date: "2026-10-31"
+  language: en
+  container: .xyz
+
+truth:
+  participants: []
+  decisions: []
+  commitments: []
+  project_updates: []
+  discussion_points: []
+  traps: []
+  notes: Unsupported container. Decoder must fail with a clear message.

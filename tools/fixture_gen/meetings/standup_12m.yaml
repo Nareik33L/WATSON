@@ -1,0 +1,342 @@
+# A0 12-minute stand-up. Fictional people and firms only (V1.1 §8.1).
+# 45-minute and 90-minute scripts land at A1.
+kind: dialogue
+meta:
+  name: standup_12m
+  title: Rivermark Labs — Keel weekly stand-up
+  date: "2026-10-31"
+  language: en
+  target_duration_s: 720
+  sample_rate: 16000
+  default_voice: Samantha
+  default_pause_ms: 650
+
+speakers:
+  Nora Voss:
+    voice: Samantha
+    role: engineering manager
+  Samir Qureshi:
+    voice: Alex
+    role: backend
+  Leah Okonkwo:
+    voice: Karen
+    role: frontend
+  Benji Calder:
+    voice: Daniel
+    role: design
+
+mix:
+  pause_ms: 650
+  noise:
+    kind: white
+    amplitude: 0.006
+    seed: 31
+
+lines:
+  - speaker: Nora Voss
+    line: >-
+      Good morning everyone, thanks for jumping on. This is the Keel weekly
+      stand-up for Friday the thirty-first. We have Samir, Leah, and Benji
+      with me. Helen Cho is out this week so I will cover the quality notes
+      at the end.
+    pause_ms: 800
+  - speaker: Nora Voss
+    stage: rustles a paper
+    line: >-
+      Quick reminder of the shape. Keel is the inventory sync for Pebble and
+      Pine Retail. We promised their Harborline sandbox a beta they can click
+      through next week. I want us out of this call with a ship date, a
+      short list of must-fix bugs, and owners who actually said yes.
+    pause_ms: 700
+  - speaker: Nora Voss
+    line: >-
+      Samir, start us off. How did the export API look yesterday, and did the
+      on-call swap change anything?
+    pause_ms: 600
+  - speaker: Samir Qureshi
+    line: >-
+      Morning. The JSON export path is merged and I ran it against the
+      Rivermark staging warehouse last night. It writes a nightly snapshot
+      for each Pebble and Pine store, including the aisle tags they sent on
+      Tuesday. The remaining gap is the CSV footer. Their bookkeeper wants
+      a checksum line so they can drop the file into Lumen Grid without a
+      manual check.
+    pause_ms: 750
+  - speaker: Samir Qureshi
+    line: >-
+      I can have the export, including that footer, by Monday. Actually wait,
+      make that Wednesday. Monday is the on-call swap with the night rotation
+      and I will be useless before noon. Wednesday is the first day I can
+      sit with the checksum without rushing it.
+    pause_ms: 800
+  - speaker: Nora Voss
+    line: >-
+      Wednesday for the export API, including the checksum footer. That is
+      the commitment I am writing down. Anything else blocking you?
+    pause_ms: 550
+  - speaker: Samir Qureshi
+    line: >-
+      Two things. The warehouse clocks at Pebble and Pine are in a mix of
+      local time and UTC. I want a second pair of eyes on the retry budget
+      before we call the timezone conversion done. And the Harborline
+      sandbox still rejects our client certificate on the first handshake.
+      I have a workaround that retries once, but it is ugly.
+    pause_ms: 700
+  - speaker: Leah Okonkwo
+    line: >-
+      I can look at the certificate retry this afternoon. I already have
+      the Harborline sandbox tab open for the date picker work. If the
+      handshake fails the same way in the browser I will paste the
+      response codes into the Keel notes.
+    pause_ms: 650
+  - speaker: Nora Voss
+    line: >-
+      Good. Leah, you are next. Date picker first, then anything you think
+      we should cut before the sandbox walkthrough.
+    pause_ms: 550
+  - speaker: Leah Okonkwo
+    line: >-
+      The date picker still overflows on the narrow inventory pane. I
+      reproduced it on the twelve-inch test laptop and on the tablet the
+      Pebble and Pine floor leads use. The popover sits under the aisle
+      filter so you cannot pick a Sunday. I will fix the overflow by Friday.
+    pause_ms: 750
+  - speaker: Leah Okonkwo
+    line: >-
+      Separately, I keep hitting stale counts when someone edits a bin in
+      one tab and the other tab still shows the old number. We should
+      probably rewrite the cache layer before the sandbox walkthrough. I
+      do not need a decision today, I am just flagging that the current
+      cache is a pile of timers and I do not trust it.
+    pause_ms: 800
+  - speaker: Nora Voss
+    line: >-
+      Thanks. We are not rewriting the cache this week. That stays a
+      discussion point, not a decision. The must-fix is the date picker
+      overflow by Friday. If the stale counts bite a demo, we document
+      the refresh workaround and move on.
+    pause_ms: 700
+  - speaker: Leah Okonkwo
+    line: >-
+      Understood. I will also drop the unused billing toggle from the
+      settings page. It still renders for Keel even though billing is
+      out of scope for the sandbox. I already have the patch locally.
+    pause_ms: 600
+  - speaker: Nora Voss
+    line: >-
+      Yes. Decision, and I want this explicit so nobody puts it back.
+      We drop the unused billing toggle from the settings page for the
+      Harborline sandbox. Leah owns the removal. Say if that is wrong.
+    pause_ms: 500
+  - speaker: Leah Okonkwo
+    line: That is right. I will remove it today and leave a note in the settings spec.
+    pause_ms: 550
+  - speaker: Nora Voss
+    line: Benji, empty states and the illustrations. How close are you?
+    pause_ms: 500
+  - speaker: Benji Calder
+    line: >-
+      The empty aisle view is drawn. I still owe the empty search view
+      and the empty receiving dock. I will send the empty-state
+      illustrations by Thursday so Leah can drop them in before Friday.
+      They are all Rivermark brand, no stock photos, and they use the
+      same teal we already shipped on the home cards.
+    pause_ms: 750
+  - speaker: Benji Calder
+    line: >-
+      One design question for the group. When a store has zero pending
+      transfers, do we show a cheerful empty dock or a quiet checklist
+      that says you are caught up? Pebble and Pine's floor leads said
+      the cheerful one felt like a toy. I am leaning toward the quiet
+      checklist.
+    pause_ms: 700
+  - speaker: Samir Qureshi
+    line: >-
+      Quiet checklist. The warehouse crew already thinks Keel is a toy
+      until the export lands. I would rather the empty state look like
+      a tool.
+    pause_ms: 550
+  - speaker: Leah Okonkwo
+    line: Same. Quiet checklist. I can wire either, but the copy will be shorter.
+    pause_ms: 500
+  - speaker: Nora Voss
+    line: >-
+      Agreed. Decision. Empty receiving dock uses the quiet checklist,
+      not the cheerful illustration. Benji ships both remaining empty
+      states by Thursday. Thank you.
+    pause_ms: 650
+  - speaker: Nora Voss
+    line: >-
+      Project update from my side. I pinged Helen Cho about the sandbox
+      script yesterday. She is not here, she is out through next Tuesday,
+      but she left a note that the Harborline walkthrough should stay
+      under twenty minutes and should not touch production stock. I will
+      write the customer note for Pebble and Pine once the export date
+      is on the board.
+    pause_ms: 800
+  - speaker: Nora Voss
+    line: >-
+      Second project update. Harborline confirmed we can put the Keel
+      beta in their sandbox on Tuesday. That is the ship we are aiming
+      at. I need a yes from each of you that Tuesday is still real if
+      Wednesday's export and Friday's date picker land.
+    pause_ms: 600
+  - speaker: Samir Qureshi
+    line: >-
+      Tuesday is real if the export is on Wednesday. The sandbox can
+      run on the JSON path even if the CSV footer is a day late, but I
+      do not want to promise that. Plan on Wednesday for both formats.
+    pause_ms: 650
+  - speaker: Leah Okonkwo
+    line: >-
+      Tuesday is real on the interface side. The date picker fix is
+      Friday, which is after the sandbox copy goes up, so I will ship a
+      temporary hide on the overflow and swap the real fix before the
+      walkthrough. I will say that again. Hide by Tuesday, real fix by
+      Friday.
+    pause_ms: 700
+  - speaker: Benji Calder
+    line: Thursday illustrations keep Tuesday honest. I am not the blocker.
+    pause_ms: 500
+  - speaker: Nora Voss
+    line: >-
+      Decision, then. We ship the Keel beta to the Harborline sandbox
+      on Tuesday. Leah hides the overflowing date picker if the real
+      fix is not in. Samir's export commitment stays Wednesday. Benji
+      stays Thursday. I will write the customer note this afternoon.
+    pause_ms: 750
+  - speaker: Samir Qureshi
+    line: >-
+      Two discussion points I do not want lost. First, the retry budget
+      on timezone conversion. I would like someone to read the note I
+      left in the Keel log before Wednesday. Second, we have a store
+      in Cedar Harbor whose aisle tags use letters and numbers mixed.
+      The parser accepts it, but the aisle filter sorts them like plain
+      integers and the Z bin disappears.
+    pause_ms: 750
+  - speaker: Leah Okonkwo
+    line: >-
+      I saw the Z bin bug. It is on my list after the date picker. Not
+      a Tuesday blocker. I can take the timezone note too if you point
+      me at the paragraph.
+    pause_ms: 550
+  - speaker: Samir Qureshi
+    line: >-
+      I will put the paragraph in the Keel notes today. Please do not
+      treat the Z bin as a decision to change the sort this week. It is
+      a discussion point. If we change the sort we will surprise the
+      Cedar Harbor lead.
+    pause_ms: 650
+  - speaker: Nora Voss
+    line: >-
+      Captured as discussion points, not decisions. Timezone retry
+      review, and the Cedar Harbor Z bin sort. No sort change this
+      week. Leah, after Friday is fine.
+    pause_ms: 600
+  - speaker: Benji Calder
+    line: >-
+      Last design note. The home cards still say Acme in one leftover
+      caption from an old mock. That is a fictional leftover, not a
+      real customer. I will replace it with Pebble and Pine before
+      Thursday so nobody reads it aloud in the sandbox.
+    pause_ms: 650
+  - speaker: Nora Voss
+    line: >-
+      Please do. I do not want a stray name in a walkthrough. That is
+      part of the Thursday illustration drop, not a new commitment.
+    pause_ms: 550
+  - speaker: Leah Okonkwo
+    line: >-
+      One more interface thing. The settings page has a leftover label
+      that says nightly digest. It does not send anything. I will
+      remove it with the billing toggle so the page only shows the
+      three controls we actually honor.
+    pause_ms: 600
+  - speaker: Nora Voss
+    line: >-
+      Yes, remove the nightly digest label with the billing toggle.
+      Same change, same owner. Not a second commitment.
+    pause_ms: 500
+  - speaker: Samir Qureshi
+    line: >-
+      I will stay on after this if anyone wants the Harborline
+      certificate workaround. It is four lines and a comment that
+      says do not copy this into production. I would rather delete
+      it once the handshake is honest.
+    pause_ms: 600
+  - speaker: Leah Okonkwo
+    line: Stay on. I will take the four lines and try them in the browser this afternoon.
+    pause_ms: 500
+  - speaker: Nora Voss
+    line: >-
+      Recap so we leave with the same board. Participants today are
+      Nora Voss, Samir Qureshi, Leah Okonkwo, and Benji Calder. Helen
+      Cho was mentioned and is not here. Decisions. Ship Keel beta to
+      the Harborline sandbox on Tuesday. Drop the unused billing
+      toggle from settings. Empty receiving dock uses the quiet
+      checklist. Commitments. Samir finishes the export API, including
+      the checksum footer, on Wednesday, not Monday. Leah fixes the
+      date picker overflow by Friday and hides it on Tuesday if needed.
+      Benji sends empty-state illustrations by Thursday. I write the
+      customer note this afternoon.
+    pause_ms: 900
+  - speaker: Nora Voss
+    line: >-
+      Discussion points that are not decisions. Leah's cache rewrite
+      idea. The timezone retry review. The Cedar Harbor Z bin sort.
+      We are not rewriting the cache and we are not changing the sort
+      this week. Traps I want the notes to keep honest. Samir said
+      Monday and then retracted it to Wednesday. Helen is absent.
+      The cache rewrite was a suggestion, not a yes.
+    pause_ms: 800
+  - speaker: Nora Voss
+    line: >-
+      That is the stand-up. Thank you. See you Tuesday in the
+      Harborline sandbox unless something breaks before then. Have a
+      good rest of the morning.
+    pause_ms: 400
+
+truth:
+  participants:
+    - Nora Voss
+    - Samir Qureshi
+    - Leah Okonkwo
+    - Benji Calder
+  decisions:
+    - text: Ship the Keel beta to the Harborline sandbox on Tuesday
+      evidence_contains: ship the Keel beta to the Harborline sandbox on Tuesday
+    - text: Drop the unused billing toggle from the settings page
+      evidence_contains: drop the unused billing toggle
+    - text: Empty receiving dock uses the quiet checklist
+      evidence_contains: Empty receiving dock uses the quiet checklist
+  commitments:
+    - text: Finish the export API including the checksum footer
+      owner: Samir Qureshi
+      deadline: Wednesday
+    - text: Fix the date picker overflow
+      owner: Leah Okonkwo
+      deadline: Friday
+    - text: Send the empty-state illustrations
+      owner: Benji Calder
+      deadline: Thursday
+    - text: Write the customer note for Pebble and Pine
+      owner: Nora Voss
+      deadline: this afternoon
+  project_updates:
+    - text: Helen Cho left a note that the Harborline walkthrough should stay under twenty minutes
+    - text: Harborline confirmed the Keel beta can go in their sandbox on Tuesday
+    - text: JSON export path is merged and ran against Rivermark staging
+  discussion_points:
+    - text: Rewrite the cache layer before the sandbox walkthrough
+    - text: Review the timezone conversion retry budget
+    - text: Cedar Harbor Z bin sort treats mixed aisle tags as integers
+  traps:
+    - kind: suggestion-not-decision
+      text: We should probably rewrite the cache layer before the sandbox walkthrough
+      speaker: Leah Okonkwo
+    - kind: retracted-deadline
+      text: Export by Monday, retracted to Wednesday because of the on-call swap
+      speaker: Samir Qureshi
+    - kind: absent-person-mentioned
+      name: Helen Cho
+      text: Helen Cho is out this week and is not a participant
