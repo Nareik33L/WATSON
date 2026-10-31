@@ -646,9 +646,9 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 |---|---|---|
 | 1 | V1.0 **dev** runtime: Ollama | **Decided M0-A** — ADR 0001 |
 | 2 | Default VLM/LLM/embedding models and quantisations (8 GB) | **Provisional M0-A** — ADR 0001; quality gate M3 (§14 #9) |
-| 3 | Swift helper vs PyObjC fallback | M0-B result |
+| 3 | Swift helper vs PyObjC fallback | **DECIDED (Watson Lead, M0-B)** — Swift helper with ScreenCaptureKit + Vision, built with `swiftc` under Command Line Tools only (no Xcode), self-signed `WATSON Dev` identity; TCC grant stable across rebuilds. [`docs/results/m0b-capture-spike.md`](results/m0b-capture-spike.md), [`docs/results/m0b/artefacts.md`](results/m0b/artefacts.md) |
 | 4 | SQLCipher vs application-level column encryption | M1 |
-| 5 | Minimum macOS version (SCK screenshot API availability suggests 14+) | M0-B |
+| 5 | Minimum macOS version (SCK screenshot API availability suggests 14+) | **DECIDED** — minimum macOS 14 (tested on 14.5); no required APIs missing. [`docs/results/m0b-capture-spike.md`](results/m0b-capture-spike.md), [`docs/results/m0b/artefacts.md`](results/m0b/artefacts.md) |
 | 6 | Whether to request Accessibility permission for browser URLs in V1, or defer | M5 |
 | 7 | Tier-2 text default TTL (7 days proposed) | M3, after seeing re-consolidation needs |
 | 8 | Dashboard framework details (HTMX vs plain fetch) | M1 |
