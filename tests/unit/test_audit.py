@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -341,8 +342,8 @@ def test_audit_error_class_walks_cause_for_permission() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    [True, False, 1.0, "1", -1],
-    ids=["bool_true", "bool_false", "float", "str", "negative"],
+    [True, False, 1.0, "1", -1, math.nan, math.inf, -math.inf],
+    ids=["bool_true", "bool_false", "float", "str", "negative", "nan", "inf", "neg_inf"],
 )
 def test_count_keys_reject_non_natural_ints(
     data_dir: Path, key_provider: object, value: object
@@ -424,16 +425,35 @@ def test_invalid_fixture_raises_audit_error(
         conn.close()
 
 
-def test_str_subclass_frame_id_is_rejected(data_dir: Path, key_provider: object) -> None:
-    class LeakyStr(str):
-        def __str__(self) -> str:
-            return SAMPLE_FRAME_ID
+class _ExactStr(str):
+    """str subclass whose content is already a valid id/digest.
 
-    leaked = LeakyStr("PLANTED_FREE_TEXT_MUST_NOT_REACH_AUDIT")
+    ``isinstance(v, str)`` is true and format checks pass; only ``type(v) is str``
+    rejects it. Loosening either check back to ``isinstance`` must fail these tests.
+    """
+
+
+def test_str_subclass_frame_id_is_rejected(data_dir: Path, key_provider: object) -> None:
+    leaked = _ExactStr(SAMPLE_FRAME_ID)
     conn = open_test_db(data_dir)
     try:
         with pytest.raises(AuditError, match="must be a UUID"):
             record_audit(conn, kind=KIND_VERIFIED, detail={"frame_id": leaked})
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_str_subclass_png_sha256_is_rejected(data_dir: Path, key_provider: object) -> None:
+    leaked = _ExactStr(SAMPLE_PNG_SHA256)
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="64-char hex"):
+            record_audit(
+                conn,
+                kind=KIND_INGESTED,
+                detail={"frame_id": SAMPLE_FRAME_ID, "png_sha256": leaked},
+            )
         assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
     finally:
         conn.close()
