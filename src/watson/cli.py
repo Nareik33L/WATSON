@@ -200,6 +200,7 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     print(f"extracted: {result.extracted}")
     print(f"deleted: {result.deleted}")
     print(f"deletion_verified: {result.deletion_verified}")
+    print(f"deduped: {result.deduped}")
     return 0
 
 

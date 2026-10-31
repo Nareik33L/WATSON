@@ -24,6 +24,7 @@ from watson.capture.spool import (
 )
 from watson.config.schema import ExclusionsConfig
 from watson.memory.db import iso_now
+from watson.pipeline.dedup import DEFAULT_DEDUP_THRESHOLD
 from watson.pipeline.frames import (
     EXTRACT_JOB_KIND,
     delete_and_verify,
@@ -57,6 +58,7 @@ class ReplayResult:
     deletion_verified: int
     skipped_existing: int
     skipped_excluded: int
+    deduped: int
     finished_at: str
     instant: bool
     speed: float
@@ -121,6 +123,7 @@ def replay_fixture(
     speed: float = 1.0,
     spool_dir: Path | None = None,
     exclusions: ExclusionsConfig | None = None,
+    dedup_threshold: int | None = None,
 ) -> ReplayResult:
     """Validate, copy into a 0700/0600 spool, ingest, extract stub, delete PNGs."""
     if speed <= 0:
@@ -153,6 +156,9 @@ def replay_fixture(
 
         working_day_id = ensure_working_day(conn, date)
         rules = exclusions if exclusions is not None else _default_exclusions()
+        threshold = (
+            _default_dedup_threshold() if dedup_threshold is None else dedup_threshold
+        )
         ingested = 0
         skipped = 0
         skipped_excluded = 0
@@ -174,7 +180,9 @@ def replay_fixture(
             else:
                 skipped += 1
 
-        extracted = _drain_extract_jobs(conn, fixture_dir=fixture)
+        extracted = _drain_extract_jobs(
+            conn, fixture_dir=fixture, dedup_threshold=threshold
+        )
         for pair in pairs:
             delete_and_verify(
                 conn,
@@ -206,6 +214,15 @@ def replay_fixture(
                 (working_day_id,),
             ).fetchone()[0]
         )
+        deduped = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM frames
+                WHERE working_day_id = ? AND duplicate_of IS NOT NULL
+                """,
+                (working_day_id,),
+            ).fetchone()[0]
+        )
         finished_at = iso_now()
         result = ReplayResult(
             fixture_name=name,
@@ -219,6 +236,7 @@ def replay_fixture(
             deletion_verified=verified,
             skipped_existing=skipped,
             skipped_excluded=skipped_excluded,
+            deduped=deduped,
             finished_at=finished_at,
             instant=instant,
             speed=speed,
@@ -234,6 +252,7 @@ def replay_fixture(
                 "deleted": deleted,
                 "deletion_verified": verified,
                 "skipped_excluded": skipped_excluded,
+                "deduped": deduped,
             },
         )
         return result
@@ -246,6 +265,12 @@ def _default_exclusions() -> ExclusionsConfig:
     from watson.config import load_config
 
     return load_config().exclusions
+
+
+def _default_dedup_threshold() -> int:
+    from watson.config import load_config
+
+    return load_config().capture.dedup_threshold
 
 
 def _pace(
@@ -262,7 +287,12 @@ def _pace(
         time.sleep(delay)
 
 
-def _drain_extract_jobs(conn: sqlcipher.Connection, *, fixture_dir: Path) -> int:
+def _drain_extract_jobs(
+    conn: sqlcipher.Connection,
+    *,
+    fixture_dir: Path,
+    dedup_threshold: int = DEFAULT_DEDUP_THRESHOLD,
+) -> int:
     completed = 0
     while True:
         job = claim(conn, worker_id=WORKER_ID)
@@ -272,7 +302,12 @@ def _drain_extract_jobs(conn: sqlcipher.Connection, *, fixture_dir: Path) -> int
             fail(conn, job.id, f"unexpected job kind {job.kind}", worker_id=WORKER_ID)
             continue
         try:
-            extract_fixture_stub(conn, job.payload, fixture_dir=fixture_dir)
+            extract_fixture_stub(
+                conn,
+                job.payload,
+                fixture_dir=fixture_dir,
+                dedup_threshold=dedup_threshold,
+            )
             complete(conn, job.id, worker_id=WORKER_ID)
             completed += 1
         except (JobLeaseError, OSError, ValueError, RuntimeError) as exc:
@@ -292,6 +327,7 @@ def _store_last_replay(conn: sqlcipher.Connection, result: ReplayResult) -> None
         "deleted": result.deleted,
         "deletion_verified": result.deletion_verified,
         "skipped_excluded": result.skipped_excluded,
+        "deduped": result.deduped,
         "instant": result.instant,
         "speed": result.speed,
     }
@@ -315,6 +351,7 @@ def _store_last_replay(conn: sqlcipher.Connection, result: ReplayResult) -> None
             "deleted": result.deleted,
             "deletion_verified": result.deletion_verified,
             "skipped_excluded": result.skipped_excluded,
+            "deduped": result.deduped,
         },
         commit=False,
     )
