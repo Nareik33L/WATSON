@@ -85,8 +85,18 @@ mypy_path = "src, tools/fixture_gen"
 packages = ["watson", "watson_fixturegen"]
 explicit_package_bases = true
 warn_unused_ignores = true
-strict = true
 exclude = "(?x)(^src/watson/memory/migrations/env\\.py$)"
+
+[[tool.mypy.overrides]]
+module = ["watson", "watson.*"]
+strict = true
+
+# mypy 2 treats the "watson.*" glob as matching watson_fixturegen. Keep that
+# package on main's non-strict settings (CI type-checks both trees).
+[[tool.mypy.overrides]]
+module = ["watson_fixturegen", "watson_fixturegen.*"]
+strict = false
+warn_return_any = false
 
 [[tool.mypy.overrides]]
 module = ["sqlcipher3", "sqlcipher3.*", "sqlite_vec"]
