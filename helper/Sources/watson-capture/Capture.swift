@@ -798,6 +798,12 @@ final class CaptureEngine: @unchecked Sendable {
             capture_mode: captureMode
         )
 
+        // Last chance before the atomic write. A pause that lands between
+        // this check and the rename can still persist the frame.
+        if case .skip(let reason) = FilterEngine.evaluateImmediate(immediateSnapshot(), config: config) {
+            return skip(reason, afterCapture: true, window: window)
+        }
+
         do {
             let paths = try Spool.write(png: png, sidecar: sidecar, root: spool)
             state.markWritten()

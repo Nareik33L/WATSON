@@ -16,7 +16,7 @@ helper/
 ├── Sources/watson-capture/       Capture.swift, OCR.swift, Filters.swift, Protocol.swift
 ├── Sources/watson-capture-cli/   main.swift
 ├── Tests/WatsonCaptureTests/     protocol, sidecar, filters, selftest, permissions
-└── scripts/                      build.sh, sign.sh, check-tcc.sh, cleanup-spool.sh
+└── scripts/                      build.sh, sign.sh, check-tcc.sh, cleanup-spool.sh, test-cleanup-spool.sh
 ```
 
 CI (`swift build` + unit tests + `--selftest`) runs only when this directory changes. Live ScreenCaptureKit and the TCC grant are **Mac-only**; this runbook is what the person at the Mac executes.
@@ -114,6 +114,8 @@ Human diagnostics go to **stderr**. Do not log window titles or OCR text there.
 6. Perceptual hash Hamming distance ≤ 4 vs. the previous frame from the same `window_id`.
 
 `--selftest` uses the **same** `CaptureEngine` + `handleStdinLine` path as live mode, with a fake 8×8 source (no ScreenCaptureKit / Vision). Pause is sent as `{"cmd":"pause"}`. One tick holds `screenshot` until pause is acknowledged, then the in-memory frame is dropped (`skipped` + `after_capture: true`). Without `--out`, the temp spool is deleted before exit.
+
+`CaptureEngine.tick` re-checks pause / lock / sleep / idle immediately before `Spool.write` (after PNG encode). The remaining race is a pause that lands between that last check and the atomic rename: the frame can still appear on disk (typically tens of milliseconds). There is no further check once the rename starts.
 
 ---
 
@@ -235,6 +237,8 @@ helper/.build/release/watson-capture --interval 15 --out /tmp/watson-m0b-grant
 # Ctrl-C after you allow it.
 helper/scripts/cleanup-spool.sh /tmp/watson-m0b-grant
 ```
+
+`cleanup-spool.sh` accepts only the three runbook spool roots (absolute paths, `realpath`-resolved, must sit under `/tmp` or `$HOME/Library/Application Support/WATSON`). It refuses `/`, `$HOME`, any ancestor of `$HOME`, relative paths, and symlink escapes. It deletes only `yyyy-MM-dd/*.{png,json}` and then empty directories — never `rm -rf`. Unexpected files abort the script and nothing is removed.
 
 Then:
 
