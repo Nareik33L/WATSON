@@ -41,14 +41,6 @@ jobs:
             uv.lock
             pyproject.toml
 
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
       - name: Sync dependencies
         run: uv sync --locked --group dev
 
