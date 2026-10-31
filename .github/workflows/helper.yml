@@ -84,59 +84,10 @@ jobs:
           chmod +x /tmp/watson-capture-ci/watson-capture-spm
 
       - name: Compare Info.plist section and identifier
-        run: |
-          set -euo pipefail
-          SWIFTC=/tmp/watson-capture-ci/watson-capture-swiftc
-          SPM=/tmp/watson-capture-ci/watson-capture-spm
-
-          plist_hex() {
-            otool -s __TEXT __info_plist "$1" | awk 'NR>2 {
-              for (i = 2; i <= NF; i++) printf "%s", $i
-            }' | sed 's/00*$//'
-          }
-
-          ident() {
-            local from_codesign
-            from_codesign="$(codesign -dv "$1" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')"
-            if [[ -n "${from_codesign:-}" ]]; then
-              printf '%s\n' "$from_codesign"
-              return
-            fi
-            otool -P "$1" | awk '
-              /CFBundleIdentifier/ { found=1; next }
-              found && /<string>/ {
-                gsub(/.*<string>/, "")
-                gsub(/<\/string>.*/, "")
-                print
-                exit
-              }
-            '
-          }
-
-          echo "=== swiftc ==="
-          codesign -dv --verbose=4 "$SWIFTC" 2>&1 || true
-          otool -s __TEXT __info_plist "$SWIFTC"
-          echo "=== spm ==="
-          codesign -dv --verbose=4 "$SPM" 2>&1 || true
-          otool -s __TEXT __info_plist "$SPM"
-
-          H1="$(plist_hex "$SWIFTC")"
-          H2="$(plist_hex "$SPM")"
-          if [[ -z "$H1" || "$H1" != "$H2" ]]; then
-            echo "FAIL: Info.plist section differs or is empty" >&2
-            echo "swiftc hex length=${#H1} spm hex length=${#H2}" >&2
-            exit 1
-          fi
-
-          I1="$(ident "$SWIFTC")"
-          I2="$(ident "$SPM")"
-          echo "swiftc identifier=$I1"
-          echo "spm identifier=$I2"
-          if [[ "$I1" != "com.watson.capture" || "$I1" != "$I2" ]]; then
-            echo "FAIL: identifier mismatch or not com.watson.capture" >&2
-            exit 1
-          fi
-          echo "PASS: identical Info.plist section and identifier=$I1"
+        run: >
+          helper/scripts/compare-embedded-identity.sh
+          /tmp/watson-capture-ci/watson-capture-swiftc
+          /tmp/watson-capture-ci/watson-capture-spm
 
       - name: Test (protocol, sidecar, filters, selftest) via SwiftPM
         working-directory: helper
