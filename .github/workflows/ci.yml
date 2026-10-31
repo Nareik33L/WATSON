@@ -34,10 +34,10 @@ jobs:
 
       - name: Tests
         run: uv run pytest
-        # Fixture PNG regen (Playwright Chromium) is opt-in:
-        #   uv run pytest --run-fixture-regen
-        # Default CI validates committed sidecars against schemas/sidecar.schema.json,
-        # PNG↔sidecar binding (manifest sha256, dims, phash), and the 12 MB/day budget.
+        # Playwright regen is .github/workflows/fixture-regen.yml and runs by
+        # default on PRs/pushes that touch tools/fixture_gen or tests/fixtures.
+        # This job validates committed sidecars, PNG↔sidecar binding, and the
+        # 12 MB/day budget without installing Chromium.
 
       - name: Fake-runtime bench smoke
         run: >

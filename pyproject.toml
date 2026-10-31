@@ -63,6 +63,7 @@ packages = ["src/watson"]
 "tools/bench/candidates" = "watson_bench/data/candidates"
 "tools/bench/samples" = "watson_bench/data/samples"
 "tools/fixture_gen/watson_fixturegen" = "watson_fixturegen"
+# fonts/ and scenarios/ live inside watson_fixturegen and ship in the wheel.
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

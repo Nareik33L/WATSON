@@ -25,19 +25,19 @@ uv sync --group fixturegen
 uv run playwright install chromium
 ```
 
-The `dev` group includes `fixturegen` so mypy and unit tests can import the package. Default CI does **not** install Chromium and does not regenerate PNGs.
+The `dev` group includes `fixturegen` so mypy and unit tests can import the package. Fonts (Inter + OFL) and bundled scenarios ship as package data inside `watson_fixturegen` and are resolved with `importlib.resources`. Default CI does **not** install Chromium; PRs that touch `tools/fixture_gen` or `tests/fixtures` run `pytest --run-fixture-regen`.
 
 ## Render a day
 
 ```bash
 uv run watson-fixturegen render \
-  tools/fixture_gen/scenarios/day_acme_q4.yaml \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_acme_q4.yaml \
   --out tests/fixtures/day_acme_q4
 ```
 
 Same scenario + seed (default `meta.seed`) yields byte-identical sidecar **text** fields, `truth.yaml`, and `sample50.txt`. OCR `bbox` values may move by ±2 px and `phash` Hamming distance may be ≤ 4 across machines.
 
-**Byte-identical PNGs** are required only on the pinned platform: **Playwright 1.55.0 Chromium on linux x86_64** (the CI image). Other OS / GPU / font-stack combinations are not a PNG golden. Templates load bundled Inter (SIL OFL 1.1) from `tools/fixture_gen/fonts`, fix the viewport to `meta.width` × `meta.height`, set `deviceScaleFactor` 1, and disable animations.
+**Byte-identical PNGs** are required only on the pinned platform: **Playwright 1.55.0 Chromium on linux x86_64** (the CI image). Other OS / GPU / font-stack combinations are not a PNG golden. Templates load bundled Inter (SIL OFL 1.1) from the `watson_fixturegen` package (`fonts/`), fix the viewport to `meta.width` × `meta.height`, set `deviceScaleFactor` 1, and disable animations.
 
 `--dry-run` expands the §3.6 cadence (45 s default, 30 s after a window change, 120 s after three stable frames) and writes `truth.yaml` + `sample50.txt` without launching a browser.
 
@@ -54,11 +54,11 @@ Same scenario + seed (default `meta.seed`) yields byte-identical sidecar **text*
 
 ```bash
 uv run watson-fixturegen render \
-  tools/fixture_gen/scenarios/day_acme_q4.yaml \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_acme_q4.yaml \
   --out tests/fixtures/day_acme_q4
 ```
 
-Optional check (needs Chromium; skipped in default pytest):
+CI runs this check by default when `tools/fixture_gen` or `tests/fixtures` change (needs Chromium):
 
 ```bash
 uv run pytest tests/eval/test_fixture_regen.py --run-fixture-regen
