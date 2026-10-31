@@ -14,8 +14,9 @@ def test_day_acme_q4_replay_deletes_and_verifies(
 ) -> None:
     spool = data_dir / "spool"
     source_pngs = sorted(DAY_ACME_Q4.glob("frames/*/*.png"))
-    assert source_pngs
-    source_hashes = {path.name: path.read_bytes() for path in source_pngs}
+    source_jsons = sorted(DAY_ACME_Q4.glob("frames/*/*.json"))
+    assert source_pngs and source_jsons
+    source_hashes = {path.name: path.read_bytes() for path in [*source_pngs, *source_jsons]}
 
     conn = open_test_db(data_dir)
     try:
@@ -27,6 +28,7 @@ def test_day_acme_q4_replay_deletes_and_verifies(
         assert result.deleted == n
         assert result.deletion_verified == n
         assert list(spool.rglob("*.png")) == []
+        assert list(spool.rglob("*.json")) == []
 
         rows = conn.execute(
             "SELECT id, state, deletion_verified FROM frames"
@@ -58,6 +60,6 @@ def test_day_acme_q4_replay_deletes_and_verifies(
     finally:
         conn.close()
 
-    for path in source_pngs:
+    for path in [*source_pngs, *source_jsons]:
         assert path.is_file()
         assert path.read_bytes() == source_hashes[path.name]

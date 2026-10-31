@@ -26,6 +26,7 @@ _FORBIDDEN_DETAIL_KEYS = frozenset(
 KIND_INGESTED = "frame_ingested"
 KIND_DELETED = "frame_deleted"
 KIND_VERIFIED = "frame_deletion_verified"
+KIND_DELETE_FAILED = "frame_deletion_failed"
 KIND_REPLAY = "replay_completed"
 
 

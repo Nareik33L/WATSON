@@ -107,11 +107,12 @@ def _key_from_env() -> bytes | None:
 def get_key_provider() -> KeyProvider:
     if _override is not None:
         return _override
+    # Production macOS: Keychain only. WATSON_DB_KEY is ignored on darwin.
+    if sys.platform == "darwin":
+        return KeychainKeyProvider()
     env_key = _key_from_env()
     if env_key is not None:
         return EnvKeyProvider(env_key)
-    if sys.platform == "darwin":
-        return KeychainKeyProvider()
     raise KeyProviderError(
         "No database key provider. On macOS the key lives in Keychain; "
         "on Linux set WATSON_DB_KEY to 64 hex characters."

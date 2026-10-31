@@ -162,10 +162,20 @@ def replay_fixture(
 
         extracted = _drain_extract_jobs(conn, fixture_dir=fixture)
         for pair in pairs:
-            delete_and_verify(conn, pair.frame_id, pair.png_path, fixture_dir=fixture)
-        remaining = list(dest.rglob("*.png"))
-        if remaining:
-            raise ReplayError(f"{len(remaining)} PNG(s) remain in the spool after replay")
+            delete_and_verify(
+                conn,
+                pair.frame_id,
+                pair.png_path,
+                fixture_dir=fixture,
+                sidecar_path=pair.sidecar_path,
+            )
+        remaining_png = list(dest.rglob("*.png"))
+        remaining_json = list(dest.rglob("*.json"))
+        if remaining_png or remaining_json:
+            raise ReplayError(
+                f"{len(remaining_png)} PNG(s) and {len(remaining_json)} sidecar(s) "
+                "remain in the spool after replay"
+            )
 
         verified = int(
             conn.execute(

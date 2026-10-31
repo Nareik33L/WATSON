@@ -32,11 +32,11 @@ helper/scripts/build.sh
 
 `watson db status` shows whether `watson.db` exists, whether it opens with the current key provider, WAL/FTS5/sqlite-vec, and the current vs head Alembic revision.
 
-`watson replay <fixture_dir> [--speed N|--instant]` validates `manifest.json` (sha256/dims) and each sidecar against `schemas/sidecar.schema.json`, copies the fixture into a 0700/0600 temp spool, and ingests frames through the same spool reader live capture will use. An `extract` job stub records sidecar OCR as fixture-only `frame_text`, then deletes the spool PNG and sets `deletion_verified=1`. Source fixture files are never deleted. Re-runs are idempotent on frame id.
+`watson replay <fixture_dir> [--speed N|--instant]` validates `manifest.json` (sha256/dims) and each sidecar against `schemas/sidecar.schema.json`, copies the fixture into a 0700/0600 temp spool, and ingests frames through the same spool reader live capture will use. An `extract` job stub records sidecar OCR as fixture-only `frame_text`, then deletes the spool PNG **and sidecar** (Tier 0 OCR) and sets `deletion_verified=1`. Source fixture files are never deleted. Re-runs are idempotent on frame id.
 
 `watson status` prints frame counts by state, job counts by state, and last replay (the upcoming status page will read the same numbers).
 
-Linux CI runs `watson replay tests/fixtures/day_acme_q4 --instant` and `watson db status` under `unshare -rn` (no network interfaces). On Linux, set `WATSON_DB_KEY` to 64 hex characters; the key is never written to the data directory.
+Linux CI runs `watson replay tests/fixtures/day_acme_q4 --instant` and `watson db status` in a loopback-only network namespace (`sudo unshare --net` + `setpriv`; `unshare -rn` after relaxing AppArmor if needed). On Linux, set `WATSON_DB_KEY` to 64 hex characters; on macOS the key is Keychain-only and `WATSON_DB_KEY` is ignored. The key is never written to the data directory.
 
 `run` and `models` remain stubs until later milestones.
 

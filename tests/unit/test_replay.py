@@ -8,12 +8,30 @@ from pathlib import Path
 import pytest
 
 from tests.replay_support import TEST_KEY, open_test_db, write_mini_fixture
-from watson.capture.spool import DIR_MODE, FILE_MODE, SpoolError, copy_pairs_to_spool
+from watson.capture.spool import (
+    DIR_MODE,
+    FILE_MODE,
+    SpoolError,
+    copy_pairs_to_spool,
+    iter_pairs,
+)
 from watson.cli import main
-from watson.pipeline.frames import FIXTURE_TEXT_SOURCE
+from watson.pipeline.frames import (
+    FIXTURE_TEXT_SOURCE,
+    FrameError,
+    delete_and_verify,
+    ensure_working_day,
+    extract_fixture_stub,
+    ingest_pair,
+)
 from watson.pipeline.replay import ReplayError, load_and_validate_manifest, replay_fixture
 from watson.pipeline.status import collect_status
-from watson.privacy.audit import KIND_DELETED, KIND_INGESTED, KIND_VERIFIED
+from watson.privacy.audit import (
+    KIND_DELETE_FAILED,
+    KIND_DELETED,
+    KIND_INGESTED,
+    KIND_VERIFIED,
+)
 
 
 def test_manifest_rejects_sha256_and_dimension_mismatch(tmp_path: Path) -> None:
@@ -60,7 +78,8 @@ def test_replay_is_idempotent_and_sets_fixture_only_text(
         assert first.extracted == 2
         assert first.deletion_verified == 2
         assert list(spool.rglob("*.png")) == []
-        for path in fixture.rglob("*.png"):
+        assert list(spool.rglob("*.json")) == []
+        for path in [*fixture.rglob("*.png"), *fixture.rglob("*.json")]:
             assert path.is_file()
 
         rows = conn.execute("SELECT id, state, deletion_verified FROM frames").fetchall()
@@ -129,6 +148,103 @@ def test_cli_replay_and_status(
         assert report.frames_by_state["deleted"] == 1
         assert report.last_replay is not None
         assert report.last_replay["frame_count"] == 1
+    finally:
+        conn.close()
+
+
+def test_delete_failure_stays_unverified_then_retry(
+    data_dir: Path, key_provider: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    planted = "PLANTED_DELETE_FAIL_OCR_MUST_NOT_REACH_AUDIT"
+    fixture = write_mini_fixture(tmp_path, frames=1, planted=planted)
+    spool = tmp_path / "spool"
+    conn = open_test_db(data_dir)
+    try:
+        manifest = load_and_validate_manifest(fixture)
+        frames_map = manifest["frames"]
+        assert isinstance(frames_map, dict)
+        copy_pairs_to_spool(fixture, frames_map.items(), spool)
+        pair = iter_pairs(spool)[0]
+        day_id = ensure_working_day(conn, str(manifest["date"]))
+        ingest_pair(conn, pair, working_day_id=day_id)
+        payload = {
+            "frame_id": pair.frame_id,
+            "png_path": str(pair.png_path),
+            "sidecar_path": str(pair.sidecar_path),
+            "fixture_only": True,
+        }
+        original_unlink = Path.unlink
+
+        def permission_unlink(self: Path, *args: object, **kwargs: object) -> None:
+            raise PermissionError("denied")
+
+        monkeypatch.setattr("pathlib.Path.unlink", permission_unlink)
+        with pytest.raises(FrameError, match="spool delete failed"):
+            extract_fixture_stub(conn, payload, fixture_dir=fixture)
+        row = conn.execute(
+            "SELECT state, deletion_verified, failure_count FROM frames WHERE id = ?",
+            (pair.frame_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["state"] == "extracted"
+        assert int(row["deletion_verified"]) == 0
+        assert int(row["failure_count"]) == 1
+        assert pair.png_path.is_file()
+        assert pair.sidecar_path.is_file()
+
+        def reappear_unlink(self: Path, *args: object, **kwargs: object) -> None:
+            blob = Path(self).read_bytes()
+            original_unlink(self, *args, **kwargs)
+            Path(self).write_bytes(blob)
+
+        monkeypatch.setattr("pathlib.Path.unlink", reappear_unlink)
+        with pytest.raises(FrameError, match="still present"):
+            delete_and_verify(
+                conn,
+                pair.frame_id,
+                pair.png_path,
+                fixture_dir=fixture,
+                sidecar_path=pair.sidecar_path,
+            )
+        row = conn.execute(
+            "SELECT state, deletion_verified, failure_count FROM frames WHERE id = ?",
+            (pair.frame_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["state"] == "extracted"
+        assert int(row["deletion_verified"]) == 0
+        assert int(row["failure_count"]) == 2
+
+        fails = conn.execute(
+            "SELECT detail_json FROM audit_events WHERE kind = ? ORDER BY created_at",
+            (KIND_DELETE_FAILED,),
+        ).fetchall()
+        assert len(fails) == 2
+        details = [str(item[0]) for item in fails]
+        assert "PermissionError" in details[0]
+        assert "still_present" in details[1]
+        assert all(planted not in item for item in details)
+        assert all("ocr" not in item for item in details)
+
+        monkeypatch.setattr("pathlib.Path.unlink", original_unlink)
+        delete_and_verify(
+            conn,
+            pair.frame_id,
+            pair.png_path,
+            fixture_dir=fixture,
+            sidecar_path=pair.sidecar_path,
+        )
+        done = conn.execute(
+            "SELECT state, deletion_verified FROM frames WHERE id = ?",
+            (pair.frame_id,),
+        ).fetchone()
+        assert done is not None
+        assert done["state"] == "deleted"
+        assert int(done["deletion_verified"]) == 1
+        assert not pair.png_path.exists()
+        assert not pair.sidecar_path.exists()
+        assert next(fixture.rglob("*.png")).is_file()
+        assert next(fixture.rglob("*.json")).is_file()
     finally:
         conn.close()
 

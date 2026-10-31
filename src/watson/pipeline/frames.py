@@ -16,6 +16,7 @@ from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.jobs import enqueue
 from watson.privacy.audit import (
+    KIND_DELETE_FAILED,
     KIND_DELETED,
     KIND_INGESTED,
     KIND_VERIFIED,
@@ -130,10 +131,11 @@ def extract_fixture_stub(
     *,
     fixture_dir: Path,
 ) -> None:
-    """Record sidecar OCR as fixture-only ``frame_text``, then delete the spool PNG.
+    """Record sidecar OCR as fixture-only ``frame_text``, then delete spool files.
 
     This is not a real extractor. It exists so M1 can exercise D4 on golden
-    fixtures before Apple Vision / VLM land in M2.
+    fixtures before Apple Vision / VLM land in M2. Sidecar JSON is Tier 0
+    (raw OCR) and is removed with the PNG once extraction is persisted.
     """
     if not job_payload.get("fixture_only"):
         raise FrameError("M1 extract stub only accepts fixture_only jobs")
@@ -198,7 +200,13 @@ def extract_fixture_stub(
             "ocr_line_count": len(lines),
         },
     )
-    delete_and_verify(conn, frame_id, png_path, fixture_dir=fixture_dir)
+    delete_and_verify(
+        conn,
+        frame_id,
+        png_path,
+        fixture_dir=fixture_dir,
+        sidecar_path=sidecar_path,
+    )
 
 
 def delete_and_verify(
@@ -207,49 +215,102 @@ def delete_and_verify(
     png_path: Path,
     *,
     fixture_dir: Path,
+    sidecar_path: Path | None = None,
 ) -> None:
-    """Unlink the spool PNG, re-stat, set deletion_verified=1. Never touches fixture."""
+    """Unlink spool PNG + sidecar, re-stat both, set deletion_verified=1.
+
+    Never touches the source fixture. On permission errors or a file that
+    is still there after unlink, the frame stays extracted with
+    ``deletion_verified=0`` and a content-free failure audit is written.
+    """
+    sidecar = sidecar_path if sidecar_path is not None else png_path.with_suffix(".json")
     assert_not_fixture_file(png_path, fixture_dir)
+    assert_not_fixture_file(sidecar, fixture_dir)
     row = conn.execute(
         "SELECT state, deletion_verified FROM frames WHERE id = ?", (frame_id,)
     ).fetchone()
     if row is None:
         raise FrameError(f"frame {frame_id} missing during deletion")
     already_verified = int(row["deletion_verified"]) == 1
-    if png_path.is_file():
-        png_path.unlink()
-        if not already_verified:
-            record_audit(conn, kind=KIND_DELETED, detail={"frame_id": frame_id}, commit=False)
-            log.info("deleted spool png", extra={"frame_id": frame_id})
 
+    png_existed = png_path.is_file()
+    sidecar_existed = sidecar.is_file()
     try:
-        png_path.stat()
-    except FileNotFoundError:
-        if already_verified:
-            conn.commit()
-            return
-        stamp = iso_now()
-        conn.execute(
-            """
-            UPDATE frames
-            SET state = 'deleted',
-                deleted_at = COALESCE(deleted_at, ?),
-                deletion_verified = 1,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (stamp, stamp, frame_id),
-        )
+        if png_existed:
+            png_path.unlink()
+        if sidecar_existed:
+            sidecar.unlink()
+    except OSError as exc:
+        _record_delete_failure(conn, frame_id, type(exc).__name__)
+        raise FrameError(f"spool delete failed for frame {frame_id}") from exc
+
+    png_gone = _path_gone(png_path)
+    sidecar_gone = _path_gone(sidecar)
+    if not (png_gone and sidecar_gone):
+        _record_delete_failure(conn, frame_id, "still_present")
+        raise FrameError(f"spool files still present after unlink for frame {frame_id}")
+
+    if already_verified:
+        conn.commit()
+        return
+
+    if png_existed or sidecar_existed:
         record_audit(
             conn,
-            kind=KIND_VERIFIED,
-            detail={"frame_id": frame_id},
+            kind=KIND_DELETED,
+            detail={"frame_id": frame_id, "png": 1, "sidecar": 1},
             commit=False,
         )
-        conn.commit()
-        log.info("verified spool png gone", extra={"frame_id": frame_id})
-        return
-    raise FrameError(f"PNG still present after unlink for frame {frame_id}")
+        log.info("deleted spool png and sidecar", extra={"frame_id": frame_id})
+
+    stamp = iso_now()
+    conn.execute(
+        """
+        UPDATE frames
+        SET state = 'deleted',
+            deleted_at = COALESCE(deleted_at, ?),
+            deletion_verified = 1,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (stamp, stamp, frame_id),
+    )
+    record_audit(
+        conn,
+        kind=KIND_VERIFIED,
+        detail={"frame_id": frame_id},
+        commit=False,
+    )
+    conn.commit()
+    log.info("verified spool png and sidecar gone", extra={"frame_id": frame_id})
+
+
+def _path_gone(path: Path) -> bool:
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return True
+    return False
+
+
+def _record_delete_failure(conn: sqlcipher.Connection, frame_id: str, error: str) -> None:
+    stamp = iso_now()
+    conn.execute(
+        """
+        UPDATE frames
+        SET failure_count = failure_count + 1, updated_at = ?
+        WHERE id = ?
+        """,
+        (stamp, frame_id),
+    )
+    record_audit(
+        conn,
+        kind=KIND_DELETE_FAILED,
+        detail={"frame_id": frame_id, "error": error},
+        commit=False,
+    )
+    conn.commit()
+    log.info("spool delete failed", extra={"frame_id": frame_id, "error": error})
 
 
 def _extract_payload(pair: SpoolPair) -> dict[str, Any]:
