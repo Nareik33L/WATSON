@@ -189,6 +189,34 @@ def test_planted_code_phrases_are_not_over_redacted(
     assert PLACEHOLDER_OTP not in text
 
 
+def test_planted_brand_and_next_line_otp_never_reach_frame_text(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    secrets = ("739104", "774411", "482913", "551234", "662931", "482 913")
+    planted = (
+        "Your Apple ID Code is: 739104. Don't share it. "
+        "Your code is: 774411. 551234 is your Instagram code. "
+        "Use 662931 as Microsoft account security code. "
+        "Your login code for Slack is 482913. "
+        "Your Apple ID Code is: 482 913"
+    )
+    text, jobs, audit, tables = _replay_planted(data_dir, tmp_path, planted)
+    for secret in secrets:
+        assert secret not in text
+        assert secret.replace(" ", "") not in text.replace(" ", "")
+        assert secret not in jobs
+        assert secret not in audit
+        assert secret not in tables
+    assert PLACEHOLDER_OTP in text
+
+    next_line = "Your code\n• 482913 •"
+    next_dir = data_dir / "otp-next"
+    next_dir.mkdir()
+    next_text, _, _, _ = _replay_planted(next_dir, tmp_path / "otp-next", next_line)
+    assert "482913" not in next_text
+    assert PLACEHOLDER_OTP in next_text
+
+
 def test_planted_uk_nino_never_reaches_frame_text(
     data_dir: Path, key_provider: object, tmp_path: Path
 ) -> None:

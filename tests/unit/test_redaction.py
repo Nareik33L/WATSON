@@ -52,80 +52,185 @@ def test_luhn_card_is_replaced_non_luhn_is_kept() -> None:
     assert PLACEHOLDER_CARD not in kept
 
 
-@pytest.mark.parametrize(
-    "text, secret",
-    [
-        ("Your code is 739104", "739104"),
-        ("Code: 482913", "482913"),
-        ("Your security code: 482913", "482913"),
-        ("482913 is your verification code", "482913"),
-        ("G-482913 is your Google verification code", "482913"),
-        ("PIN: 4829", "4829"),
-        ("Passcode: 7391", "7391"),
-        ("one-time code 482913", "482913"),
-        ("one time password 739104", "739104"),
-        ("OTP 739104", "739104"),
-        ("739104 is your code", "739104"),
-        ("Your one-time passcode is 482913", "482913"),
-        ("login code 482913", "482913"),
-        ("2FA 739104", "739104"),
-        ("authentication code 482913", "482913"),
-        ("Your PIN is 4829", "4829"),
-        ("enter the passcode 7391", "7391"),
-        ("4829 is your PIN", "4829"),
-        ("security PIN 7391", "7391"),
-        ("auth code: 482913", "482913"),
-        ("Your WhatsApp code: 482-913", "482-913"),
-        ("Your code is 482 913", "482 913"),
-        ("Passcode: 7391-0428", "7391-0428"),
-        ("OTP 48 29 13", "48 29 13"),
-        ("PIN 48-29-13", "48-29-13"),
-        ("one-time code 4829 1374", "4829 1374"),
-        ("G-482-913 is your Google verification code", "482-913"),
-        ("Code\n482 913", "482 913"),
-    ],
-)
-def test_otp_phrasings_before_and_after_the_number(text: str, secret: str) -> None:
-    redacted = redact_ocr_text(text)
-    assert secret not in redacted
-    assert secret.replace(" ", "").replace("-", "") not in redacted.replace(" ", "").replace(
-        "-", ""
-    )
-    assert PLACEHOLDER_OTP in redacted
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
+# Every OTP leak and keep case from QA rounds 1–3, plus near-variants.
+# Columns: input, expected redacted output, reason (round / shape).
+OTP_CORPUS: list[tuple[str, str, str]] = [
+    # Round 1 leaks
+    ("Your code is 739104", "Your code is [OTP]", "r1: code is N"),
+    ("Code: 482913", "Code: [OTP]", "r1: Code: N"),
+    ("Your security code: 482913", "Your security code: [OTP]", "r1: security code"),
+    (
+        "482913 is your verification code",
+        "[OTP] is your verification code",
+        "r1: N is your verification code",
+    ),
+    (
+        "G-482913 is your Google verification code",
+        "[OTP] is your Google verification code",
+        "r1: G-prefix Google verification",
+    ),
+    ("Passcode: 7391", "Passcode: [OTP]", "r1 nit: Passcode"),
+    ("PIN: 4829", "PIN: [OTP]", "r1: PIN label"),
+    ("one-time code 482913", "one-time code [OTP]", "r1: one-time code"),
+    ("one time password 739104", "one time password [OTP]", "r1: one time password"),
+    ("OTP 739104", "OTP [OTP]", "r1: OTP keyword"),
+    ("739104 is your code", "[OTP] is your code", "r1: N is your code"),
+    (
+        "Your one-time passcode is 482913",
+        "Your one-time passcode is [OTP]",
+        "r1: one-time passcode is N",
+    ),
+    ("login code 482913", "login code [OTP]", "r1: login code"),
+    ("2FA 739104", "2FA [OTP]", "r1: 2FA"),
+    ("authentication code 482913", "authentication code [OTP]", "r1: authentication code"),
+    ("Your PIN is 4829", "Your PIN is [OTP]", "r1: Your PIN is N"),
+    ("enter the passcode 7391", "enter the passcode [OTP]", "r1: passcode after filler"),
+    ("4829 is your PIN", "[OTP] is your PIN", "r1: N is your PIN"),
+    ("security PIN 7391", "security PIN [OTP]", "r1: security PIN"),
+    ("auth code: 482913", "auth code: [OTP]", "r1: auth code"),
+    (
+        "Verification code 847291 expires soon",
+        "Verification code [OTP] expires soon",
+        "r1: verification code N expires",
+    ),
+    ("code:482913", "code:[OTP]", "r1 variant: no space after colon"),
+    ("Code\n482913", "Code\n[OTP]", "r1 variant: label then next-line code"),
+    # Round 2 grouped leaks
+    ("Your WhatsApp code: 482-913", "Your WhatsApp code: [OTP]", "r2: WhatsApp 3+3 hyphen"),
+    ("Your code is 482 913", "Your code is [OTP]", "r2: code is 3+3 space"),
+    ("Passcode: 7391-0428", "Passcode: [OTP]", "r2: passcode 4+4 hyphen"),
+    ("OTP 48 29 13", "OTP [OTP]", "r2: OTP 2+2+2 space"),
+    ("PIN 48-29-13", "PIN [OTP]", "r2: PIN 2+2+2 hyphen"),
+    ("one-time code 4829 1374", "one-time code [OTP]", "r2: one-time 4+4 space"),
+    (
+        "G-482-913 is your Google verification code",
+        "[OTP] is your Google verification code",
+        "r2: G-prefix 3+3",
+    ),
+    ("Code\n482 913", "Code\n[OTP]", "r2: next-line grouped 3+3"),
+    # Round 3 leaks (tight window had closed these)
+    ("Your code\n• 482913 •", "Your code\n• [OTP] •", "r3: label then bulleted code"),
+    (
+        "Your Apple ID Code is: 739104. Don't share it.",
+        "Your Apple ID Code is: [OTP]. Don't share it.",
+        "r3: Apple ID Code SMS",
+    ),
+    ("Your code is: 774411", "Your code is: [OTP]", "r3: code is: N"),
+    (
+        "Your verification code is: 482913",
+        "Your verification code is: [OTP]",
+        "r3: verification code is: N",
+    ),
+    (
+        "551234 is your Instagram code",
+        "[OTP] is your Instagram code",
+        "r3: Instagram code after brand",
+    ),
+    (
+        "551234 is your Uber confirmation code",
+        "[OTP] is your Uber confirmation code",
+        "r3: Uber confirmation code",
+    ),
+    (
+        "551234 is your Facebook confirmation code",
+        "[OTP] is your Facebook confirmation code",
+        "r3: Facebook confirmation code",
+    ),
+    (
+        "Use 662931 as Microsoft account security code",
+        "Use [OTP] as Microsoft account security code",
+        "r3: Use N as Microsoft security code",
+    ),
+    (
+        "Your verification code is\n482913",
+        "Your verification code is\n[OTP]",
+        "r3: label ending in is, code next line",
+    ),
+    ("Your code is:\n482913", "Your code is:\n[OTP]", "r3: label ending in colon"),
+    (
+        "Verification code\n482913 (expires in 10 min)",
+        "Verification code\n[OTP] (expires in 10 min)",
+        "r3: label then code plus expiry",
+    ),
+    (
+        "Your login code for Slack is 482913",
+        "Your login code for Slack is [OTP]",
+        "r3: login code for Slack is N",
+    ),
+    (
+        "Your Apple ID Code is: 482 913",
+        "Your Apple ID Code is: [OTP]",
+        "r3: Apple ID Code grouped 3+3",
+    ),
+    # Near-variants
+    (
+        "Your Google verification code is 482913",
+        "Your Google verification code is [OTP]",
+        "nv: Google",
+    ),
+    ("WhatsApp code: 482-913", "WhatsApp code: [OTP]", "nv: WhatsApp short"),
+    ("Use 662931 as your login code", "Use [OTP] as your login code", "nv: Use N as login code"),
+    # Must-not-redact: ordinary numbers and known non-secret shapes
+    (
         "Demo on 14 Nov section 3 amount 1200",
-        "zip code 90210",
-        "postal code 90210",
-        "area code 21255",
-        "error code 404",
-        "status code 200",
-        "promo code 48291",
-        "coupon code 12345",
-        "QR code 998877",
-        "discount code 482913",
-        "source code 482913",
-        "PO 12345678 filed",
-        "GB20 Q4 proposal",
-        "Invoice 482913 due Friday",
-        "room 1200 at 14:00",
+        "Demo on 14 Nov section 3 amount 1200",
+        "keep: date/section/amount",
+    ),
+    ("zip code 90210", "zip code 90210", "keep: zip code"),
+    ("postal code 90210", "postal code 90210", "keep: postal code"),
+    ("area code 21255", "area code 21255", "keep: area code"),
+    ("error code 404", "error code 404", "keep: error code"),
+    ("status code 200", "status code 200", "keep: status code"),
+    ("promo code 48291", "promo code 48291", "keep: promo code"),
+    ("coupon code 12345", "coupon code 12345", "keep: coupon code"),
+    ("QR code 998877", "QR code 998877", "keep: QR code"),
+    ("discount code 482913", "discount code 482913", "keep: discount code"),
+    ("source code 482913", "source code 482913", "keep: source code"),
+    ("PO 12345678 filed", "PO 12345678 filed", "keep: PO number"),
+    ("GB20 Q4 proposal", "GB20 Q4 proposal", "keep: quarter label"),
+    ("Invoice 482913 due Friday", "Invoice 482913 due Friday", "keep: invoice number"),
+    ("room 1200 at 14:00", "room 1200 at 14:00", "keep: room and time"),
+    (
         "The verification is done. Call 482913.",
-        "Dial 482913 for the front desk",
-        "PR 1234 code review",
-        "code freeze on 2026-11-03",
-        "£1200 after code changes",
+        "The verification is done. Call 482913.",
+        "keep: keyword in previous sentence",
+    ),
+    ("Dial 482913 for the front desk", "Dial 482913 for the front desk", "keep: unlabeled dial"),
+    ("PR 1234 code review", "PR 1234 code review", "r2: PR + code review"),
+    ("code freeze on 2026-11-03", "code freeze on 2026-11-03", "r2: code freeze + ISO date"),
+    ("£1200 after code changes", "£1200 after code changes", "r2: amount after code changes"),
+    (
         "Login page loads in 1200 ms",
-        "Pin the 1234 roadmap",
+        "Login page loads in 1200 ms",
+        "r2: login page timing, not login code",
+    ),
+    ("Pin the 1234 roadmap", "Pin the 1234 roadmap", "r2: pin-the verb"),
+    (
         "Open PR 482913 for the code review",
+        "Open PR 482913 for the code review",
+        "keep: PR ticket + code review",
+    ),
+    (
         "code freeze on 14 Nov after 1200",
-    ],
+        "code freeze on 14 Nov after 1200",
+        "keep: code freeze then ordinary number",
+    ),
+    ("issue 1234 assigned", "issue 1234 assigned", "keep: issue ticket"),
+    ("ticket 482913 filed", "ticket 482913 filed", "keep: ticket id"),
+    ("Code: 2026 roadmap", "Code: 2026 roadmap", "keep: year, date-like"),
+    ("code 1234 lines", "code 1234 lines", "keep: code N lines"),
+    ("code coverage is 1234", "code coverage is 1234", "keep: code coverage"),
+    ("code style 1234", "code style 1234", "keep: code style"),
+]
+
+
+@pytest.mark.parametrize(
+    "text, expected, reason",
+    OTP_CORPUS,
+    ids=[row[2] for row in OTP_CORPUS],
 )
-def test_ordinary_numbers_are_not_treated_as_otps(text: str) -> None:
-    assert redact_ocr_text(text) == text
-    assert PLACEHOLDER_OTP not in redact_ocr_text(text)
+def test_otp_corpus_from_all_qa_rounds(text: str, expected: str, reason: str) -> None:
+    assert redact_ocr_text(text) == expected, reason
 
 
 @pytest.mark.parametrize(
@@ -199,14 +304,6 @@ def test_iban_api_key_jwt_and_password_are_secrets() -> None:
     assert "hunter2-extra" not in redacted
     assert PLACEHOLDER_IBAN in redacted
     assert redacted.count(PLACEHOLDER_SECRET) >= 3
-
-
-def test_otp_near_verification_label() -> None:
-    text = "Verification code 847291 expires soon"
-    redacted = redact_ocr_text(text)
-    assert "847291" not in redacted
-    assert PLACEHOLDER_OTP in redacted
-    assert "Verification code" in redacted
 
 
 def test_password_next_line_value_only() -> None:
