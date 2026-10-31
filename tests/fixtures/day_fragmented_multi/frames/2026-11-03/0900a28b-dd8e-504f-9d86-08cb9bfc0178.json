@@ -1,0 +1,119 @@
+{
+  "frame_id": "0900a28b-dd8e-504f-9d86-08cb9bfc0178",
+  "captured_at": "2026-11-03T09:56:30Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.compass",
+  "app_name": "Cedar Compass",
+  "window_title": "Pocket Calendar \u2014 Today",
+  "window_id": 3402,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Compass \u2014 Pocket Calendar \u2014 Today",
+        "bbox": [
+          66,
+          9,
+          344,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:56",
+        "bbox": [
+          1235,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Calendar",
+        "bbox": [
+          8,
+          42,
+          96,
+          75
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://calendar.pocket.example/today",
+        "bbox": [
+          32,
+          84,
+          305,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pocket Calendar \u00b7 today",
+        "bbox": [
+          40,
+          137,
+          1240,
+          158
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tuesday 3 Nov",
+        "bbox": [
+          40,
+          170,
+          1240,
+          204
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "12:00",
+        "bbox": [
+          40,
+          220,
+          79,
+          241
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Lunch",
+        "bbox": [
+          95,
+          220,
+          138,
+          241
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "16:00",
+        "bbox": [
+          40,
+          258,
+          79,
+          279
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "School pickup",
+        "bbox": [
+          95,
+          258,
+          195,
+          279
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "80ff00ffffffffff",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

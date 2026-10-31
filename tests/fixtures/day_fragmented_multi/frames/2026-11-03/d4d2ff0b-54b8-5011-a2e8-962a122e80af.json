@@ -1,0 +1,219 @@
+{
+  "frame_id": "d4d2ff0b-54b8-5011-a2e8-962a122e80af",
+  "captured_at": "2026-11-03T10:33:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.quill",
+  "app_name": "Cedar Quill",
+  "window_title": "Cedar Onboarding \u2014 Page 2",
+  "window_id": 3203,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Quill \u2014 Cedar Onboarding \u2014 Page 2",
+        "bbox": [
+          66,
+          9,
+          330,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:33",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar-Onboarding-Page2.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tools",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Still missing",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar-Onboarding-Page2.quill",
+        "bbox": [
+          276,
+          46,
+          465,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          475,
+          46,
+          516,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          526,
+          46,
+          597,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Onboarding page 2",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tools list \u00b7 draft",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tools",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft tools list for new joiners. Jun Park asked for this before Friday standup.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Mail, Cedar Quill, Cedar Relay, Cedar Anvil.",
+        "bbox": [
+          276,
+          247,
+          984,
+          268
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Still missing",
+        "bbox": [
+          276,
+          292,
+          984,
+          314
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "VPN steps and the guest badge flow are not written yet.",
+        "bbox": [
+          276,
+          320,
+          984,
+          341
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Page 1 already published",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Page 2 still open",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "5c7c7c7c7c7c7c7c",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

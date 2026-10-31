@@ -2,7 +2,7 @@
 
 WATSON is a local-first, offline-capable work-memory system for macOS (Apple Silicon first). A signed Swift helper captures the frontmost window; a Python supervisor, inference worker, and local dashboard coordinate through a single encrypted SQLite database. Frames are extracted with on-device OCR, grouped into activity segments, and recorded as claims with evidence. No component opens an outbound socket during normal operation.
 
-This repository is at the layout-and-CI skeleton, the M0 bake-off and capture helper, and M1: config, encrypted SQLite, jobs queue, redacted logging, runtime network guard, `watson replay` of the `day_acme_q4` fixture, and a loopback-only FastAPI status page. Production runtime adapters land later.
+This repository is at the layout-and-CI skeleton, the M0 bake-off and capture helper, and M1: config, encrypted SQLite, jobs queue, redacted logging, runtime network guard, `watson replay` of the `day_acme_q4` and `day_fragmented_multi` fixtures, and a loopback-only FastAPI status page. Production runtime adapters land later.
 
 ## Development
 

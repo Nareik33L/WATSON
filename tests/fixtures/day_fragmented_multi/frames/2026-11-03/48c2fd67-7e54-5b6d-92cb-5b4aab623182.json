@@ -1,0 +1,199 @@
+{
+  "frame_id": "48c2fd67-7e54-5b6d-92cb-5b4aab623182",
+  "captured_at": "2026-11-03T09:44:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.relay",
+  "app_name": "Cedar Relay",
+  "window_title": "Relay \u2014 Ellis Voss",
+  "window_id": 3301,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Relay \u2014 Relay \u2014 Ellis Voss",
+        "bbox": [
+          66,
+          9,
+          272,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:44",
+        "bbox": [
+          1234,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "CEDAR WORKS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor desk",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          234,
+          46,
+          292,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor Safety Audit",
+        "bbox": [
+          302,
+          46,
+          420,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          238,
+          89,
+          307,
+          108
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:40",
+        "bbox": [
+          319,
+          92,
+          353,
+          107
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Can we move the Harbor walkthrough to Thursday? Friday the berth is closed.",
+        "bbox": [
+          238,
+          109,
+          1262,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          143,
+          266,
+          162
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:42",
+        "bbox": [
+          278,
+          146,
+          311,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Thursday works. I will send the checklist by Wednesday.",
+        "bbox": [
+          238,
+          163,
+          1262,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          238,
+          197,
+          307,
+          216
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:44",
+        "bbox": [
+          319,
+          200,
+          353,
+          215
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Agreed, Thursday for the Harbor walkthrough. Thanks.",
+        "bbox": [
+          238,
+          217,
+          1262,
+          238
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Message Ellis Voss",
+        "bbox": [
+          234,
+          769,
+          1266,
+          790
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "1f3f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

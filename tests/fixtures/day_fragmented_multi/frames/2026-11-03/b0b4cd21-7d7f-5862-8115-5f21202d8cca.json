@@ -1,0 +1,169 @@
+{
+  "frame_id": "b0b4cd21-7d7f-5862-8115-5f21202d8cca",
+  "captured_at": "2026-11-03T14:57:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.relay",
+  "app_name": "Cedar Relay",
+  "window_title": "Relay \u2014 Jun Park",
+  "window_id": 3302,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Relay \u2014 Relay \u2014 Jun Park",
+        "bbox": [
+          66,
+          9,
+          268,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "14:57",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "CEDAR WORKS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor desk",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          234,
+          46,
+          288,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Onboarding",
+        "bbox": [
+          298,
+          46,
+          410,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          89,
+          266,
+          108
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "14:52",
+        "bbox": [
+          278,
+          92,
+          308,
+          107
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Page 1 stays published. Page 2 is still draft \u2014 not complete.",
+        "bbox": [
+          238,
+          109,
+          1262,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          238,
+          143,
+          302,
+          162
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "14:56",
+        "bbox": [
+          314,
+          146,
+          345,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Leave the page 2 commitment open.",
+        "bbox": [
+          238,
+          163,
+          1262,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Message Jun Park",
+        "bbox": [
+          234,
+          769,
+          1266,
+          790
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "007f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

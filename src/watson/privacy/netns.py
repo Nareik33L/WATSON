@@ -52,6 +52,8 @@ def interface_names() -> set[str]:
 
 def assert_namespace_isolated() -> None:
     """Raise if this process can see a non-loopback interface or reach off-box."""
+    if os.geteuid() == 0:
+        raise NetnsError("expected a non-root uid inside the network namespace")
     names = interface_names()
     if names != {"lo"}:
         raise NetnsError(f"expected only lo, got {sorted(names)}")
@@ -133,6 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 1
         print("netns-ok")
+        print(f"uid={os.geteuid()}")
         return 0
     if args[:1] == ["--assert-isolated"]:
         args = [sys.executable, "-m", "watson.privacy.netns", "--probe"]

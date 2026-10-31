@@ -12,8 +12,7 @@ from watson_fixturegen.phash import hamming_distance
 from watson_fixturegen.render import render_scenario
 
 REPO = Path(__file__).resolve().parents[2]
-FIXTURE = REPO / "tests" / "fixtures" / "day_acme_q4"
-SCENARIO = scenarios_dir() / "day_acme_q4.yaml"
+DAYS = ("day_acme_q4", "day_fragmented_multi")
 BBOX_TOLERANCE_PX = 2
 PHASH_HAMMING_MAX = 4
 TEXT_FIELDS = (
@@ -46,19 +45,22 @@ def _assert_sidecar_close(generated: dict[str, Any], committed: dict[str, Any]) 
 
 
 @pytest.mark.fixture_regen
-def test_regen_sidecars_and_truth_match_committed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("name", DAYS)
+def test_regen_sidecars_and_truth_match_committed(tmp_path: Path, name: str) -> None:
     pytest.importorskip("playwright")
-    out = tmp_path / "day_acme_q4"
-    render_scenario(SCENARIO, out)
-    committed_truth = (FIXTURE / "truth.yaml").read_text(encoding="utf-8")
+    fixture = REPO / "tests" / "fixtures" / name
+    scenario = scenarios_dir() / f"{name}.yaml"
+    out = tmp_path / name
+    render_scenario(scenario, out)
+    committed_truth = (fixture / "truth.yaml").read_text(encoding="utf-8")
     generated_truth = (out / "truth.yaml").read_text(encoding="utf-8")
     assert generated_truth == committed_truth
     assert yaml.safe_load(generated_truth) == yaml.safe_load(committed_truth)
     generated_sample = (out / "sample50.txt").read_text(encoding="utf-8")
-    committed_sample = (FIXTURE / "sample50.txt").read_text(encoding="utf-8")
+    committed_sample = (fixture / "sample50.txt").read_text(encoding="utf-8")
     assert generated_sample == committed_sample
     generated = sorted((out / "frames").glob("*/*.json"))
-    committed = sorted((FIXTURE / "frames").glob("*/*.json"))
+    committed = sorted((fixture / "frames").glob("*/*.json"))
     assert [path.name for path in generated] == [path.name for path in committed]
     for left, right in zip(generated, committed, strict=True):
         _assert_sidecar_close(

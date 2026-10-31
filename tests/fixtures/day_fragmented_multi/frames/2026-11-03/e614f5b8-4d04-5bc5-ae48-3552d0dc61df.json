@@ -1,0 +1,249 @@
+{
+  "frame_id": "e614f5b8-4d04-5bc5-ae48-3552d0dc61df",
+  "captured_at": "2026-11-03T13:00:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.grid",
+  "app_name": "Cedar Grid",
+  "window_title": "Harbor findings \u2014 Grid",
+  "window_id": 3501,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Grid \u2014 Harbor findings \u2014 Grid",
+        "bbox": [
+          66,
+          9,
+          295,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:00",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "SHEETS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Findings",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Notes",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FILE",
+        "bbox": [
+          14,
+          137,
+          205,
+          153
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor-findings.grid",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor-findings.grid",
+        "bbox": [
+          234,
+          46,
+          359,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Findings",
+        "bbox": [
+          369,
+          46,
+          429,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "=B2",
+        "bbox": [
+          439,
+          46,
+          464,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Item",
+        "bbox": [
+          233,
+          87,
+          698,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Status",
+        "bbox": [
+          698,
+          87,
+          984,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner",
+        "bbox": [
+          984,
+          87,
+          1268,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Life-ring mounts",
+        "bbox": [
+          233,
+          116,
+          698,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open",
+        "bbox": [
+          698,
+          116,
+          984,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          984,
+          116,
+          1268,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tide-gate latch",
+        "bbox": [
+          233,
+          150,
+          698,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open",
+        "bbox": [
+          698,
+          150,
+          984,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          984,
+          150,
+          1268,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Walkthrough",
+        "bbox": [
+          233,
+          184,
+          698,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Thursday",
+        "bbox": [
+          698,
+          184,
+          984,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          984,
+          184,
+          1268,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor Safety Audit findings. Walkthrough agreed for Thursday.",
+        "bbox": [
+          232,
+          231,
+          1268,
+          252
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "5f007f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

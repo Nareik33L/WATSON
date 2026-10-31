@@ -98,6 +98,8 @@ def normalize_title(title: str) -> str:
 def _block_at(blocks: tuple[TimelineBlock, ...], moment: datetime) -> TimelineBlock | None:
     for block in blocks:
         if block.start <= moment < block.end:
+            if block.window.excluded:
+                return None
             return block
     return None
 

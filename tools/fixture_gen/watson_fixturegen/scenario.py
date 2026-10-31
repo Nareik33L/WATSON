@@ -32,6 +32,7 @@ class WindowSpec:
     window_id: int
     url: str | None = None
     is_private_browsing: bool = False
+    excluded: bool = False
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,7 @@ def _window(key: str, raw: object, path: Path) -> WindowSpec:
         window_id=int(raw["window_id"]),
         url=url,
         is_private_browsing=bool(raw.get("is_private_browsing", False)),
+        excluded=bool(raw.get("excluded", False)),
     )
 
 

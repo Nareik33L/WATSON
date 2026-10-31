@@ -38,7 +38,7 @@ def build_truth(scenario: Scenario, frames: Sequence[ScheduledFrame]) -> dict[st
     for item in scenario.truth.commitments:
         row = {"text": str(item["text"]), "status": str(item.get("status", "open"))}
         commitments.append(row)
-    return {
+    payload: dict[str, Any] = {
         "projects": list(scenario.truth.projects),
         "people": list(scenario.truth.people),
         "decisions": decisions,
@@ -46,17 +46,21 @@ def build_truth(scenario: Scenario, frames: Sequence[ScheduledFrame]) -> dict[st
         "completed": list(scenario.truth.completed),
         "not_completed": list(scenario.truth.not_completed),
         "noise": list(scenario.truth.noise),
-        "expected_segments": expected_segments(frames),
-        "meta": {
-            "name": scenario.name,
-            "date": scenario.date,
-            "seed": scenario.seed,
-            "frame_count": len(frames),
-            "first_frame": frames[0].frame_id,
-            "last_frame": frames[-1].frame_id,
-        },
-        "_by_id": by_id,  # stripped before dump
     }
+    skipped = skipped_windows(scenario)
+    if skipped:
+        payload["skipped"] = skipped
+    payload["expected_segments"] = expected_segments(frames)
+    payload["meta"] = {
+        "name": scenario.name,
+        "date": scenario.date,
+        "seed": scenario.seed,
+        "frame_count": len(frames),
+        "first_frame": frames[0].frame_id,
+        "last_frame": frames[-1].frame_id,
+    }
+    payload["_by_id"] = by_id
+    return payload
 
 
 def dump_truth(truth: dict[str, Any]) -> str:
@@ -68,6 +72,26 @@ def dump_truth(truth: dict[str, Any]) -> str:
         allow_unicode=True,
         width=100,
     )
+
+
+def skipped_windows(scenario: Scenario) -> list[dict[str, Any]]:
+    """Timeline blocks the helper would drop (excluded / private apps)."""
+    rows: list[dict[str, Any]] = []
+    for block in scenario.timeline:
+        if not block.window.excluded:
+            continue
+        rows.append(
+            {
+                "reason": "excluded_app",
+                "window": block.window.key,
+                "bundle_id": block.window.bundle_id,
+                "app_name": block.window.app_name,
+                "window_title": block.window.window_title,
+                "start": format_captured_at(block.start),
+                "end": format_captured_at(block.end),
+            }
+        )
+    return rows
 
 
 def expected_segments(frames: Sequence[ScheduledFrame]) -> list[dict[str, Any]]:

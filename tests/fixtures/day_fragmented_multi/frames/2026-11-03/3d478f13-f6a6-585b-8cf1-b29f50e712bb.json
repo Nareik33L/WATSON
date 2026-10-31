@@ -1,0 +1,239 @@
+{
+  "frame_id": "3d478f13-f6a6-585b-8cf1-b29f50e712bb",
+  "captured_at": "2026-11-03T09:00:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.mail",
+  "app_name": "Cedar Mail",
+  "window_title": "Re: Northwind Renewal \u2014 Mina Okonkwo",
+  "window_id": 3101,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Mail \u2014 Re: Northwind Renewal \u2014 Mina Okonkwo",
+        "bbox": [
+          66,
+          9,
+          407,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:00",
+        "bbox": [
+          1234,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FOLDERS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Inbox",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Sent",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Drafts",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "ACCOUNT",
+        "bbox": [
+          14,
+          170,
+          205,
+          186
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "you@cedar.example",
+        "bbox": [
+          0,
+          194,
+          219,
+          227
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Mina Okonkwo",
+        "bbox": [
+          232,
+          46,
+          507,
+          67
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Re: Northwind Renewal",
+        "bbox": [
+          232,
+          67,
+          507,
+          88
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "08:44 \u00b7 Can we lock a two-year term this week?",
+        "bbox": [
+          232,
+          88,
+          507,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          232,
+          126,
+          507,
+          147
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Onboarding page 1",
+        "bbox": [
+          232,
+          147,
+          507,
+          168
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "08:10 \u00b7 Page 1 is live on the intranet",
+        "bbox": [
+          232,
+          168,
+          507,
+          185
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Re: Northwind Renewal",
+        "bbox": [
+          540,
+          52,
+          1260,
+          77
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "From: Mina Okonkwo <mina@northwind.example>",
+        "bbox": [
+          540,
+          85,
+          1260,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "To: you@cedar.example",
+        "bbox": [
+          540,
+          106,
+          1260,
+          127
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Time: 08:44",
+        "bbox": [
+          540,
+          127,
+          1260,
+          148
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hello \u2014",
+        "bbox": [
+          540,
+          162,
+          1260,
+          183
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Can we lock a two-year term this week? Procurement wants the renewal letter before Friday.",
+        "bbox": [
+          540,
+          191,
+          1260,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "I can sign Thursday if the draft is ready.",
+        "bbox": [
+          540,
+          220,
+          1260,
+          241
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "\u2014 Mina Okonkwo, Northwind Civic",
+        "bbox": [
+          540,
+          249,
+          1260,
+          270
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "1f7f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

@@ -29,10 +29,15 @@ The `dev` group includes `fixturegen` so mypy and unit tests can import the pack
 
 ## Render a day
 
+Committed days: `day_acme_q4` (focused single-project) and `day_fragmented_multi` (three projects, frequent switches, lunch gap, mid-day idle, excluded private window).
+
 ```bash
 uv run watson-fixturegen render \
   tools/fixture_gen/watson_fixturegen/scenarios/day_acme_q4.yaml \
   --out tests/fixtures/day_acme_q4
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_fragmented_multi.yaml \
+  --out tests/fixtures/day_fragmented_multi
 ```
 
 Same scenario + seed (default `meta.seed`) yields byte-identical sidecar **text** fields, `truth.yaml`, and `sample50.txt`. OCR `bbox` values may move by ±2 px and `phash` Hamming distance may be ≤ 4 across machines.
@@ -45,17 +50,20 @@ Same scenario + seed (default `meta.seed`) yields byte-identical sidecar **text*
 
 1. Copy `scenarios/day_acme_q4.yaml`.
 2. Set `meta.name`, `meta.date`, `meta.seed`.
-3. Declare `windows` (`template` is one of `mail`, `document`, `chat`, `spreadsheet`, `browser`, `ide`, `videocall`) using only fictional firms, people, and `*.example` hosts. No real brands, logos, or PII.
+3. Declare `windows` (`template` is one of `mail`, `document`, `chat`, `spreadsheet`, `browser`, `ide`, `videocall`) using only fictional firms, people, and `*.example` hosts. No real brands, logos, or PII. Set `excluded: true` on a window the helper would drop (private browsing, password vault); those blocks become timeline gaps and are recorded in `truth.yaml` as `skipped`, with no PNG or sidecar.
 4. Add a `timeline` of blocks (`window`, `start`, `end`, `states` with `at` + template `content`). Gaps between blocks are idle (no frames).
 5. Fill `truth` using the §11.1 keys. Point each decision at frames with `evidence_contains` (matched against window title, URL, and content strings) or explicit `evidence_frames`.
 6. Render into `tests/fixtures/<name>/`. `expected_segments` are generated from D3: maximal consecutive runs of `(bundle_id, normalised window title)`.
 
-## Regenerate the committed fixture
+## Regenerate the committed fixtures
 
 ```bash
 uv run watson-fixturegen render \
   tools/fixture_gen/watson_fixturegen/scenarios/day_acme_q4.yaml \
   --out tests/fixtures/day_acme_q4
+uv run watson-fixturegen render \
+  tools/fixture_gen/watson_fixturegen/scenarios/day_fragmented_multi.yaml \
+  --out tests/fixtures/day_fragmented_multi
 ```
 
 CI runs this check by default when `tools/fixture_gen` or `tests/fixtures` change (needs Chromium):

@@ -1,0 +1,189 @@
+{
+  "frame_id": "064b560b-63e1-578e-884d-e7e092e60717",
+  "captured_at": "2026-11-03T11:15:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.anvil",
+  "app_name": "Cedar Anvil",
+  "window_title": "anvil \u2014 renewals/northwind.md",
+  "window_id": 3601,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Anvil \u2014 anvil \u2014 renewals/northwind.md",
+        "bbox": [
+          66,
+          9,
+          351,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "11:15",
+        "bbox": [
+          1243,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "CEDAR-RENEWALS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "renewals/northwind.md",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "README.md",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "renewals/northwind.md",
+        "bbox": [
+          234,
+          46,
+          379,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "markdown",
+        "bbox": [
+          389,
+          46,
+          460,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "1",
+        "bbox": [
+          220,
+          88,
+          268,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "# Northwind Renewal notes",
+        "bbox": [
+          268,
+          88,
+          437,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "2",
+        "bbox": [
+          220,
+          106,
+          268,
+          124
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "3",
+        "bbox": [
+          220,
+          124,
+          268,
+          143
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Term: two years from 1 December (draft).",
+        "bbox": [
+          268,
+          124,
+          521,
+          143
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "4",
+        "bbox": [
+          220,
+          143,
+          268,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Mina Okonkwo can sign Thursday if the letter is ready.",
+        "bbox": [
+          268,
+          143,
+          602,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "5",
+        "bbox": [
+          220,
+          161,
+          268,
+          179
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "TODO: pricing paragraph. Do not send.",
+        "bbox": [
+          268,
+          161,
+          508,
+          179
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "anvil: opened renewals/northwind.md",
+        "bbox": [
+          232,
+          200,
+          1268,
+          217
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "2020000000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

@@ -1,0 +1,179 @@
+{
+  "frame_id": "08cf1480-8de3-54ca-9e63-0df937a9aef5",
+  "captured_at": "2026-11-03T13:40:30Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.anvil",
+  "app_name": "Cedar Anvil",
+  "window_title": "anvil \u2014 onboarding/page2.md",
+  "window_id": 3602,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Anvil \u2014 anvil \u2014 onboarding/page2.md",
+        "bbox": [
+          66,
+          9,
+          343,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:40",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "CEDAR-ONBOARDING",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "onboarding/page1.md",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "onboarding/page2.md",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "README.md",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "onboarding/page2.md",
+        "bbox": [
+          234,
+          46,
+          371,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "markdown",
+        "bbox": [
+          381,
+          46,
+          451,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "1",
+        "bbox": [
+          220,
+          88,
+          268,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "# Cedar Onboarding page 2",
+        "bbox": [
+          268,
+          88,
+          439,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "2",
+        "bbox": [
+          220,
+          106,
+          268,
+          124
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "3",
+        "bbox": [
+          220,
+          124,
+          268,
+          143
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tools list still draft.",
+        "bbox": [
+          268,
+          124,
+          382,
+          143
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "4",
+        "bbox": [
+          220,
+          143,
+          268,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun wants this before Friday standup.",
+        "bbox": [
+          268,
+          143,
+          499,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "anvil: opened onboarding/page2.md",
+        "bbox": [
+          232,
+          182,
+          1268,
+          199
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "207f007f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}
