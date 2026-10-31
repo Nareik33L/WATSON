@@ -1,4 +1,4 @@
-"""WATSON command-line interface: run, replay, models, db, doctor, status."""
+"""WATSON command-line interface: run, replay, models, db, doctor, status, dashboard."""
 
 from __future__ import annotations
 
@@ -12,6 +12,9 @@ from sqlcipher3 import dbapi2 as sqlcipher
 from watson import __version__
 from watson.config import ConfigError, ensure_runtime_dirs, is_cloud_synced_path, load_config
 from watson.config.schema import WatsonConfig
+from watson.dashboard.bind import DEFAULT_PORT, BindError
+from watson.dashboard.serve import run_dashboard
+from watson.dashboard.tokens import TokenError
 from watson.memory.db import (
     DatabaseError,
     cipher_version,
@@ -59,6 +62,28 @@ def _main(argv: Sequence[str] | None = None) -> int:
         help="Print frame/job counts and last replay (for the status page)",
     )
     status.set_defaults(handler=_cmd_status)
+
+    dashboard = subparsers.add_parser(
+        "dashboard",
+        help="Serve the local status page on 127.0.0.1 (loopback only)",
+    )
+    dashboard.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address (must be 127.0.0.1)",
+    )
+    dashboard.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"Preferred port (default {DEFAULT_PORT}; falls back if busy)",
+    )
+    dashboard.add_argument(
+        "--open",
+        action="store_true",
+        help="Open the one-time auth URL in the local browser",
+    )
+    dashboard.set_defaults(handler=_cmd_dashboard)
 
     replay = subparsers.add_parser(
         "replay",
@@ -109,7 +134,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    except (KeyProviderError, DatabaseError) as exc:
+    except (KeyProviderError, DatabaseError, TokenError, BindError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except ReplayError as exc:
@@ -148,6 +173,10 @@ def _cmd_status(_args: argparse.Namespace) -> int:
     finally:
         conn.close()
     return 0
+
+
+def _cmd_dashboard(args: argparse.Namespace) -> int:
+    return run_dashboard(host=str(args.host), port=int(args.port), open_browser=bool(args.open))
 
 
 def _cmd_replay(args: argparse.Namespace) -> int:

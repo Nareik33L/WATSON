@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div
+  id="status-root"
+  hx-get="/status/partial"
+  hx-trigger="every 5s"
+  hx-swap="innerHTML"
+>
+  {% include "status_partial.html" %}
+</div>
+<form
+  method="post"
+  action="/status/refresh"
+  hx-post="/status/refresh"
+  hx-target="#status-root"
+  hx-swap="innerHTML"
+>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Refresh</button>
+</form>
+{% endblock %}

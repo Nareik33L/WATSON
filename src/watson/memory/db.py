@@ -32,6 +32,7 @@ def connect(
     key: bytes,
     *,
     load_vec: bool = True,
+    check_same_thread: bool = True,
 ) -> sqlcipher.Connection:
     """Open ``path`` with SQLCipher, apply a 32-byte raw key, enable WAL.
 
@@ -41,7 +42,7 @@ def connect(
     """
     _require_raw_key(key)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlcipher.connect(str(path))
+    conn = sqlcipher.connect(str(path), check_same_thread=check_same_thread)
     try:
         _apply_key(conn, key)
         conn.execute("SELECT count(*) FROM sqlite_master").fetchone()

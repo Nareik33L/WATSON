@@ -70,8 +70,13 @@ def test_status_without_db(data_dir: Path, capsys: pytest.CaptureFixture[str]) -
     assert cli.main(["status"]) == 0
     out = capsys.readouterr().out
     assert "db_status: missing" in out
+    assert "capture.state: idle" in out
+    assert "queue.depth: 0" in out
     assert "frames.captured: 0" in out
+    assert "deletion.verified: 0" in out
     assert "last_replay: none" in out
+    assert "last_frames: none" in out
+    assert "audit: none" in out
 
 
 def test_db_without_subcommand_is_help(capsys: pytest.CaptureFixture[str]) -> None:

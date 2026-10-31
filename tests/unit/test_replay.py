@@ -139,7 +139,9 @@ def test_cli_replay_and_status(
     status = capsys.readouterr().out
     assert "frames.deleted: 1" in status
     assert "jobs.completed: 1" in status
+    assert "deletion.verified: 1" in status
     assert "last_replay.fixture: day_mini" in status
+    assert "audit.0.kind:" in status
     assert TEST_KEY.hex() not in status
 
     conn = open_test_db(data_dir)
