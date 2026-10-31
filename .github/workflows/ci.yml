@@ -26,24 +26,6 @@ jobs:
       - name: Sync dependencies
         run: uv sync --locked --group dev
 
-      - name: Product wheel must not require watson-bench
-        run: |
-          set -euo pipefail
-          uv build --wheel --package watson --out-dir /tmp/watson-wheel
-          uv run python - <<'PY'
-          import email, zipfile
-          from pathlib import Path
-          wheels = list(Path("/tmp/watson-wheel").glob("watson-*.whl"))
-          assert len(wheels) == 1, wheels
-          with zipfile.ZipFile(wheels[0]) as archive:
-              names = [n for n in archive.namelist() if n.endswith(".dist-info/METADATA")]
-              parsed = email.message_from_bytes(archive.read(names[0]))
-          requires = parsed.get_all("Requires-Dist") or []
-          bench = [item for item in requires if "watson-bench" in item]
-          assert not bench, requires
-          print("ok", wheels[0].name)
-          PY
-
       - name: Ruff
         run: uv run ruff check .
 
@@ -92,6 +74,22 @@ jobs:
           --fixtures tests/fixtures/meetings
           --out /tmp/watson-transcribe-ci
           --report /tmp/watson-transcribe-ci/report.md
+
+  wheel-metadata:
+    name: Product wheel excludes watson-bench
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Build wheel and assert METADATA
+        run: python3 tools/check_wheel_metadata.py --out-dir /tmp/watson-wheel
 
   no-network:
     name: OS-level no-network replay
