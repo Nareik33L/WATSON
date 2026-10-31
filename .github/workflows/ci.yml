@@ -47,3 +47,29 @@ jobs:
           --frames tools/bench/samples/frames
           --out /tmp/watson-bench-ci
           --report /tmp/watson-bench-ci/report.md
+
+  no-network:
+    name: OS-level no-network replay
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked --group dev
+
+      - name: Replay and db status with no network interfaces
+        env:
+          WATSON_DATA_DIR: ${{ runner.temp }}/watson-offline
+          WATSON_DB_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+        run: |
+          set -euo pipefail
+          # unshare -rn: new user+net namespace, no interfaces (plan §6 / §11.3).
+          unshare -rn -- .venv/bin/watson replay tests/fixtures/day_acme_q4 --instant
+          unshare -rn -- .venv/bin/watson db status

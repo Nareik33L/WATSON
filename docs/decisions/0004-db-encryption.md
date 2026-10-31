@@ -68,4 +68,4 @@ If the wheels had failed to install on Linux x86_64 or macOS arm64, or if FTS5 /
 - One encrypted file (`watson.db` + WAL/SHM) holds relational rows, FTS5, and vectors.
 - Alembic runs against a SQLCipher connection (`creator=` + `NullPool`); the first revision is `0001_m1_foundation`.
 - A file copied off a stolen disk (FileVault off) is unreadable without the Keychain key. A local attacker running as the user can still use that key — documented in §6.
-- Linux developers/CI must install an `InMemoryKeyProvider` (tests do this). There is no file-backed keyring fallback, because that would write the key to disk.
+- Linux developers/CI set `WATSON_DB_KEY` (64 hex characters) or install an `InMemoryKeyProvider` in-process. There is no file-backed keyring fallback, because that would write the key to disk.

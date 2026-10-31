@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 import sys
 from typing import Protocol, runtime_checkable
@@ -9,6 +10,7 @@ from typing import Protocol, runtime_checkable
 KEYCHAIN_SERVICE = "ai.watson.db"
 KEYCHAIN_ACCOUNT = "sqlcipher-key"
 KEY_BYTES = 32
+ENV_KEY = "WATSON_DB_KEY"
 
 
 class KeyProviderError(RuntimeError):
@@ -35,6 +37,16 @@ class InMemoryKeyProvider:
 
     def __repr__(self) -> str:
         return f"InMemoryKeyProvider(key=<redacted {KEY_BYTES} bytes>)"
+
+
+class EnvKeyProvider(InMemoryKeyProvider):
+    """Linux/CI provider. Reads a 32-byte raw key from WATSON_DB_KEY (64 hex chars).
+
+    The key stays in the process environment; it is never written to the data dir.
+    """
+
+    def __repr__(self) -> str:
+        return f"EnvKeyProvider(key=<redacted {KEY_BYTES} bytes>)"
 
 
 class KeychainKeyProvider:
@@ -79,12 +91,28 @@ def set_key_provider(provider: KeyProvider | None) -> None:
     _override = provider
 
 
+def _key_from_env() -> bytes | None:
+    raw = os.environ.get(ENV_KEY)
+    if raw is None or raw == "":
+        return None
+    try:
+        key = bytes.fromhex(raw.strip())
+    except ValueError as exc:
+        raise KeyProviderError("WATSON_DB_KEY must be 64 hex characters") from exc
+    if len(key) != KEY_BYTES:
+        raise KeyProviderError(f"WATSON_DB_KEY must decode to {KEY_BYTES} bytes")
+    return key
+
+
 def get_key_provider() -> KeyProvider:
     if _override is not None:
         return _override
+    env_key = _key_from_env()
+    if env_key is not None:
+        return EnvKeyProvider(env_key)
     if sys.platform == "darwin":
         return KeychainKeyProvider()
     raise KeyProviderError(
         "No database key provider. On macOS the key lives in Keychain; "
-        "tests should install an InMemoryKeyProvider."
+        "on Linux set WATSON_DB_KEY to 64 hex characters."
     )

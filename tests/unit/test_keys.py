@@ -10,6 +10,8 @@ import pytest
 
 from watson.memory.db import connect
 from watson.memory.keys import (
+    ENV_KEY,
+    EnvKeyProvider,
     InMemoryKeyProvider,
     KeychainKeyProvider,
     KeyProviderError,
@@ -84,8 +86,23 @@ def test_get_key_provider_requires_override_off_macos(
 ) -> None:
     set_key_provider(None)
     monkeypatch.setattr("watson.memory.keys.sys.platform", "linux")
+    monkeypatch.delenv(ENV_KEY, raising=False)
     with pytest.raises(KeyProviderError, match="key provider"):
         get_key_provider()
     set_key_provider(InMemoryKeyProvider(TEST_KEY))
     assert get_key_provider().get_key() == TEST_KEY
+    set_key_provider(None)
+
+
+def test_env_key_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_key_provider(None)
+    monkeypatch.setattr("watson.memory.keys.sys.platform", "linux")
+    monkeypatch.setenv(ENV_KEY, TEST_KEY.hex())
+    provider = get_key_provider()
+    assert isinstance(provider, EnvKeyProvider)
+    assert provider.get_key() == TEST_KEY
+    assert TEST_KEY.hex() not in repr(provider)
+    monkeypatch.setenv(ENV_KEY, "not-hex")
+    with pytest.raises(KeyProviderError, match="hex"):
+        get_key_provider()
     set_key_provider(None)
