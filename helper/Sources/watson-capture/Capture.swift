@@ -160,6 +160,7 @@ final class RunState: @unchecked Sendable {
     private var framesSkipped = 0
     private var duplicates = 0
     private var lastSkip: String?
+    private var signalSources: [DispatchSourceSignal] = []
 
     func isPaused() -> Bool {
         lock.lock(); defer { lock.unlock() }
@@ -208,6 +209,11 @@ final class RunState: @unchecked Sendable {
     func snapshot() -> (paused: Bool, written: Int, skipped: Int, duplicates: Int, lastSkip: String?) {
         lock.lock(); defer { lock.unlock() }
         return (paused, framesWritten, framesSkipped, duplicates, lastSkip)
+    }
+
+    func keep(signalSource: DispatchSourceSignal) {
+        lock.lock(); defer { lock.unlock() }
+        signalSources.append(signalSource)
     }
 }
 
@@ -512,14 +518,10 @@ public enum ProcessMeter {
     }
 
     public static func rssBytes() -> UInt64 {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
-        let result = withUnsafeMutablePointer(to: &info) { pointer in
-            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), rebound, &count)
-            }
-        }
-        return result == KERN_SUCCESS ? UInt64(info.resident_size) : 0
+        // macOS: ru_maxrss is peak resident bytes. Avoids mach_task_self_ (not Sendable in Swift 6).
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        return UInt64(usage.ru_maxrss)
     }
 
     public static func reportFields(
@@ -704,10 +706,10 @@ func runSelftest(options: CLIOptions) -> Int32 {
 // MARK: - Live capture loop
 
 func runCapture(options: CLIOptions) async {
-    _ = NSApplication.shared
+    _ = await NSApplication.shared
     let state = RunState()
     let flags = WorkspaceFlags()
-    flags.start()
+    await MainActor.run { flags.start() }
     installSignalHandlers(state: state)
     startStdinReader(state: state)
 
@@ -883,7 +885,6 @@ private func skipFields(reason: SkipReason, window: FrontmostWindow) -> [String:
 private func sleepUntilNextTick(interval: TimeInterval, state: RunState) async {
     let deadline = Date().addingTimeInterval(interval)
     while Date() < deadline, !state.shouldQuit() {
-        RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
         try? await Task.sleep(nanoseconds: 50_000_000)
     }
 }
@@ -941,10 +942,6 @@ func handleStdinLine(_ line: String, state: RunState) {
     }
 }
 
-private enum SignalKeepAlive {
-    static var sources: [DispatchSourceSignal] = []
-}
-
 private func installSignalHandlers(state: RunState) {
     signal(SIGINT, SIG_IGN)
     signal(SIGTERM, SIG_IGN)
@@ -955,6 +952,6 @@ private func installSignalHandlers(state: RunState) {
             state.requestQuit()
         }
         source.resume()
-        SignalKeepAlive.sources.append(source)
+        state.keep(signalSource: source)
     }
 }
