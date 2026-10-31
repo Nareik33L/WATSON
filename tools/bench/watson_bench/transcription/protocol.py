@@ -34,9 +34,7 @@ class TranscriptionRuntime(Protocol):
 
     def load(self, size: str, models_dir: Path) -> None: ...
 
-    def transcribe(
-        self, pcm16k: bytes, language_hint: str | None
-    ) -> list[TranscriptSegment]: ...
+    def transcribe(self, pcm16k: bytes, language_hint: str | None) -> list[TranscriptSegment]: ...
 
     def unload(self) -> None: ...
 
@@ -65,6 +63,5 @@ def get_transcription_runtime(name: str) -> TranscriptionRuntime:
         return mapping[name]()
     except KeyError as exc:
         raise ValueError(
-            f"unknown transcription engine {name!r}; "
-            f"choose from {', '.join(TRANSCRIBE_ENGINES)}"
+            f"unknown transcription engine {name!r}; choose from {', '.join(TRANSCRIBE_ENGINES)}"
         ) from exc

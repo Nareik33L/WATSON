@@ -86,9 +86,7 @@ def render_meeting_scripts(
     for path in scripts:
         script = load_meeting_script(path)
         dest = out_root / script.name
-        results.append(
-            render_meeting(path, dest, dry_run=dry_run, progress=progress)
-        )
+        results.append(render_meeting(path, dest, dry_run=dry_run, progress=progress))
     return results
 
 
@@ -309,5 +307,3 @@ def _finish(
         duration_ms=duration_ms,
         dry_run=dry_run,
     )
-
-

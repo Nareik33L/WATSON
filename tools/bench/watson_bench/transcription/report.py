@@ -105,10 +105,7 @@ def render_transcription_report(
 
 
 def _results_table(results: list[dict[str, Any]]) -> str:
-    header = (
-        "| Engine | Size | Status | load s | RTF | WER | peak RSS | "
-        "audio s | wall s |"
-    )
+    header = "| Engine | Size | Status | load s | RTF | WER | peak RSS | audio s | wall s |"
     sep = "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
     rows = [header, sep]
     for row in results:

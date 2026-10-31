@@ -5,9 +5,11 @@ from __future__ import annotations
 import gc
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from watson_bench.adapters.base import Skipped
 from watson_bench.transcription.audio import is_near_silence
+from watson_bench.transcription.models import engine_model_dir, first_ggml, model_ready
 from watson_bench.transcription.protocol import TranscriptSegment
 from watson_bench.transcription.wer import compression_ratio
 
@@ -77,19 +79,18 @@ class FasterWhisperRuntime:
                 "faster-whisper is not installed. On the Mac: "
                 "uv sync --group bench --extra transcribe"
             )
-        if not _model_ready(models_dir / "faster-whisper" / size):
+        if not model_ready(models_dir, self.name, size):
             return Skipped(FETCH_HINT.format(engine=self.name, size=size))
         return None
 
     def load(self, size: str, models_dir: Path) -> None:
         from faster_whisper import WhisperModel
 
-        root = models_dir / "faster-whisper"
+        dest = engine_model_dir(models_dir, self.name, size)
         self._model = WhisperModel(
-            size,
+            str(dest),
             device="cpu",
             compute_type="int8",
-            download_root=str(root),
             local_files_only=True,
         )
         self._size = size
@@ -131,6 +132,14 @@ class FasterWhisperRuntime:
 
 
 class MlxWhisperRuntime:
+    """mlx-whisper adapter.
+
+    ``load()`` actually constructs the model (so ``load_time_s`` is real) and
+    parks it on ``mlx_whisper.transcribe.ModelHolder``. ``unload()`` clears
+    that holder. Measured bake-off rows also run in a spawned child, so a
+    missed unload cannot leak RSS into the next engine/size.
+    """
+
     name = "mlx-whisper"
 
     def __init__(self) -> None:
@@ -145,15 +154,19 @@ class MlxWhisperRuntime:
                 "mlx-whisper is not installed. On the Mac: "
                 "uv sync --group bench --extra mlx-whisper"
             )
-        dest = models_dir / "mlx-whisper" / size
-        if not _model_ready(dest):
+        if not model_ready(models_dir, self.name, size):
             return Skipped(FETCH_HINT.format(engine=self.name, size=size))
         return None
 
     def load(self, size: str, models_dir: Path) -> None:
-        dest = models_dir / "mlx-whisper" / size
+        dest = engine_model_dir(models_dir, self.name, size)
         if not dest.is_dir():
             raise RuntimeError(f"mlx-whisper weights missing at {dest}")
+        holder = mlx_model_holder()
+        dtype = _mlx_dtype()
+        load_model = _mlx_load_model()
+        holder.model = load_model(str(dest), dtype=dtype)
+        holder.model_path = str(dest)
         self._repo = str(dest)
         self._loaded = True
 
@@ -188,6 +201,7 @@ class MlxWhisperRuntime:
         return out
 
     def unload(self) -> None:
+        clear_mlx_model_holder()
         self._repo = None
         self._loaded = False
         gc.collect()
@@ -207,15 +221,15 @@ class PywhispercppRuntime:
                 "pywhispercpp is not installed. On the Mac: "
                 "uv sync --group bench --extra pywhispercpp"
             )
-        if not _model_ready(models_dir / "pywhispercpp" / size):
+        if not model_ready(models_dir, self.name, size):
             return Skipped(FETCH_HINT.format(engine=self.name, size=size))
         return None
 
     def load(self, size: str, models_dir: Path) -> None:
         from pywhispercpp.model import Model
 
-        dest = models_dir / "pywhispercpp" / size
-        model_file = _first_gguf(dest)
+        dest = engine_model_dir(models_dir, self.name, size)
+        model_file = first_ggml(dest)
         if model_file is None:
             raise RuntimeError(f"pywhispercpp weights missing at {dest}")
         self._model = Model(str(model_file), print_realtime=False, print_progress=False)
@@ -239,8 +253,8 @@ class PywhispercppRuntime:
                     start_ms=int(round(start_s * 1000)),
                     end_ms=int(round(end_s * 1000)),
                     text=text,
-                    avg_logprob=float(getattr(segment, "p", 0.0) or 0.0),
-                    no_speech_prob=0.0,
+                    avg_logprob=_optional_float(segment, "avg_logprob", "p"),
+                    no_speech_prob=_optional_float(segment, "no_speech_prob"),
                     compression_ratio=compression_ratio(text),
                 )
             )
@@ -251,21 +265,44 @@ class PywhispercppRuntime:
         gc.collect()
 
 
-def _model_ready(path: Path) -> bool:
-    if not path.exists():
-        return False
-    if path.is_file() and path.stat().st_size > 0:
-        return True
-    if not path.is_dir():
-        return False
-    return any(child.is_file() and child.stat().st_size > 0 for child in path.rglob("*"))
+def mlx_model_holder() -> Any:
+    import mlx_whisper.transcribe as transcribe_mod
+
+    return transcribe_mod.ModelHolder
 
 
-def _first_gguf(directory: Path) -> Path | None:
-    if not directory.is_dir():
-        return None
-    bins = sorted(directory.rglob("*.bin")) + sorted(directory.rglob("*.gguf"))
-    return bins[0] if bins else None
+def _mlx_load_model() -> Any:
+    from mlx_whisper.load_models import load_model
+
+    return load_model
+
+
+def _mlx_dtype() -> Any:
+    import mlx.core as mx
+
+    return mx.float16
+
+
+def clear_mlx_model_holder() -> None:
+    try:
+        holder = mlx_model_holder()
+    except Exception:
+        return
+    holder.model = None
+    holder.model_path = None
+
+
+def _optional_float(segment: object, *names: str) -> float:
+    for name in names:
+        if hasattr(segment, name):
+            raw = getattr(segment, name)
+            if raw is None:
+                continue
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                continue
+    return 0.0
 
 
 def _cpp_seconds(segment: object, centi_name: str, sec_name: str) -> float:

@@ -8,12 +8,8 @@ from typing import Any
 
 import yaml
 
-KINDS = frozenset(
-    {"dialogue", "silence", "tone", "one_second", "corrupt", "unsupported"}
-)
-TRAP_KINDS = frozenset(
-    {"suggestion-not-decision", "retracted-deadline", "absent-person-mentioned"}
-)
+KINDS = frozenset({"dialogue", "silence", "tone", "one_second", "corrupt", "unsupported"})
+TRAP_KINDS = frozenset({"suggestion-not-decision", "retracted-deadline", "absent-person-mentioned"})
 SAMPLE_RATE = 16000
 SAY_WORDS_PER_MIN = 175.0
 
@@ -178,9 +174,7 @@ def _speakers(raw: object, path: Path) -> dict[str, Speaker]:
     return out
 
 
-def _lines(
-    raw: object, speakers: dict[str, Speaker], path: Path, kind: str
-) -> tuple[Line, ...]:
+def _lines(raw: object, speakers: dict[str, Speaker], path: Path, kind: str) -> tuple[Line, ...]:
     if raw in (None, []):
         return ()
     if not isinstance(raw, list):

@@ -26,6 +26,11 @@ def test_committed_edge_fixtures_exist() -> None:
             assert handle.getframerate() == 16000
         transcript = (MEETINGS / name / "transcript.txt").read_text(encoding="utf-8")
         assert transcript.strip() == ""
+    speech = MEETINGS / "speech_short"
+    assert (speech / "audio.wav").is_file()
+    spoken = (speech / "transcript.txt").read_text(encoding="utf-8")
+    assert "Good morning everyone" in spoken
+    assert "Keel export lands Wednesday" in spoken
     corrupt = MEETINGS / "corrupt" / "audio.wav"
     assert corrupt.is_file()
     assert corrupt.read_bytes().startswith(b"RIFF")

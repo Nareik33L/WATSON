@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -56,14 +57,13 @@ def test_fake_runtime_echoes_reference_on_speech() -> None:
 
 def test_wer_and_hallucination_plumbing() -> None:
     assert word_error_rate("good morning everyone", "good morning everyone") == 0.0
+    assert word_error_rate("Export lands Wednesday.", "Export lands Wednesday") == 0.0
     assert word_error_rate("", "") == 0.0
     wer = word_error_rate("good morning everyone", "good evening everyone")
     assert wer is not None and wer > 0
     empty = hallucination([])
     assert empty["hallucinated"] is False
-    hit = hallucination(
-        [TranscriptSegment(0, 1000, "thanks for watching", -0.1, 0.2, 1.0)]
-    )
+    hit = hallucination([TranscriptSegment(0, 1000, "thanks for watching", -0.1, 0.2, 1.0)])
     assert hit["hallucinated"] is True
     assert hit["n_nonempty_segments"] == 1
     assert compression_ratio("aaaa" * 40) > compression_ratio("unique words here")
@@ -107,6 +107,13 @@ def test_run_transcription_fake_writes_json_and_report(tmp_path: Path) -> None:
     assert row["peak_rss_bytes"]
     assert row["hallucination"]["silence_only"]["hallucinated"] is False
     assert row["hallucination"]["tone_only"]["hallucinated"] is False
+    assert "text" not in row["hallucination"]["silence_only"]
+    speech = next(item for item in row["fixtures"] if item["name"] == "speech_short")
+    assert speech["wer"] == 0.0
+    assert speech["realtime_factor"] is not None and speech["realtime_factor"] > 0
+    assert "text" not in speech
+    dumped = json.dumps(row)
+    assert "Good morning everyone" not in dumped
     text = report.read_text(encoding="utf-8")
     assert "A0 transcription bake-off" in text
     assert "Recommendation" in text
@@ -211,9 +218,7 @@ def test_report_table_includes_wer_and_rtf() -> None:
     assert "empty" in text
 
 
-def test_transcribe_run_enables_the_guard(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_transcribe_run_enables_the_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import socket
 
     from watson_bench.transcription import run as run_mod
@@ -239,32 +244,32 @@ def test_transcribe_run_enables_the_guard(
     assert not guard_is_active()
 
 
-def test_models_unload_between_sizes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from watson_bench.transcription import run as run_mod
-    from watson_bench.transcription.adapters import FakeTranscriptionRuntime
-
-    events: list[str] = []
-    original_get = run_mod.get_transcription_runtime
-
-    class TrackingFake(FakeTranscriptionRuntime):
-        def load(self, size: str, models_dir: Path) -> None:
-            events.append(f"load:{size}")
-            super().load(size, models_dir)
-
-        def unload(self) -> None:
-            events.append("unload")
-            super().unload()
-
-    monkeypatch.setattr(run_mod, "get_transcription_runtime", lambda name: TrackingFake())
-    del original_get
+def test_transcribe_forces_hf_offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "0")
     run_transcription(
+        profile="8gb",
+        engines=["fake"],
+        sizes=["tiny"],
+        fixtures_dir=FIXTURES,
+        out_dir=tmp_path / "offline",
+    )
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+
+
+def test_each_engine_size_runs_in_a_fresh_subprocess(tmp_path: Path) -> None:
+    out = run_transcription(
         profile="8gb",
         engines=["fake"],
         sizes=["tiny", "base"],
         fixtures_dir=FIXTURES,
-        out_dir=tmp_path / "unload",
+        out_dir=tmp_path / "spawn",
     )
-    assert events == ["load:tiny", "unload", "load:base", "unload"]
+    manifest = json.loads((out / "run.json").read_text(encoding="utf-8"))
+    pids = [row["worker_pid"] for row in manifest["results"]]
+    assert all(pid != os.getpid() for pid in pids)
+    assert len(set(pids)) == len(pids)
 
 
 def test_edge_render_roundtrip_for_harness(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ def test_a0_scripts_exist() -> None:
     names = {path.name for path in SCRIPTS.glob("*.yaml")}
     assert names >= {
         "standup_12m.yaml",
+        "speech_short.yaml",
         "silence.yaml",
         "tone.yaml",
         "one_second.yaml",

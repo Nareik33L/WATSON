@@ -11,6 +11,7 @@ on:
       - "tests/fixtures/meetings/**"
       - "tests/unit/fixture_gen/test_meetings*.py"
       - "tests/unit/bench/test_transcription*.py"
+      - "tests/eval/test_a0_macos_smoke.py"
       - ".github/workflows/meetings-a0.yml"
   push:
     paths:
@@ -22,6 +23,7 @@ on:
       - "tests/fixtures/meetings/**"
       - "tests/unit/fixture_gen/test_meetings*.py"
       - "tests/unit/bench/test_transcription*.py"
+      - "tests/eval/test_a0_macos_smoke.py"
       - ".github/workflows/meetings-a0.yml"
 
 permissions:
@@ -59,27 +61,15 @@ jobs:
           path: tests/fixtures/meetings
           if-no-files-found: error
 
-      - name: Tiny faster-whisper smoke (download or skip)
+      - name: Fetch faster-whisper tiny
         env:
           WATSON_ALLOW_NETWORK: "1"
-        run: |
-          set +e
-          uv run watson-bench transcribe \
-            --profile 8gb \
-            --engines faster-whisper \
-            --sizes tiny \
-            --fetch-only
-          rc=$?
-          set -e
-          if [[ "$rc" -ne 0 ]]; then
-            echo "skip: faster-whisper tiny download failed (exit $rc)"
-            exit 0
-          fi
-          unset WATSON_ALLOW_NETWORK
-          uv run watson-bench transcribe \
-            --profile 8gb \
-            --engines faster-whisper \
-            --sizes tiny \
-            --fixtures tests/fixtures/meetings \
-            --out /tmp/watson-a0-smoke \
-            --report /tmp/watson-a0-smoke/report.md
+        run: >
+          uv run watson-bench transcribe
+          --profile 8gb
+          --engines faster-whisper
+          --sizes tiny
+          --fetch-only
+
+      - name: Tiny faster-whisper smoke (must not skip)
+        run: uv run pytest tests/eval/test_a0_macos_smoke.py -v --tb=short

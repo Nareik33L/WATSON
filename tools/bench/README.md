@@ -128,7 +128,7 @@ IDs and Hub filenames are in `tools/bench/candidates/*.yaml`. Treat Hub GGUF fil
 
 Harness for plan A5 / A0. `TranscriptionRuntime.transcribe(pcm16k, language_hint)` returns segments with `start_ms`, `end_ms`, `text`, `avg_logprob`, `no_speech_prob`, `compression_ratio`. Engines: `pywhispercpp`, `mlx-whisper`, `faster-whisper` (plus `fake` for Linux CI). Sizes: `base`, `small` on both RAM profiles (`tiny` is the macOS CI smoke only).
 
-Models load **one at a time** and unload between engine/size pairs. `--fetch-only` is the only network use and requires `WATSON_ALLOW_NETWORK=1`. Measured `transcribe` runs install the same loopback socket guard as M0-A (no Ollama port) and set `HF_HUB_OFFLINE=1`.
+Weights live at `<models_dir>/<engine>/<size>/` for fetch, readiness, and load (not the Hugging Face `models--*` cache layout). Each engine/size pair is measured in a **spawned child** so peak RSS is that child's `ru_maxrss` and unload is process exit. `mlx-whisper` `load()` constructs the model into `ModelHolder` (so `load_time_s` is real) and `unload()` clears the holder; the child is belt-and-suspenders if a global leak remains. `--fetch-only` is the only network use and requires `WATSON_ALLOW_NETWORK=1`. Measured `transcribe` runs install the same loopback socket guard as M0-A (no Ollama port) and **force** `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`.
 
 ### Exact Mac commands (8 GB profile)
 
@@ -173,7 +173,7 @@ That writes:
 | `--fetch-only` base+small × 3 engines | 10–20 min (network) | **~1.5–3 GB** under `~/Library/Application Support/WATSON/models` (faster-whisper CT2 + mlx snapshots + whisper.cpp ggml; some sizes overlap) |
 | `transcribe --profile 8gb` on A0 fixtures | **15–40 min** | results are tiny |
 
-Skip an engine that is not installed; the row records the reason. Linux CI uses `--engines fake` and the committed silence/tone/1-second WAVs.
+Skip an engine that is not installed; the row records the reason. The macOS tiny smoke must **not** skip: fetch writes the canonical directory, then pytest asserts `skipped == False`, RTF > 0, and WER ≤ 50% on the `speech_short` `say` clip. Linux CI uses `--engines fake` plus the committed silence/tone/1-second/speech_short fixtures (speech_short is a non-silent placeholder WAV with a known transcript).
 
 ### Metrics (plan A0 / A5)
 

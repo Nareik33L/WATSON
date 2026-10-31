@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import zlib
 from collections.abc import Sequence
 
 from watson_bench.transcription.protocol import TranscriptSegment
+
+_PUNCT = re.compile(r"[^\w\s']+", re.UNICODE)
 
 
 def join_segment_text(segments: Sequence[TranscriptSegment]) -> str:
@@ -29,12 +32,15 @@ def word_error_rate(reference: str, hypothesis: str) -> float | None:
 
 
 def hallucination(segments: Sequence[TranscriptSegment]) -> dict[str, object]:
-    """Any non-empty text on a silence/tone probe counts as a hallucination."""
+    """Any non-empty text on a silence/tone probe counts as a hallucination.
+
+    The raw text is not stored: bench output must not keep transcript content.
+    """
     nonempty = [segment.text.strip() for segment in segments if segment.text.strip()]
     return {
         "hallucinated": bool(nonempty),
         "n_nonempty_segments": len(nonempty),
-        "text": " ".join(nonempty),
+        "n_words": len(" ".join(nonempty).split()),
     }
 
 
@@ -47,4 +53,5 @@ def compression_ratio(text: str) -> float:
 
 
 def _normalize(text: str) -> str:
-    return " ".join(text.lower().split())
+    stripped = _PUNCT.sub(" ", text.lower())
+    return " ".join(stripped.split())

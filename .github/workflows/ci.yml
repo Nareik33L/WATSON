@@ -29,8 +29,19 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
+      - name: Ruff format (A0 harness)
+        run: >
+          uv run ruff format --check
+          tools/bench/watson_bench/transcription
+          tools/fixture_gen/watson_fixturegen/meetings
+          tests/unit/bench/test_transcription.py
+          tests/unit/bench/test_transcription_models.py
+          tests/eval/test_a0_macos_smoke.py
+
       - name: Type check
-        run: uv run mypy src/watson tools/fixture_gen
+        run: |
+          uv run mypy src/watson tools/fixture_gen
+          uv run mypy -p watson_bench.transcription
 
       - name: Allow unprivileged user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true

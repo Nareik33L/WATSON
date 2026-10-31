@@ -16,6 +16,7 @@ Dialogue rendering needs macOS `say` (one voice per speaker) and `afconvert` (AA
 | Script | Kind | Notes |
 | --- | --- | --- |
 | `standup_12m.yaml` | dialogue | ~12-minute fictional Rivermark Labs stand-up (`target_duration_s: 720`) |
+| `speech_short.yaml` | dialogue | ~2 s known-text WER/RTF probe (`say` on macOS; Linux commits a tone placeholder + transcript) |
 | `silence.yaml` | silence | 15 s silence (A6 hallucination probe) |
 | `tone.yaml` | tone | 15 s 440 Hz tone (music-like probe) |
 | `one_second.yaml` | one_second | 1 s clip |
@@ -62,6 +63,6 @@ All names and companies are fictional. Output per fixture: 16 kHz mono `audio.wa
 
 ## What is committed
 
-Edge-case WAV + empty transcripts + `truth.yaml` are generated on Linux and committed (well under 8 MB). The 12-minute stand-up **audio is not committed** from this environment: `say` is macOS-only. macOS CI renders every A0 script and uploads the directory as an artifact. After a Mac render, if compressed `.m4a` + transcripts for the whole set stay ≤ 8 MB they can be committed; until then treat stand-up audio as artifacts-only.
+Edge-case WAV + empty transcripts + `truth.yaml` are generated on Linux and committed (well under 8 MB). `speech_short` commits a short non-silent placeholder WAV plus the known transcript so Linux fake-runtime tests can score WER; macOS CI re-renders it with `say`. The 12-minute stand-up **audio is not committed** from this environment: `say` is macOS-only. macOS CI renders every A0 script and uploads the directory as an artifact. After a Mac render, if compressed `.m4a` + transcripts for the whole set stay ≤ 8 MB they can be committed; until then treat stand-up audio as artifacts-only.
 
 Do not commit the 16 kHz stand-up WAV (about 22 MB).

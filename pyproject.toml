@@ -87,8 +87,8 @@ select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-mypy_path = "src, tools/fixture_gen"
-packages = ["watson", "watson_fixturegen"]
+mypy_path = "src, tools/fixture_gen, tools/bench"
+packages = ["watson", "watson_fixturegen", "watson_bench.transcription"]
 explicit_package_bases = true
 warn_unused_ignores = true
 exclude = "(?x)(^src/watson/memory/migrations/env\\.py$)"
@@ -105,5 +105,40 @@ strict = false
 warn_return_any = false
 
 [[tool.mypy.overrides]]
+module = ["watson_bench.transcription", "watson_bench.transcription.*"]
+strict = false
+warn_return_any = false
+
+# Importing adapters.base pulls the rest of the M0-A package; keep A0
+# typechecking on transcription without requiring those modules to be clean.
+[[tool.mypy.overrides]]
+module = [
+    "watson_bench.adapters",
+    "watson_bench.adapters.fake",
+    "watson_bench.adapters.llamacpp",
+    "watson_bench.adapters.mlx",
+    "watson_bench.adapters.ollama",
+    "watson_bench.prompts",
+]
+follow_imports = "skip"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["sqlcipher3", "sqlcipher3.*", "sqlite_vec"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "faster_whisper",
+    "faster_whisper.*",
+    "huggingface_hub",
+    "jiwer",
+    "mlx",
+    "mlx.*",
+    "mlx_whisper",
+    "mlx_whisper.*",
+    "numpy",
+    "pywhispercpp",
+    "pywhispercpp.*",
+]
 ignore_missing_imports = true

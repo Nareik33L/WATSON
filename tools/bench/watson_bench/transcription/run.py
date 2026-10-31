@@ -1,8 +1,13 @@
-"""Run the A0 transcription bake-off. Measured passes stay offline."""
+"""Run the A0 transcription bake-off. Measured passes stay offline.
+
+Each engine/size pair runs in a spawned child so peak RSS is that child's
+``ru_maxrss`` (not the parent's lifetime peak) and unload is process exit.
+"""
 
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,7 +15,7 @@ from typing import Any
 
 from watson.privacy.network import localhost_only
 from watson_bench.hardware import HardwareInfo, detect_hardware
-from watson_bench.metrics import RssSampler, timed
+from watson_bench.metrics import RssSampler, rusage_peak_rss, timed
 from watson_bench.paths import default_models_dir, default_results_dir
 from watson_bench.transcription.audio import MeetingFixture, discover_meeting_fixtures
 from watson_bench.transcription.fetch import fetch_transcription_model
@@ -26,6 +31,9 @@ from watson_bench.transcription.report import (
     write_transcription_report,
 )
 from watson_bench.transcription.wer import hallucination, join_segment_text, word_error_rate
+
+INPROCESS_ENV = "WATSON_TRANSCRIBE_INPROCESS"
+_SPAWN_TIMEOUT_S = 3600
 
 
 def parse_csv(value: str) -> list[str]:
@@ -88,13 +96,13 @@ def run_transcription(
     sizes = normalize_sizes(sizes)
     fixtures_dir = fixtures_dir or default_meeting_fixtures_dir()
     models_dir = models_dir or default_models_dir()
-    fixtures = discover_meeting_fixtures(fixtures_dir)
+    fixture_count = len(discover_meeting_fixtures(fixtures_dir))
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out_dir = out_dir or (default_results_dir() / f"transcribe-{profile}-{stamp}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
     results: list[dict[str, Any]] = []
     with localhost_only(
@@ -108,7 +116,7 @@ def run_transcription(
                     _run_one(
                         engine=engine,
                         size=size,
-                        fixtures=fixtures,
+                        fixtures_dir=fixtures_dir,
                         models_dir=models_dir,
                         language_hint=language_hint,
                     )
@@ -123,23 +131,19 @@ def run_transcription(
         "engines": engines,
         "sizes": sizes,
         "fixtures_dir": str(fixtures_dir),
-        "fixture_count": len(fixtures),
+        "fixture_count": fixture_count,
         "results": results,
     }
     (out_dir / "run.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     if report_path is not None:
-        dest = (
-            default_transcription_report_path()
-            if str(report_path) == "auto"
-            else report_path
-        )
+        dest = default_transcription_report_path() if str(report_path) == "auto" else report_path
         write_transcription_report(
             dest,
             hardware=hardware,
             profile=profile,
             results=results,
             fixtures_dir=str(fixtures_dir),
-            fixture_count=len(fixtures),
+            fixture_count=fixture_count,
         )
     return out_dir
 
@@ -148,16 +152,105 @@ def _run_one(
     *,
     engine: str,
     size: str,
-    fixtures: list[MeetingFixture],
+    fixtures_dir: Path,
     models_dir: Path,
     language_hint: str | None,
 ) -> dict[str, Any]:
-    row: dict[str, Any] = {
+    if os.environ.get(INPROCESS_ENV) == "1":
+        fixtures = discover_meeting_fixtures(fixtures_dir)
+        return _run_one_inprocess(
+            engine=engine,
+            size=size,
+            fixtures=fixtures,
+            models_dir=models_dir,
+            language_hint=language_hint,
+        )
+    return _spawn_one(
+        engine=engine,
+        size=size,
+        fixtures_dir=fixtures_dir,
+        models_dir=models_dir,
+        language_hint=language_hint,
+    )
+
+
+def _spawn_one(
+    *,
+    engine: str,
+    size: str,
+    fixtures_dir: Path,
+    models_dir: Path,
+    language_hint: str | None,
+) -> dict[str, Any]:
+    ctx = multiprocessing.get_context("spawn")
+    queue: Any = ctx.Queue()
+    payload = {
+        "engine": engine,
+        "size": size,
+        "fixtures_dir": str(fixtures_dir),
+        "models_dir": str(models_dir),
+        "language_hint": language_hint,
+    }
+    proc = ctx.Process(
+        target=transcription_spawn_main,
+        args=(payload, queue),
+        name=f"transcribe-{engine}-{size}",
+    )
+    proc.start()
+    try:
+        row = queue.get(timeout=_SPAWN_TIMEOUT_S)
+    except Exception as exc:
+        proc.terminate()
+        proc.join(timeout=10)
+        return _empty_row(engine, size, error=f"spawn worker failed: {exc}")
+    proc.join(timeout=30)
+    if not isinstance(row, dict):
+        return _empty_row(engine, size, error="spawn worker returned a non-object")
+    return row
+
+
+def rss_probe_main(nbytes: int, queue: Any) -> None:
+    """Spawn target that reports this child's ``ru_maxrss`` after an optional alloc.
+
+    Used by tests to prove sibling engine/size workers do not inherit peak RSS.
+    """
+    blob = bytearray(nbytes) if nbytes else None
+    queue.put(rusage_peak_rss())
+    del blob
+
+
+def transcription_spawn_main(payload: dict[str, Any], queue: Any) -> None:
+    """Module-level spawn target. Must stay pickleable."""
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    engine = str(payload["engine"])
+    size = str(payload["size"])
+    try:
+        fixtures = discover_meeting_fixtures(Path(payload["fixtures_dir"]))
+        with localhost_only(
+            error_prefix="Transcription bench",
+            lookup_hint="Models are downloaded only by `watson-bench transcribe --fetch-only`.",
+            connect_hint="Models are downloaded only by `watson-bench transcribe --fetch-only`.",
+        ):
+            row = _run_one_inprocess(
+                engine=engine,
+                size=size,
+                fixtures=fixtures,
+                models_dir=Path(payload["models_dir"]),
+                language_hint=payload.get("language_hint"),
+            )
+        queue.put(row)
+    except Exception as exc:
+        queue.put(_empty_row(engine, size, error=str(exc)))
+
+
+def _empty_row(engine: str, size: str, *, error: str | None = None) -> dict[str, Any]:
+    return {
         "engine": engine,
         "size": size,
         "skipped": False,
         "skip_reason": None,
-        "error": None,
+        "error": error,
         "load_time_s": None,
         "realtime_factor": None,
         "wer": None,
@@ -167,7 +260,19 @@ def _run_one(
         "n_fixtures": 0,
         "hallucination": {},
         "fixtures": [],
+        "worker_pid": os.getpid(),
     }
+
+
+def _run_one_inprocess(
+    *,
+    engine: str,
+    size: str,
+    fixtures: list[MeetingFixture],
+    models_dir: Path,
+    language_hint: str | None,
+) -> dict[str, Any]:
+    row = _empty_row(engine, size)
     try:
         runtime = get_transcription_runtime(engine)
     except ValueError as exc:
@@ -194,7 +299,8 @@ def _run_one(
             runtime.unload()
         except Exception:
             pass
-        row["peak_rss_bytes"] = sampler.stop()
+        row["peak_rss_bytes"] = max(sampler.stop(), rusage_peak_rss())
+        row["worker_pid"] = os.getpid()
     return row
 
 
@@ -249,7 +355,7 @@ def _measure_fixtures(
                 "realtime_factor": (wall / fixture.duration_s) if fixture.duration_s else None,
                 "wer": wer,
                 "n_segments": len(segments),
-                "text": hyp,
+                "n_words": len(hyp.split()),
             }
         )
         details.append(item)
