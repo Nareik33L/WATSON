@@ -1,16 +1,22 @@
 """Extraction, redaction, segmentation, jobs, and consolidation."""
 
+from watson.pipeline.backlog import backlog_depth, drain_backlog
 from watson.pipeline.redaction import redact_ocr_text
 from watson.pipeline.replay import ReplayError, ReplayResult, replay_fixture
 from watson.pipeline.segeval import score_segmentation
 from watson.pipeline.segmentation import segment_extracted_frames
 from watson.pipeline.status import StatusReport, collect_status
+from watson.pipeline.today import TodayReport, collect_today
 
 __all__ = [
     "ReplayError",
     "ReplayResult",
     "StatusReport",
+    "TodayReport",
+    "backlog_depth",
     "collect_status",
+    "collect_today",
+    "drain_backlog",
     "redact_ocr_text",
     "replay_fixture",
     "score_segmentation",

@@ -13,7 +13,7 @@ from sqlcipher3 import dbapi2 as sqlcipher
 from watson.capture.exclusions import exclusion_reason
 from watson.capture.sidecar import load_sidecar
 from watson.capture.spool import SpoolPair, assert_not_fixture_file, sha256_file
-from watson.config.schema import ExclusionsConfig
+from watson.config.schema import DEFAULT_TIER2_GRACE_DAYS, ExclusionsConfig
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.dedup import (
@@ -214,6 +214,7 @@ def extract_fixture_stub(
     *,
     fixture_dir: Path,
     dedup_threshold: int = DEFAULT_DEDUP_THRESHOLD,
+    tier2_grace_days: int = DEFAULT_TIER2_GRACE_DAYS,
 ) -> DedupDecision | None:
     """Redact sidecar OCR, hash the PNG, persist tier-2 text, then delete spool files.
 
@@ -254,7 +255,9 @@ def extract_fixture_stub(
     try:
         if existing_text is None:
             captured_at = datetime.fromisoformat(str(sidecar["captured_at"]).replace("Z", "+00:00"))
-            expires_at = iso_now(captured_at.astimezone(UTC) + timedelta(days=7))
+            expires_at = iso_now(
+                captured_at.astimezone(UTC) + timedelta(days=int(tier2_grace_days))
+            )
             conn.execute(
                 """
                 INSERT INTO frame_text (
@@ -430,13 +433,13 @@ def delete_and_verify(
         if sidecar_existed:
             sidecar.unlink()
     except OSError as exc:
-        _record_delete_failure(conn, frame_id, audit_error_class(exc))
+        record_delete_failure(conn, frame_id=frame_id, error=audit_error_class(exc))
         raise FrameError(f"spool delete failed for frame {frame_id}") from exc
 
     png_gone = _path_gone(png_path)
     sidecar_gone = _path_gone(sidecar)
     if not (png_gone and sidecar_gone):
-        _record_delete_failure(conn, frame_id, ERROR_STILL_PRESENT)
+        record_delete_failure(conn, frame_id=frame_id, error=ERROR_STILL_PRESENT)
         raise FrameError(f"spool files still present after unlink for frame {frame_id}")
 
     if already_verified:
@@ -482,24 +485,36 @@ def _path_gone(path: Path) -> bool:
     return False
 
 
-def _record_delete_failure(conn: sqlcipher.Connection, frame_id: str, error: str) -> None:
+def record_delete_failure(
+    conn: sqlcipher.Connection,
+    *,
+    frame_id: str | None,
+    error: str,
+) -> None:
+    """Write ``frame_deletion_failed`` (and bump ``failure_count`` when a row exists)."""
     stamp = iso_now()
-    conn.execute(
-        """
-        UPDATE frames
-        SET failure_count = failure_count + 1, updated_at = ?
-        WHERE id = ?
-        """,
-        (stamp, frame_id),
-    )
+    detail: dict[str, Any] = {"error": error}
+    if frame_id is not None:
+        conn.execute(
+            """
+            UPDATE frames
+            SET failure_count = failure_count + 1, updated_at = ?
+            WHERE id = ?
+            """,
+            (stamp, frame_id),
+        )
+        detail["frame_id"] = frame_id
     record_audit(
         conn,
         kind=KIND_DELETE_FAILED,
-        detail={"frame_id": frame_id, "error": error},
+        detail=detail,
         commit=False,
     )
     conn.commit()
-    log.info("spool delete failed", extra={"frame_id": frame_id, "error": error})
+    extra: dict[str, object] = {"error": error}
+    if frame_id is not None:
+        extra["frame_id"] = frame_id
+    log.info("spool delete failed", extra=extra)
 
 
 def _extract_payload(pair: SpoolPair) -> dict[str, Any]:

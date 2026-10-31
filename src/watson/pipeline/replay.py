@@ -22,17 +22,15 @@ from watson.capture.spool import (
     png_dimensions,
     sha256_file,
 )
-from watson.config.schema import ExclusionsConfig
+from watson.config.schema import DEFAULT_BACKLOG_BATCH_SIZE, ExclusionsConfig
 from watson.memory.db import iso_now
+from watson.pipeline.backlog import drain_backlog
 from watson.pipeline.dedup import DEFAULT_DEDUP_THRESHOLD
 from watson.pipeline.frames import (
-    EXTRACT_JOB_KIND,
     delete_and_verify,
     ensure_working_day,
-    extract_fixture_stub,
     ingest_pair,
 )
-from watson.pipeline.jobs import JobLeaseError, claim, complete, fail
 from watson.pipeline.segmentation import SegmentConfig, segment_extracted_frames
 from watson.privacy.audit import KIND_REPLAY, record_audit
 
@@ -158,9 +156,7 @@ def replay_fixture(
 
         working_day_id = ensure_working_day(conn, date)
         rules = exclusions if exclusions is not None else _default_exclusions()
-        threshold = (
-            _default_dedup_threshold() if dedup_threshold is None else dedup_threshold
-        )
+        threshold = _default_dedup_threshold() if dedup_threshold is None else dedup_threshold
         ingested = 0
         skipped = 0
         skipped_excluded = 0
@@ -183,7 +179,10 @@ def replay_fixture(
                 skipped += 1
 
         extracted = _drain_extract_jobs(
-            conn, fixture_dir=fixture, dedup_threshold=threshold
+            conn,
+            fixture_dir=fixture,
+            dedup_threshold=threshold,
+            tier2_grace_days=_tier2_grace_days(),
         )
         segment_extracted_frames(
             conn,
@@ -291,7 +290,26 @@ def _default_dedup_threshold() -> int:
 def _segment_config() -> SegmentConfig:
     from watson.config import load_config
 
-    return SegmentConfig.from_settings(load_config().segmentation)
+    config = load_config()
+    return SegmentConfig.from_settings(
+        config.segmentation,
+        tier2_grace_days=config.retention.tier2_grace_days,
+    )
+
+
+def _tier2_grace_days() -> int:
+    from watson.config import load_config
+
+    return int(load_config().retention.tier2_grace_days)
+
+
+def _backlog_batch_size() -> int:
+    from watson.config import load_config
+
+    try:
+        return int(load_config().pipeline.backlog_batch_size)
+    except (AttributeError, TypeError, ValueError):
+        return DEFAULT_BACKLOG_BATCH_SIZE
 
 
 def _pace(
@@ -313,27 +331,27 @@ def _drain_extract_jobs(
     *,
     fixture_dir: Path,
     dedup_threshold: int = DEFAULT_DEDUP_THRESHOLD,
+    tier2_grace_days: int | None = None,
 ) -> int:
+    """Drain the extract backlog in bounded batches until empty."""
     completed = 0
+    batch = _backlog_batch_size()
+    grace = _tier2_grace_days() if tier2_grace_days is None else int(tier2_grace_days)
     while True:
-        job = claim(conn, worker_id=WORKER_ID)
-        if job is None:
-            break
-        if job.kind != EXTRACT_JOB_KIND:
-            fail(conn, job.id, f"unexpected job kind {job.kind}", worker_id=WORKER_ID)
-            continue
         try:
-            extract_fixture_stub(
+            drained = drain_backlog(
                 conn,
-                job.payload,
+                worker_id=WORKER_ID,
+                limit=batch,
                 fixture_dir=fixture_dir,
                 dedup_threshold=dedup_threshold,
+                tier2_grace_days=grace,
             )
-            complete(conn, job.id, worker_id=WORKER_ID)
-            completed += 1
-        except (JobLeaseError, OSError, ValueError, RuntimeError) as exc:
-            fail(conn, job.id, type(exc).__name__, worker_id=WORKER_ID)
-            raise ReplayError(f"extract failed for job {job.id}") from exc
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise ReplayError("extract failed for a backlog job") from exc
+        completed += drained
+        if drained == 0:
+            break
     return completed
 
 

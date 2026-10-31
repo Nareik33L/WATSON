@@ -117,5 +117,27 @@ def test_sensitive_traps_exclude_and_redact(data_dir: Path, key_provider: object
         assert PLACEHOLDER_CARD in blob
         assert PLACEHOLDER_SECRET in blob
         assert PLACEHOLDER_OTP in blob
+
+        from fastapi.testclient import TestClient
+
+        from watson.config import load_config
+        from watson.dashboard.app import create_app
+        from watson.pipeline.today import collect_today
+
+        timeline = collect_today(conn)
+        dumped = " ".join(
+            f"{item.app_name or ''} {item.window_title or ''}" for item in timeline.segments
+        )
+        assert "Harbor Credit" not in dumped
+        assert "Personal vault" not in dumped
+        app = create_app(token="eval-today-token-not-a-secret", config=load_config(), port=8000)
+        client = TestClient(app, base_url="http://127.0.0.1:8000")
+        code = app.state.launch_codes.mint()
+        client.get(f"/auth?code={code}", follow_redirects=False)
+        page = client.get("/today")
+        assert page.status_code == 200
+        assert "Harbor Credit" not in page.text
+        assert "Personal vault" not in page.text
+        assert "4111111111111111" not in page.text
     finally:
         conn.close()

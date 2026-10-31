@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}WATSON today{% endblock %}
+{% block content %}
+<div
+  id="today-root"
+  hx-get="/today/partial"
+  hx-trigger="every 5s"
+  hx-swap="innerHTML"
+>
+  {% include "today_partial.html" %}
+</div>
+{% endblock %}

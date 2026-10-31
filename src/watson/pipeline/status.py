@@ -9,6 +9,7 @@ from typing import Any
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from watson.config.schema import ExclusionsConfig
+from watson.pipeline.backlog import backlog_depth
 from watson.pipeline.frames import FRAME_STATES
 from watson.pipeline.jobs import JobState
 from watson.pipeline.replay import LAST_REPLAY_SETTING_ID
@@ -49,6 +50,7 @@ class StatusReport:
     last_replay: dict[str, Any] | None
     capture_state: str = "idle"
     queue_depth: int = 0
+    backlog_depth: int = 0
     last_frames: tuple[FrameMeta, ...] = ()
     deletion_verified_count: int = 0
     deletion_unverified_count: int = 0
@@ -61,6 +63,7 @@ class StatusReport:
         return {
             "capture_state": self.capture_state,
             "queue_depth": self.queue_depth,
+            "backlog_depth": self.backlog_depth,
             "frames_by_state": dict(self.frames_by_state),
             "jobs_by_state": dict(self.jobs_by_state),
             "deletion_verified_count": self.deletion_verified_count,
@@ -85,6 +88,7 @@ class StatusReport:
         out: list[str] = [
             f"capture.state: {self.capture_state}",
             f"queue.depth: {self.queue_depth}",
+            f"backlog.depth: {self.backlog_depth}",
         ]
         for state in FRAME_STATES:
             out.append(f"frames.{state}: {self.frames_by_state.get(state, 0)}")
@@ -205,13 +209,15 @@ def collect_status(
             (AUDIT_TAIL_LIMIT,),
         )
     )
-    capture_state = "backlog" if frames.get("captured", 0) > 0 else "idle"
+    extract_backlog = backlog_depth(conn)
+    capture_state = "backlog" if frames.get("captured", 0) > 0 or extract_backlog > 0 else "idle"
     return StatusReport(
         frames_by_state=frames,
         jobs_by_state=jobs,
         last_replay=last,
         capture_state=capture_state,
         queue_depth=queue_depth,
+        backlog_depth=extract_backlog,
         last_frames=last_frames,
         deletion_verified_count=verified,
         deletion_unverified_count=unverified,

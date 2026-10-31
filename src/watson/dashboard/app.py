@@ -34,6 +34,7 @@ from watson.dashboard.bind import DEFAULT_PORT
 from watson.memory.db import DatabaseError, connect
 from watson.memory.keys import KeyProviderError, get_key_provider
 from watson.pipeline.status import StatusReport, collect_status
+from watson.pipeline.today import TodayReport, collect_today
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = PACKAGE_DIR / "templates"
@@ -162,9 +163,21 @@ def create_app(
             return _render(request, "status_partial.html")
         return RedirectResponse("/", status_code=303)
 
+    @app.get("/today", response_class=HTMLResponse)
+    async def today_page(request: Request) -> Response:
+        return _render(request, "today.html")
+
+    @app.get("/today/partial", response_class=HTMLResponse)
+    async def today_partial(request: Request) -> Response:
+        return _render(request, "today_partial.html")
+
     @app.get("/api/status")
     async def api_status(request: Request) -> JSONResponse:
         return JSONResponse(_report(request).as_dict())
+
+    @app.get("/api/today")
+    async def api_today(request: Request) -> JSONResponse:
+        return JSONResponse(_today(request).as_dict())
 
     return app
 
@@ -172,11 +185,13 @@ def create_app(
 def _render(request: Request, template_name: str) -> HTMLResponse:
     session = request.state.session
     report = _report(request)
+    today = _today(request) if "today" in template_name else None
     return _TEMPLATES.TemplateResponse(
         request,
         template_name,
         {
             "status": report,
+            "today": today,
             "csrf_token": session.csrf,
         },
     )
@@ -205,6 +220,23 @@ def _report(request: Request) -> StatusReport:
         return collect_status(conn, exclusions=config.exclusions)
     except (DatabaseError, sqlcipher.DatabaseError):
         return StatusReport({}, {}, None, exclusion_overrides=overrides)
+    finally:
+        conn.close()
+
+
+def _today(request: Request) -> TodayReport:
+    config = getattr(request.app.state, "config", None)
+    if config is None or not config.db_path.is_file():
+        return TodayReport(date=None, segments=())
+    try:
+        key = _cached_db_key(request.app)
+        conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
+    except (KeyProviderError, DatabaseError, sqlcipher.DatabaseError):
+        return TodayReport(date=None, segments=())
+    try:
+        return collect_today(conn)
+    except (DatabaseError, sqlcipher.DatabaseError):
+        return TodayReport(date=None, segments=())
     finally:
         conn.close()
 

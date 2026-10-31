@@ -24,6 +24,8 @@ html, body {
 }
 .brand { margin: 0; font-weight: 700; letter-spacing: 0.04em; }
 .tag { margin: 0; color: var(--muted); font-size: 13px; }
+.nav { margin-left: auto; display: flex; gap: 16px; }
+.nav a { color: var(--accent); text-decoration: none; }
 main { padding: 24px; max-width: 1100px; }
 .grid {
   display: grid;
