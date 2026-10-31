@@ -257,7 +257,7 @@ Worker scheduling and memory governance with the LLM (sequential loading on 8 GB
 
 | # | Decision | Decide at |
 |---|---|---|
-| 1 | whisper.cpp vs mlx-whisper default; model sizes per RAM tier | A0 |
+| 1 | whisper.cpp vs mlx-whisper default; model sizes per RAM tier | **DECIDED (Watson Lead, A0, 8 GB)** — mlx-whisper small. 16 GB still open. ADR 0006; [`docs/benchmarks/2026-10-31-transcription.md`](benchmarks/2026-10-31-transcription.md) |
 | 2 | Transcript grace window: offer at all in V1.1, or defer | A1, after seeing how often re-summarisation is wanted |
 | 3 | Minimum macOS for AVFoundation path (aligns with Rev 2 decision 5) | A0 |
 | 4 | Diarization in V2.0 and acceptable licensing/offline constraints | after V1.1 |

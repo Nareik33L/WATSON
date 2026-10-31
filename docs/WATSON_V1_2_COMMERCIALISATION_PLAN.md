@@ -231,7 +231,7 @@ V1.2 is complete when the scope's §13 criteria hold **and** the founding-member
 
 ### C-M0 — Decisions and accounts
 
-Merchant-of-record selection; Apple Developer Program enrolment; domain, trademark search, company and VAT position confirmed; pricing and entitlement decisions recorded (see §9 recommendations); model licence review for the chosen V1.0/V1.1 models.
+Merchant-of-record selection; Apple Developer Program enrolment; domain, trademark search, company and VAT position confirmed; pricing and entitlement decisions recorded (see §9 recommendations); model licence review for the chosen V1.0/V1.1 models; confirm Apple `say` voice licensing before shipping any TTS-rendered meeting fixtures (may be non-commercial).
 *Acceptance:* decision log in `docs/decisions/`; certificates issued; provider test-mode checkout works.
 
 ### C-M1 — Swift shell and signed build pipeline (long pole; start first)

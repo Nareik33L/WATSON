@@ -21,7 +21,6 @@ dependencies = [
     "sqlcipher3>=0.6.2",
     "sqlite-vec>=0.1.6",
     "uvicorn>=0.54.0",
-    "watson-bench",
 ]
 
 [project.scripts]
@@ -45,6 +44,8 @@ members = ["tools/bench"]
 watson-bench = { workspace = true }
 
 [dependency-groups]
+# watson-bench is a workspace member only — never a [project] dependency.
+# The name is unclaimed on PyPI (dependency-confusion risk).
 bench = [
     "jiwer>=3.0",
     "pillow>=10.0",
