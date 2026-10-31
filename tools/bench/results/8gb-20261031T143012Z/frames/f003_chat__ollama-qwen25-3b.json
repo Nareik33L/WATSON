@@ -1,0 +1,25 @@
+{
+  "candidate_id": "ollama-qwen25-3b",
+  "completion_tokens": 150,
+  "frame_id": "f003_chat",
+  "latency_s": 18.138059,
+  "output": {
+    "activity_type": "communication",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "You: I will send the revised deck",
+        "kind": "person_interaction",
+        "text": "I will send the revised deck"
+      },
+      {
+        "assertion": "observed",
+        "evidence_snippet": "Tom Ashworth: thanks \u2014 flag risks in Q4",
+        "kind": "person_interaction",
+        "text": "thanks \u2014 flag risks in Q4"
+      }
+    ],
+    "description": "A communication segment related to a project or task involving the delivery of a revised deck and addressing risks in Q4."
+  },
+  "role": "llm"
+}

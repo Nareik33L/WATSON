@@ -1,0 +1,13 @@
+{
+  "candidate_id": "ollama-qwen25vl-3b",
+  "completion_tokens": 66,
+  "frame_id": "f004_ide",
+  "latency_s": 10.695311,
+  "output": {
+    "app_guess": "Image Processing",
+    "ui_description": "Python function to extract text from an image using OCR.",
+    "visible_text": "def extract_frame(path):\nsidecar = load_ocr(path)\nreturn Frame(text=sidecar.text)",
+    "visual_density": "text"
+  },
+  "role": "vlm"
+}

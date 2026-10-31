@@ -1,0 +1,31 @@
+{
+  "candidate_id": "ollama-qwen25-3b",
+  "completion_tokens": 186,
+  "frame_id": "f001_mail",
+  "latency_s": 22.250978,
+  "output": {
+    "activity_type": "communication",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "User interacts with an email about a proposal",
+        "kind": "activity",
+        "text": "User interacts with an email about a proposal"
+      },
+      {
+        "assertion": "unconfirmed",
+        "evidence_snippet": "Please send revised pricing by Friday.",
+        "kind": "outcome",
+        "text": "User sends revised pricing by Friday"
+      },
+      {
+        "assertion": "unconfirmed",
+        "evidence_snippet": "Can we move the demo to 14 Nov?",
+        "kind": "decision",
+        "text": "User decides to move the demo to 14 Nov"
+      }
+    ],
+    "description": "User interaction with an email regarding a proposal"
+  },
+  "role": "llm"
+}
