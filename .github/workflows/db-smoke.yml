@@ -2,9 +2,6 @@ name: DB smoke
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
   schedule:
     - cron: "0 3 * * 0"
 
@@ -12,7 +9,7 @@ permissions:
   contents: read
 
 # macos-15 minutes count 10× on a private repo. This job is not on
-# push/pull_request. Trigger it by hand, on a v* tag, or wait for the
+# push/pull_request or tags. Trigger it by hand, or wait for the
 # Sunday 03:00 UTC schedule (skipped if main was idle). See docs/ci.md.
 # Proves the sqlcipher3 + sqlite-vec wheels on macOS arm64
 # (FTS5, extension load, unreadable without the key).

@@ -2,17 +2,14 @@ name: Meetings A0
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
   schedule:
     - cron: "0 3 * * 0"
 
 permissions:
   contents: read
 
-# macos-15 minutes count 10× on a private repo. Not on push/pull_request.
-# Trigger by hand, on a v* tag, or Sunday 03:00 UTC (skipped if main was
+# macos-15 minutes count 10× on a private repo. Not on push/pull_request
+# or tags. Trigger by hand, or Sunday 03:00 UTC (skipped if main was
 # idle). See docs/ci.md.
 
 jobs:

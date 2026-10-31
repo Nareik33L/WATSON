@@ -15,14 +15,14 @@ on:
       - "docs/results/**"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')) }}
 
 permissions:
   contents: read
 
 # Linux-only. macOS jobs live in helper.yml, db-smoke.yml, and meetings-a0.yml
-# (workflow_dispatch, v* tags, weekly). See docs/ci.md.
+# (workflow_dispatch and weekly). See docs/ci.md.
 # push is main and v* tags only; feature-branch commits run via pull_request.
 
 jobs:

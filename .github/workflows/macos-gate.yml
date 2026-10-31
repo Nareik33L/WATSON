@@ -1,6 +1,6 @@
 # Cheap ubuntu gate for macOS workflows. See docs/ci.md.
 # On schedule: skip macOS if main has had no commits in the last 7 days.
-# On workflow_dispatch or v* tags: always run.
+# On workflow_dispatch: always run.
 
 name: macOS gate
 
