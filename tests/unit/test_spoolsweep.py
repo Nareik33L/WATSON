@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -47,6 +48,14 @@ def _write_png_only(spool: Path, frame_id: str, *, mtime: float | None = None) -
 def _set_mtime(paths: list[Path], mtime: float) -> None:
     for path in paths:
         os.utime(path, (mtime, mtime))
+
+
+def _spool_swept_details(conn: object) -> list[dict[str, object]]:
+    rows = conn.execute(
+        "SELECT detail_json FROM audit_events WHERE kind = ?",
+        (KIND_SPOOL_SWEPT,),
+    ).fetchall()
+    return [json.loads(str(row[0])) for row in rows]
 
 
 def test_sweeper_refuses_symlink_and_outside_dir(tmp_path: Path) -> None:
@@ -200,6 +209,16 @@ def test_sweep_keeps_fresh_uningested_pairs_then_removes_them_at_24h(
         for png, sidecar in fixture_paths:
             assert not png.exists()
             assert not sidecar.exists()
+        assert _spool_swept_details(conn) == [
+            {
+                "orphaned": 3,
+                "png": 3,
+                "refused": 0,
+                "sidecar": 2,
+                "stale": 0,
+                "unprocessed": 0,
+            }
+        ]
     finally:
         conn.close()
 
@@ -224,6 +243,84 @@ def test_sweep_orphan_boundary_just_under_and_just_over_24h(
         assert keep_json.is_file()
         assert not drop_png.exists()
         assert not drop_json.exists()
+    finally:
+        conn.close()
+
+
+def test_sweep_keeps_fresh_non_uuid_pair_then_removes_at_24h(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    now = datetime(2026, 10, 31, 18, 0, tzinfo=UTC)
+    fresh = now.timestamp()
+    aged = (now - timedelta(hours=24)).timestamp()
+    spool = tmp_path / "spool"
+    png, sidecar = _write_pair(spool, "scratch", mtime=fresh)
+
+    conn = open_test_db(data_dir)
+    try:
+        result = sweep_spool(conn, spool, now=now, hard_limit_hours=24)
+        assert result.orphaned == 0
+        assert result.png == 0
+        assert result.sidecar == 0
+        assert png.is_file()
+        assert sidecar.is_file()
+        assert _spool_swept_details(conn) == []
+
+        _set_mtime([png, sidecar], aged)
+        aged_result = sweep_spool(conn, spool, now=now, hard_limit_hours=24)
+        assert aged_result.orphaned == 1
+        assert aged_result.png == 1
+        assert aged_result.sidecar == 1
+        assert not png.exists()
+        assert not sidecar.exists()
+        assert _spool_swept_details(conn) == [
+            {
+                "orphaned": 1,
+                "png": 1,
+                "refused": 0,
+                "sidecar": 1,
+                "stale": 0,
+                "unprocessed": 0,
+            }
+        ]
+    finally:
+        conn.close()
+
+
+def test_sweep_mismatched_ages_use_oldest_mtime(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    now = datetime(2026, 10, 31, 18, 0, tzinfo=UTC)
+    fresh = now.timestamp()
+    aged = (now - timedelta(hours=24)).timestamp()
+    spool = tmp_path / "spool"
+    old_png, fresh_json = _write_pair(spool, str(new_id()))
+    os.utime(old_png, (aged, aged))
+    os.utime(fresh_json, (fresh, fresh))
+    fresh_png, old_json = _write_pair(spool, str(new_id()))
+    os.utime(fresh_png, (fresh, fresh))
+    os.utime(old_json, (aged, aged))
+
+    conn = open_test_db(data_dir)
+    try:
+        result = sweep_spool(conn, spool, now=now, hard_limit_hours=24)
+        assert result.orphaned == 2
+        assert result.png == 2
+        assert result.sidecar == 2
+        assert not old_png.exists()
+        assert not fresh_json.exists()
+        assert not fresh_png.exists()
+        assert not old_json.exists()
+        assert _spool_swept_details(conn) == [
+            {
+                "orphaned": 2,
+                "png": 2,
+                "refused": 0,
+                "sidecar": 2,
+                "stale": 0,
+                "unprocessed": 0,
+            }
+        ]
     finally:
         conn.close()
 
