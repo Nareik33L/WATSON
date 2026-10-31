@@ -9,6 +9,7 @@ import pytest
 from watson.dashboard.bind import (
     ALLOWED_BIND_HOST,
     BindError,
+    bind_available_port,
     pick_available_port,
     validate_bind_host,
 )
@@ -44,3 +45,19 @@ def test_pick_port_falls_back_when_preferred_is_busy() -> None:
 def test_pick_port_refuses_non_loopback_before_bind() -> None:
     with pytest.raises(BindError, match="127.0.0.1"):
         pick_available_port("0.0.0.0", 8000)
+
+
+def test_bind_available_port_holds_the_port() -> None:
+    held = bind_available_port("127.0.0.1", 18000)
+    try:
+        port = int(held.getsockname()[1])
+        challenger = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            with pytest.raises(OSError):
+                challenger.bind(("127.0.0.1", port))
+        finally:
+            challenger.close()
+        chosen = pick_available_port("127.0.0.1", port)
+        assert chosen != port
+    finally:
+        held.close()

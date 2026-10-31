@@ -7,6 +7,7 @@ import binascii
 import hashlib
 import hmac
 import secrets
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -47,30 +48,33 @@ class LaunchCodes:
         self._ttl_seconds = ttl_seconds
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
         self._codes: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def mint(self) -> str:
-        self._purge()
-        code = secrets.token_urlsafe(LAUNCH_CODE_BYTES)
-        self._codes[code] = self._clock() + self._ttl_seconds
-        return code
+        with self._lock:
+            self._purge()
+            code = secrets.token_urlsafe(LAUNCH_CODE_BYTES)
+            self._codes[code] = self._clock() + self._ttl_seconds
+            return code
 
     def consume(self, offered: str) -> bool:
-        self._purge()
-        if not offered:
-            return False
-        offered_b = offered.encode("utf-8")
-        match: str | None = None
-        for stored in self._codes:
-            stored_b = stored.encode("utf-8")
-            if len(stored_b) != len(offered_b):
-                continue
-            if hmac.compare_digest(stored_b, offered_b):
-                match = stored
-                break
-        if match is None:
-            return False
-        del self._codes[match]
-        return True
+        with self._lock:
+            self._purge()
+            if not offered:
+                return False
+            offered_b = offered.encode("utf-8")
+            match: str | None = None
+            for stored in self._codes:
+                stored_b = stored.encode("utf-8")
+                if len(stored_b) != len(offered_b):
+                    continue
+                if hmac.compare_digest(stored_b, offered_b):
+                    match = stored
+                    break
+            if match is None:
+                return False
+            del self._codes[match]
+            return True
 
     def _purge(self) -> None:
         now = self._clock()

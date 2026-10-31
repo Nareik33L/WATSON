@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import secrets
 import stat
@@ -54,13 +55,41 @@ class EnvTokenProvider(InMemoryTokenProvider):
         return "EnvTokenProvider(token=<redacted>)"
 
 
+def _open_token_file(path: Path, flags: int, mode: int = 0o600) -> int:
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        return os.open(path, flags, mode)
+    except OSError as exc:
+        if exc.errno in {errno.ELOOP, errno.EPERM}:
+            raise TokenError(f"{path} must not be a symlink") from exc
+        raise
+
+
+def _read_existing_token_file(path: Path) -> str:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+    fd = _open_token_file(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise TokenError(f"{path} must be a regular file")
+        if info.st_uid != os.getuid():
+            raise TokenError(f"{path} must be owned by the current user")
+        if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+            raise TokenError(f"{path} must be mode 0600")
+        raw = os.read(fd, 4096)
+    finally:
+        os.close(fd)
+    return _require_token(raw.decode("utf-8").strip(), source=str(path))
+
+
 def _write_new_token_file(path: Path) -> str:
     token = secrets.token_urlsafe(TOKEN_BYTES)
     path.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags, 0o600)
+    fd = _open_token_file(path, flags, 0o600)
     try:
         os.fchmod(fd, 0o600)
         os.write(fd, (token + "\n").encode())
@@ -76,19 +105,10 @@ class FileTokenProvider:
         self._path = path
 
     def get_token(self) -> str:
-        if self._path.is_symlink():
-            raise TokenError(f"{self._path} must not be a symlink")
-        if self._path.is_file():
-            info = self._path.lstat()
-            if not stat.S_ISREG(info.st_mode):
-                raise TokenError(f"{self._path} must be a regular file")
-            if info.st_uid != os.getuid():
-                raise TokenError(f"{self._path} must be owned by the current user")
-            if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-                raise TokenError(f"{self._path} must be mode 0600")
-            token = self._path.read_text(encoding="utf-8").strip()
-            return _require_token(token, source=str(self._path))
-        return _write_new_token_file(self._path)
+        try:
+            return _read_existing_token_file(self._path)
+        except FileNotFoundError:
+            return _write_new_token_file(self._path)
 
     def __repr__(self) -> str:
         return f"FileTokenProvider(path={self._path!r})"

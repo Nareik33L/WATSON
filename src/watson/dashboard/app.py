@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlcipher3 import dbapi2 as sqlcipher
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from watson.config.schema import WatsonConfig
@@ -197,11 +198,11 @@ def _report(request: Request) -> StatusReport:
     try:
         key = _cached_db_key(request.app)
         conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
-    except (KeyProviderError, DatabaseError):
+    except (KeyProviderError, DatabaseError, sqlcipher.DatabaseError):
         return StatusReport({}, {}, None)
     try:
         return collect_status(conn)
-    except DatabaseError:
+    except (DatabaseError, sqlcipher.DatabaseError):
         return StatusReport({}, {}, None)
     finally:
         conn.close()

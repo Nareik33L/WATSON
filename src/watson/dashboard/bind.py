@@ -21,8 +21,8 @@ def validate_bind_host(host: str) -> str:
     return cleaned
 
 
-def pick_available_port(host: str, preferred: int = DEFAULT_PORT) -> int:
-    """Return ``preferred`` if free on ``host``, otherwise the next free port."""
+def bind_available_port(host: str, preferred: int = DEFAULT_PORT) -> socket.socket:
+    """Bind ``preferred`` (or the next free port) and return the held socket."""
     bound_host = validate_bind_host(host)
     if preferred < 1 or preferred > 65535:
         raise BindError(f"dashboard port must be 1–65535, not {preferred}")
@@ -32,8 +32,16 @@ def pick_available_port(host: str, preferred: int = DEFAULT_PORT) -> int:
         try:
             probe.bind((bound_host, port))
         except OSError:
-            continue
-        finally:
             probe.close()
-        return port
+            continue
+        return probe
     raise BindError(f"no free port on {bound_host} in {preferred}–{last}")
+
+
+def pick_available_port(host: str, preferred: int = DEFAULT_PORT) -> int:
+    """Return ``preferred`` if free on ``host``, otherwise the next free port."""
+    sock = bind_available_port(host, preferred)
+    try:
+        return int(sock.getsockname()[1])
+    finally:
+        sock.close()

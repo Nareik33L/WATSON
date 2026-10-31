@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import threading
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -440,6 +441,48 @@ def test_dashboard_mints_launch_code_and_never_logs_secret(
     assert "token" not in query
     assert query["code"][0]
     assert query["code"][0] != INSTALL_TOKEN
+
+
+def test_sqlcipher_error_on_status_is_empty_not_500(
+    data_dir: Path, key_provider: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlcipher3 import dbapi2 as sqlcipher
+
+    from watson.dashboard import app as dashboard_app
+
+    conn = open_test_db(data_dir)
+    conn.close()
+
+    def boom(_conn: object) -> object:
+        raise sqlcipher.DatabaseError("malformed")
+
+    monkeypatch.setattr(dashboard_app, "collect_status", boom)
+    client = _client()
+    _authed(client)
+    response = client.get("/api/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["frames_by_state"] == {}
+    assert payload["jobs_by_state"] == {}
+    assert payload["last_replay"] is None
+
+
+def test_launch_code_consume_is_single_use_under_threads() -> None:
+    codes = LaunchCodes(ttl_seconds=60)
+    code = codes.mint()
+    wins: list[bool] = []
+
+    def attempt() -> None:
+        if codes.consume(code):
+            wins.append(True)
+
+    workers = [threading.Thread(target=attempt) for _ in range(16)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    assert wins == [True]
+    assert codes.consume(code) is False
 
 
 def test_csp_header_present() -> None:
