@@ -1,0 +1,16 @@
+name: tone_only
+kind: tone
+title: Tone-only hallucination probe
+date: '2026-10-31'
+language: en
+participants: []
+decisions: []
+commitments: []
+project_updates: []
+discussion_points: []
+traps: []
+notes: Empty transcript required. Any non-empty text is a hallucination.
+duration_ms: 15000
+meta:
+  script: tone.yaml
+  sample_rate: 16000

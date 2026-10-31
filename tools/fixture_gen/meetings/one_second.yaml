@@ -1,0 +1,18 @@
+# Decode / duration edge: a one-second 16 kHz mono clip.
+kind: one_second
+meta:
+  name: one_second
+  title: One-second clip
+  date: "2026-10-31"
+  language: en
+  duration_s: 1
+  sample_rate: 16000
+
+truth:
+  participants: []
+  decisions: []
+  commitments: []
+  project_updates: []
+  discussion_points: []
+  traps: []
+  notes: One second of silence. Used to check short-file handling.

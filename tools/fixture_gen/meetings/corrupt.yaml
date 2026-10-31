@@ -1,0 +1,16 @@
+# Decode failure: truncated RIFF that is not a valid WAV.
+kind: corrupt
+meta:
+  name: corrupt
+  title: Corrupt audio file
+  date: "2026-10-31"
+  language: en
+
+truth:
+  participants: []
+  decisions: []
+  commitments: []
+  project_updates: []
+  discussion_points: []
+  traps: []
+  notes: Decoder must fail clearly. File is retained for inspection.

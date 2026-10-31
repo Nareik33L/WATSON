@@ -1,0 +1,16 @@
+name: unsupported
+kind: unsupported
+title: Unsupported container
+date: '2026-10-31'
+language: en
+participants: []
+decisions: []
+commitments: []
+project_updates: []
+discussion_points: []
+traps: []
+notes: Unsupported container. Decoder must fail with a clear message.
+duration_ms: 0
+meta:
+  script: unsupported.yaml
+  sample_rate: 16000

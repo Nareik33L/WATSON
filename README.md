@@ -40,7 +40,7 @@ Linux CI runs `watson replay tests/fixtures/day_acme_q4 --instant` and `watson d
 
 `run` and `models` remain stubs until later milestones.
 
-The M0-A model bake-off lives in [`tools/bench/`](tools/bench/README.md). On the 8 GB development Mac:
+The M0-A model bake-off and the V1.1 A0 transcription bake-off live in [`tools/bench/`](tools/bench/README.md). Meeting dialogue scripts are in [`tools/fixture_gen/meetings/`](tools/fixture_gen/meetings/README.md). On the 8 GB development Mac:
 
 ```bash
 uv sync --group bench

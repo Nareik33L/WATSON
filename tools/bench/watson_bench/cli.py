@@ -16,6 +16,14 @@ from watson_bench.hardware import HardwareInfo, detect_hardware, format_hardware
 from watson_bench.paths import default_models_dir, default_report_path, set_repo_root
 from watson_bench.report import load_run_manifest, write_report
 from watson_bench.run import run_bakeoff
+from watson_bench.transcription.protocol import TRANSCRIBE_ENGINES, TRANSCRIBE_SIZES
+from watson_bench.transcription.report import default_transcription_report_path
+from watson_bench.transcription.run import (
+    default_meeting_fixtures_dir,
+    fetch_transcription,
+    parse_csv,
+    run_transcription,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -34,8 +42,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="watson-bench",
         description=(
-            "M0-A model/hardware bake-off. Fetch is the only command that downloads. "
-            "run talks only to a local Ollama server on localhost."
+            "M0-A model/hardware bake-off and V1.1 A0 transcription bake-off. "
+            "fetch / transcribe --fetch-only are the only commands that download. "
+            "run and transcribe talk only to local models."
         ),
     )
     parser.add_argument(
@@ -101,6 +110,56 @@ def _build_parser() -> argparse.ArgumentParser:
     report.add_argument("--run-dir", type=Path, required=True)
     report.add_argument("--out", type=Path, default=None)
     report.set_defaults(handler=_cmd_report)
+
+    transcribe = sub.add_parser(
+        "transcribe",
+        help=(
+            "A0 transcription bake-off. Models load one at a time. "
+            "Use --fetch-only (WATSON_ALLOW_NETWORK=1) to download; measured runs stay offline."
+        ),
+    )
+    transcribe.add_argument(
+        "--profile",
+        required=True,
+        choices=PROFILES,
+        help="8gb (M1 8 GB Mac) or 16gb (plan baseline)",
+    )
+    transcribe.add_argument(
+        "--engines",
+        default="pywhispercpp,mlx-whisper,faster-whisper",
+        help=f"Comma-separated. One of {', '.join(TRANSCRIBE_ENGINES)}",
+    )
+    transcribe.add_argument(
+        "--sizes",
+        default="base,small",
+        help=f"Comma-separated. One of {', '.join(TRANSCRIBE_SIZES)}",
+    )
+    transcribe.add_argument(
+        "--fixtures",
+        type=Path,
+        default=None,
+        help="Directory of meeting fixtures (default tests/fixtures/meetings)",
+    )
+    transcribe.add_argument("--out", type=Path, default=None, help="Run output directory")
+    transcribe.add_argument("--models-dir", type=Path, default=None)
+    transcribe.add_argument(
+        "--language",
+        default="en",
+        help="language_hint passed to TranscriptionRuntime.transcribe",
+    )
+    transcribe.add_argument(
+        "--fetch-only",
+        action="store_true",
+        help="Download weights (requires WATSON_ALLOW_NETWORK=1). Does not run inference.",
+    )
+    transcribe.add_argument(
+        "--report",
+        nargs="?",
+        const="auto",
+        default=None,
+        help="Write a markdown report. Optional path; default <date>-transcription.md",
+    )
+    transcribe.set_defaults(handler=_cmd_transcribe)
     return parser
 
 
@@ -215,9 +274,45 @@ def _filtered(args: argparse.Namespace):
     return rows
 
 
+def _cmd_transcribe(args: argparse.Namespace) -> int:
+    engines = parse_csv(args.engines)
+    sizes = parse_csv(args.sizes)
+    models_dir = args.models_dir or default_models_dir()
+    if args.fetch_only:
+        messages = fetch_transcription(engines=engines, sizes=sizes, models_dir=models_dir)
+        for message in messages:
+            print(message)
+        return 0
+    report_path = _resolve_transcription_report_flag(args.report)
+    out = run_transcription(
+        profile=args.profile,
+        engines=engines,
+        sizes=sizes,
+        fixtures_dir=args.fixtures or default_meeting_fixtures_dir(),
+        out_dir=args.out,
+        models_dir=models_dir,
+        report_path=report_path,
+        language_hint=args.language,
+    )
+    print(f"wrote {out / 'run.json'}")
+    if report_path is not None:
+        dest = default_transcription_report_path() if str(report_path) == "auto" else report_path
+        if dest.is_file():
+            print(f"wrote {dest}")
+    return 0
+
+
 def _resolve_report_flag(value: str | None) -> Path | None:
     if value is None:
         return None
     if value == "auto":
         return default_report_path(date.today().isoformat())
+    return Path(value)
+
+
+def _resolve_transcription_report_flag(value: str | None) -> Path | None:
+    if value is None:
+        return None
+    if value == "auto":
+        return default_transcription_report_path()
     return Path(value)
