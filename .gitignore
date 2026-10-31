@@ -12,6 +12,8 @@ build/
 htmlcov/
 .DS_Store
 tools/bench/results/
+!tools/bench/results/8gb-20261031T143012Z/
+!tools/bench/results/8gb-20261031T143012Z/**
 .build/
 .swiftpm/
 *.xcodeproj

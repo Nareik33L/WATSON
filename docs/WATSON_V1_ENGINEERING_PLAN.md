@@ -5,6 +5,8 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-10-31):** M0-A bake-off (`docs/decisions/0001-m0a-8gb-runtime-and-models.md`) — §14 #1 is Ollama for V1.0 **dev**; llama.cpp-versus-MLX, per-model RSS and the 50 hand-scored frames move to M3 (Watson Lead); 16 GB fallback moves to V1.2 (§0.1). §7.1 package LLM class is ~3–4B on 8 GB (V1.0); ~7–9B is the V1.2 16 GB profile.
+
 This document keeps the product definition, principles and non-goals of v1.1 unchanged. It revises *how* WATSON is built. The changes fall into four groups:
 
 1. **Privacy exposure is reduced by an order of magnitude** — frames are deleted minutes after capture rather than at end of day, only the frontmost window is captured by default, and extracted text is itself tiered and expiring.
@@ -385,12 +387,12 @@ Structured JSON logs. A `ContentField` wrapper marks any value derived from scre
 
 ### 7.1 Roles and adapters
 
-| Role | Interface | Dev default | Package default (decided at M0) |
+| Role | Interface | Dev default | Package default (llama.cpp vs MLX at M3) |
 |---|---|---|---|
 | OCR | Swift Vision in helper | — | — |
-| Visual description | `VisionRuntime.describe(image, schema)` | Ollama | llama.cpp or MLX VLM, ~2–8B class |
-| Understanding / consolidation / reports / Q&A | `LanguageRuntime.complete(messages, schema)` | Ollama | llama.cpp or MLX LLM, ~7–9B class at Q4–Q5, 8k+ context |
-| Embeddings | `EmbeddingRuntime.embed(texts)` | Ollama | in-process small embedding model (≤ 1B) |
+| Visual description | `VisionRuntime.describe(image, schema)` | Ollama (off on 8 GB, §0.1 / ADR 0001) | llama.cpp or MLX VLM, ~2–8B class (16 GB V1.2 profile) |
+| Understanding / consolidation / reports / Q&A | `LanguageRuntime.complete(messages, schema)` | Ollama, `llama3.2:3b` provisional (ADR 0001) | llama.cpp or MLX LLM; **~3–4B Q4** on 8 GB (V1.0, §0.1); ~7–9B Q4–Q5 is the 16 GB V1.2 profile |
+| Embeddings | `EmbeddingRuntime.embed(texts)` | Ollama, `nomic-embed-text` (ADR 0001) | in-process small embedding model (≤ 0.5B on 8 GB) |
 
 Model identifiers are configuration. Candidate families are enumerated and benchmarked at M0 rather than named here, because the local-model landscape changes faster than this document.
 
@@ -557,11 +559,18 @@ Each milestone ends with a tagged build and its acceptance tests green.
 
 ### M0 — De-risk the two unknowns (in parallel)
 
-**A. Hardware and model bake-off.** Benchmark candidate VLM/LLM/embedding models on the development Mac across the three runtimes: tokens/s, time per frame, RSS, quality on 50 sampled fixture frames (hand-scored). Output: `docs/benchmarks/<date>.md` and a chosen default per role with a 16 GB fallback.
+**A. Hardware and model bake-off.** Benchmark candidate VLM/LLM/embedding models on the development Mac. Output: `docs/benchmarks/<date>.md` and a chosen default per role (ADR 0001).
 
 **B. Capture spike.** Swift helper that captures the frontmost window via ScreenCaptureKit, runs Vision OCR, writes PNG + sidecar, honours pause over stdin, detects lock/sleep/idle. Signed with a stable identifier; verify TCC permission survives a rebuild. Measure CPU.
 
-*Acceptance:* benchmark report with recommendation; helper runs for one hour on a test desktop producing correct sidecars with < 2 % CPU; permission persists across two rebuilds.
+*Acceptance (M0-A, 2026-10-31, ADR 0001):* benchmark report with recommendation from the 8 GB Ollama run. The original bake-off wording is narrowed as follows:
+
+- Three-runtime comparison → **M3**, Watson Lead — only Ollama was measured.
+- Per-model RSS → **M3**, Watson Lead — the harness RSS is the Python client, not model weights.
+- 50 hand-scored fixture frames → **M3**, Watson Lead — this run used 5 sample frames; `scoring.csv` is blank.
+- 16 GB fallback per role → **V1.2** — §0.1 is 8 GB first; 16 GB is not a V1 requirement.
+
+*Acceptance (M0-B):* helper runs for one hour on a test desktop producing correct sidecars with < 2 % CPU; permission persists across two rebuilds.
 
 ### M1 — Foundation and development loop
 
@@ -635,8 +644,8 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 
 | # | Decision | Decide at |
 |---|---|---|
-| 1 | Package runtime: llama.cpp vs MLX | M0 |
-| 2 | Default VLM/LLM/embedding models and quantisations | M0 |
+| 1 | V1.0 **dev** runtime: Ollama | **Decided M0-A** — ADR 0001 |
+| 2 | Default VLM/LLM/embedding models and quantisations (8 GB) | **Provisional M0-A** — ADR 0001; quality gate M3 (§14 #9) |
 | 3 | Swift helper vs PyObjC fallback | M0-B result |
 | 4 | SQLCipher vs application-level column encryption | M1 |
 | 5 | Minimum macOS version (SCK screenshot API availability suggests 14+) | M0-B |
@@ -644,6 +653,7 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 | 7 | Tier-2 text default TTL (7 days proposed) | M3, after seeing re-consolidation needs |
 | 8 | Dashboard framework details (HTMX vs plain fetch) | M1 |
 | 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask WATSON | M3, from the `8gb` bench profile and §11.2 results |
+| 10 | Package runtime: llama.cpp vs MLX (in-process default, D6) | **M3**, owner Watson Lead — not measured at M0-A |
 
 ---
 

@@ -1,0 +1,13 @@
+{
+  "candidate_id": "ollama-qwen25vl-3b",
+  "completion_tokens": 86,
+  "frame_id": "f002_doc",
+  "latency_s": 10.350195,
+  "output": {
+    "app_guess": "Document viewer",
+    "ui_description": "A screenshot of a document with a title and a status update.",
+    "visible_text": "Pages Internal Onboarding Guide Section 3\n\nInternal Onboarding Guide\n\nSection 3: Access and tools\n\nStatus: published this morning\n\nStilled editing: Acme proposal appendix",
+    "visual_density": "text"
+  },
+  "role": "vlm"
+}

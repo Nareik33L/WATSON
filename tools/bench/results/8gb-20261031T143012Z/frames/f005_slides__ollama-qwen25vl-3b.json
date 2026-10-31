@@ -1,0 +1,13 @@
+{
+  "candidate_id": "ollama-qwen25vl-3b",
+  "completion_tokens": 110,
+  "frame_id": "f005_slides",
+  "latency_s": 10.380954,
+  "output": {
+    "app_guess": "Keynote",
+    "ui_description": "A slide from a Keynote presentation titled 'Acme Q4 Demo outline'. It lists the following points: Slide 4 Risks, Timeline: demo 14 Nov, Owner: Delivery, and a visually dense placeholder.",
+    "visible_text": "Keynote Acme Q4 Demo outline\nSlide 4 Risks\nTimeline: demo 14 Nov\nOwner: Delivery\n(visually dense placeholder)",
+    "visual_density": "dense"
+  },
+  "role": "vlm"
+}

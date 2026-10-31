@@ -1,0 +1,19 @@
+{
+  "candidate_id": "ollama-llama32-3b",
+  "completion_tokens": 75,
+  "frame_id": "f001_mail",
+  "latency_s": 9.160862,
+  "output": {
+    "activity_type": "interaction",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "Please send revised pricing by Friday.",
+        "kind": "outcome",
+        "text": "Revised pricing will be sent by Friday"
+      }
+    ],
+    "description": "Email conversation"
+  },
+  "role": "llm"
+}

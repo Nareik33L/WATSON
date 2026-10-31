@@ -1,0 +1,13 @@
+{
+  "candidate_id": "ollama-qwen25vl-3b",
+  "completion_tokens": 134,
+  "frame_id": "f001_mail",
+  "latency_s": 19.505793,
+  "output": {
+    "app_guess": "Email client",
+    "ui_description": "An email with the subject 'Re: Acme Q4 Proposal' from Priya Natarajan. The email asks if the demo can be moved to November 14th and requests revised pricing by Friday.",
+    "visible_text": "Mail Re: Acme Q4 Proposal \u00a9 Priya Natarajan\nFrom: Priya Natarajan <priya@acme.example>\nSubject Re: Acme Q4 Proposal\nCan we move the demo to 14 Nov?\nPlease send revised pricing by Friday.",
+    "visual_density": "text"
+  },
+  "role": "vlm"
+}

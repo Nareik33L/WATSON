@@ -1,0 +1,19 @@
+{
+  "candidate_id": "ollama-llama32-3b",
+  "completion_tokens": 82,
+  "frame_id": "f004_ide",
+  "latency_s": 9.580096,
+  "output": {
+    "activity_type": "activity",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "def extract_frame(path):\n    sidecar = load_ocr(path)\n    return Frame(text=sidecar.text)",
+        "kind": "outcome",
+        "text": "Extracted frame from ocr text"
+      }
+    ],
+    "description": "IDE activity"
+  },
+  "role": "llm"
+}
