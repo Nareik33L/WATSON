@@ -13,6 +13,8 @@ Hardware this repo actually has: **Apple M1, 8 GB RAM, macOS 14.5**, Python via 
 
 Every YAML row is marked `status: candidate`. Nothing here is a chosen default.
 
+`watson-bench` is a uv workspace member (`tools/bench`). `uv sync` installs it editable, so `uv run watson-bench` uses this checkout — no `PYTHONPATH` and no `--no-sync`.
+
 ## Safety
 
 - `watson-bench fetch` is the **only** command that downloads weights.

@@ -18,9 +18,9 @@ FASTER_WHISPER_REPOS = {
 
 MLX_WHISPER_REPOS = {
     "tiny": "mlx-community/whisper-tiny",
-    "base": "mlx-community/whisper-base",
-    "small": "mlx-community/whisper-small",
-    "medium": "mlx-community/whisper-medium",
+    "base": "mlx-community/whisper-base-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
 }
 
 _WEIGHT_MARKERS = (

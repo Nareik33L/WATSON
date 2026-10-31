@@ -21,11 +21,11 @@ dependencies = [
     "sqlcipher3>=0.6.2",
     "sqlite-vec>=0.1.6",
     "uvicorn>=0.54.0",
+    "watson-bench",
 ]
 
 [project.scripts]
 watson = "watson.cli:main"
-watson-bench = "watson_bench.cli:main"
 watson-fixturegen = "watson_fixturegen.cli:main"
 
 [project.optional-dependencies]
@@ -38,11 +38,18 @@ transcribe = ["faster-whisper>=1.1.0"]
 mlx-whisper = ["mlx-whisper>=0.4.1"]
 pywhispercpp = ["pywhispercpp>=1.3.0"]
 
+[tool.uv.workspace]
+members = ["tools/bench"]
+
+[tool.uv.sources]
+watson-bench = { workspace = true }
+
 [dependency-groups]
 bench = [
     "jiwer>=3.0",
     "pillow>=10.0",
     "pyyaml>=6.0",
+    "watson-bench",
 ]
 fixturegen = [
     "jinja2>=3.1",
@@ -77,9 +84,6 @@ line-length = 100
 packages = ["src/watson"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"tools/bench/watson_bench" = "watson_bench"
-"tools/bench/candidates" = "watson_bench/data/candidates"
-"tools/bench/samples" = "watson_bench/data/samples"
 "tools/fixture_gen/watson_fixturegen" = "watson_fixturegen"
 "schemas/sidecar.schema.json" = "watson/data/sidecar.schema.json"
 # fonts/ and scenarios/ live inside watson_fixturegen and ship in the wheel.

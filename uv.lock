@@ -13,6 +13,12 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "watson",
+    "watson-bench",
+]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
@@ -4041,6 +4047,7 @@ dependencies = [
     { name = "sqlcipher3" },
     { name = "sqlite-vec" },
     { name = "uvicorn" },
+    { name = "watson-bench" },
 ]
 
 [package.optional-dependencies]
@@ -4070,6 +4077,7 @@ bench = [
     { name = "jiwer" },
     { name = "pillow" },
     { name = "pyyaml" },
+    { name = "watson-bench" },
 ]
 dev = [
     { name = "httpx" },
@@ -4083,6 +4091,7 @@ dev = [
     { name = "ruff" },
     { name = "types-jsonschema" },
     { name = "types-pyyaml" },
+    { name = "watson-bench" },
 ]
 fixturegen = [
     { name = "jinja2" },
@@ -4114,6 +4123,7 @@ requires-dist = [
     { name = "sqlcipher3", specifier = ">=0.6.2" },
     { name = "sqlite-vec", specifier = ">=0.1.6" },
     { name = "uvicorn", specifier = ">=0.54.0" },
+    { name = "watson-bench", editable = "tools/bench" },
 ]
 provides-extras = ["llamacpp", "mlx", "fetch", "transcribe", "mlx-whisper", "pywhispercpp"]
 
@@ -4122,6 +4132,7 @@ bench = [
     { name = "jiwer", specifier = ">=3.0" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "watson-bench", editable = "tools/bench" },
 ]
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
@@ -4136,6 +4147,7 @@ dev = [
     { name = "ruff", specifier = ">=0.8" },
     { name = "types-jsonschema", specifier = ">=4.26.0.20261006" },
     { name = "types-pyyaml", specifier = ">=6.0" },
+    { name = "watson-bench", editable = "tools/bench" },
 ]
 fixturegen = [
     { name = "jinja2", specifier = ">=3.1" },
@@ -4144,6 +4156,11 @@ fixturegen = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "types-pyyaml", specifier = ">=6.0" },
 ]
+
+[[package]]
+name = "watson-bench"
+version = "0.1.0"
+source = { editable = "tools/bench" }
 
 [[package]]
 name = "websockets"

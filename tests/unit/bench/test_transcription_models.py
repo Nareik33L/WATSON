@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import multiprocessing
 import sys
 import types
@@ -7,9 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from watson_bench.transcription.adapters import MlxWhisperRuntime, clear_mlx_model_holder
+from watson_bench.transcription.adapters import (
+    MlxWhisperRuntime,
+    clear_mlx_model_holder,
+    mlx_model_holder,
+)
 from watson_bench.transcription.fetch import fetch_transcription_model
-from watson_bench.transcription.models import engine_model_dir, model_ready
+from watson_bench.transcription.models import engine_model_dir, mlx_whisper_repo, model_ready
 from watson_bench.transcription.run import rss_probe_main
 
 
@@ -28,6 +33,80 @@ def test_hf_cache_layout_is_not_the_resolver_path(tmp_path: Path) -> None:
     (cache / "model.bin").write_bytes(b"weights")
     assert not model_ready(tmp_path, "faster-whisper", "tiny")
     assert engine_model_dir(tmp_path, "faster-whisper", "tiny") != cache
+
+
+@pytest.mark.parametrize(
+    ("size", "repo"),
+    [
+        ("tiny", "mlx-community/whisper-tiny"),
+        ("base", "mlx-community/whisper-base-mlx"),
+        ("small", "mlx-community/whisper-small-mlx"),
+        ("medium", "mlx-community/whisper-medium-mlx"),
+    ],
+)
+def test_mlx_whisper_repo_ids_use_mlx_suffix(size: str, repo: str) -> None:
+    assert mlx_whisper_repo(size) == repo
+
+
+def test_mlx_whisper_repo_rejects_unknown_size() -> None:
+    with pytest.raises(ValueError, match="no mlx-whisper repo"):
+        mlx_whisper_repo("large")
+
+
+def test_mlx_fetch_uses_mapped_repo_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, str] = {}
+
+    def fake_snapshot(*, repo_id: str, local_dir: str, **_kwargs: object) -> str:
+        seen["repo_id"] = repo_id
+        seen["local_dir"] = local_dir
+        path = Path(local_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "weights.npz").write_bytes(b"weights")
+        return local_dir
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.snapshot_download = fake_snapshot  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setenv("WATSON_ALLOW_NETWORK", "1")
+
+    dest = engine_model_dir(tmp_path, "mlx-whisper", "small")
+    message = fetch_transcription_model("mlx-whisper", "small", tmp_path)
+    assert seen["repo_id"] == "mlx-community/whisper-small-mlx"
+    assert seen["local_dir"] == str(dest)
+    assert "whisper-small-mlx" in message
+    assert model_ready(tmp_path, "mlx-whisper", "small")
+
+
+def test_mlx_model_holder_import_module_returns_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    holder = type("ModelHolder", (), {"model": None, "model_path": None})
+    transcribe_mod = types.ModuleType("mlx_whisper.transcribe")
+    transcribe_mod.ModelHolder = holder
+
+    def transcribe_fn(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("bound the transcribe function, not the module")
+
+    mlx_pkg = types.ModuleType("mlx_whisper")
+    mlx_pkg.transcribe = transcribe_fn  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mlx_whisper", mlx_pkg)
+    monkeypatch.delitem(sys.modules, "mlx_whisper.transcribe", raising=False)
+
+    seen: list[str] = []
+
+    def fake_import(name: str, package: str | None = None) -> types.ModuleType:
+        del package
+        seen.append(name)
+        assert name == "mlx_whisper.transcribe"
+        return transcribe_mod
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
+
+    result = mlx_model_holder()
+    assert seen == ["mlx_whisper.transcribe"]
+    assert isinstance(transcribe_mod, types.ModuleType)
+    assert hasattr(transcribe_mod, "ModelHolder")
+    assert result is holder
 
 
 def test_fetch_fake_names_canonical_dir(tmp_path: Path) -> None:

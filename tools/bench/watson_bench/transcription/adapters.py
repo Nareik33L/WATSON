@@ -266,8 +266,11 @@ class PywhispercppRuntime:
 
 
 def mlx_model_holder() -> Any:
-    import mlx_whisper.transcribe as transcribe_mod
+    # ``mlx_whisper.transcribe`` is shadowed by the re-exported function, so
+    # ``import mlx_whisper.transcribe as m`` binds the function, not the module.
+    import importlib
 
+    transcribe_mod = importlib.import_module("mlx_whisper.transcribe")
     return transcribe_mod.ModelHolder
 
 

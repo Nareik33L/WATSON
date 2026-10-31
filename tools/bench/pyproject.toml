@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watson-bench"
+version = "0.1.0"
+description = "WATSON M0-A / A0 bake-off harness"
+requires-python = ">=3.12"
+
+[project.scripts]
+watson-bench = "watson_bench.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["watson_bench"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"candidates" = "watson_bench/data/candidates"
+"samples" = "watson_bench/data/samples"
