@@ -43,15 +43,20 @@ _NATIONAL_ID_COMPACT = re.compile(r"\b\d{6}[- ]?\d{4,6}\b")
 _NINO = re.compile(
     r"\b([A-Za-z]{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*[A-Da-d])\b"
 )
-# Compact 4–8 digits, or common splits (3+3, 4+4, 2+2+2). Optional G- prefix.
-# Compact must not eat the first clump of a hyphenated date (2026-11-03).
+# Compact 4–8 digits, or common splits (3+3, 4+4, 2+2+2, 4+2). Optional G- prefix.
+# ISO YYYY-MM-DD is skipped separately so 4+2 does not eat 2026-11-03.
 _OTP_TOKEN = re.compile(
     r"(?i)(?<![A-Za-z0-9])(?:[A-Z]-)?(?:"
-    r"\d{2}[ \t-]\d{2}[ \t-]\d{2}(?![0-9])"
-    r"|\d{3}[ \t-]\d{3}(?![0-9])"
-    r"|\d{4}[ \t-]\d{4}(?![0-9])"
-    r"|\d{4,8}(?![0-9-])"
+    r"\d{2}[ \t/-]\d{2}[ \t/-]\d{2}(?![0-9])"
+    r"|\d{3}[ \t/-]\d{3}(?![0-9])"
+    r"|\d{4}[ \t/-]\d{4}(?![0-9])"
+    r"|\d{4}[ \t/-]\d{2}(?![0-9])"
+    r"|\d{4,8}(?![0-9/-])"
     r")"
+)
+_ISO_DATE = re.compile(r"(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])")
+_OTP_ORDINARY_PREFIX = frozenset(
+    {"line", "lines", "invoice", "invoices", "room", "po", "amount", "section"}
 )
 _OTP_WINDOW = 8
 _OTP_HINTS = frozenset(
@@ -84,6 +89,7 @@ _OTP_FILLERS = frozenset(
         "account",
         "id",
         "use",
+        "#",
     }
 )
 _OTP_FALSE_PREFIX = frozenset(
@@ -119,7 +125,7 @@ _OTP_FALSE_SUFFIX = frozenset(
         "lines",
     }
 )
-_OTP_TICKET_PREFIX = frozenset({"pr", "issue", "ticket", "bug", "#"})
+_OTP_TICKET_PREFIX = frozenset({"pr", "issue", "ticket", "bug"})
 _OTP_LEADING_PUNCT = re.compile(r"^[\s•*·●.\-–—()[\]]*$")
 _OTP_LABEL_END = re.compile(r"(?i)(?::|=|is)\s*$")
 _PASSWORD_SAME_LINE = re.compile(
@@ -254,6 +260,14 @@ def _redact_otps(text: str) -> str:
     pieces: list[str] = []
     last = 0
     for match in _OTP_TOKEN.finditer(text):
+        if (
+            match.start() >= 2
+            and text[match.start() - 1] == ":"
+            and text[match.start() - 2].isdigit()
+        ):
+            continue
+        if _ISO_DATE.match(text, match.start()):
+            continue
         if not _otp_related(text, match.start(), match.end()):
             continue
         pieces.append(text[last : match.start()])
@@ -264,10 +278,8 @@ def _redact_otps(text: str) -> str:
 
 
 def _otp_related(text: str, start: int, end: int) -> bool:
-    """Privacy-first: redact when a keyword is in-window, unless a known non-secret."""
+    """A keyword/label wins; year-like keep only for unlabelled follow-on words."""
     raw = text[start:end]
-    if _looks_like_date(raw):
-        return False
     line_start = text.rfind("\n", 0, start) + 1
     newline_at = text.find("\n", end)
     line_end = len(text) if newline_at < 0 else newline_at
@@ -280,35 +292,58 @@ def _otp_related(text: str, start: int, end: int) -> bool:
     after_text = re.split(r"[.!?]", line[local_end:])[0]
     before = _otp_tokens(before_text)
     after = _otp_tokens(after_text)
+    if before and before[-1] in _OTP_ORDINARY_PREFIX:
+        return False
     if _code_has_nonsecret_partner(before, after):
         return False
-    if _window_has_hint(list(reversed(before))) or _window_has_hint(after):
-        return True
-    if line_start > 0 and _OTP_LEADING_PUNCT.fullmatch(line[:local_start]):
+    labelled = _window_has_hint(list(reversed(before))) or _window_has_hint(after)
+    if not labelled and line_start > 0 and _OTP_LEADING_PUNCT.fullmatch(line[:local_start]):
         prev_end = line_start - 1
         prev_start = text.rfind("\n", 0, prev_end) + 1
-        if _previous_line_is_otp_label(text[prev_start:prev_end]):
-            return True
-    return False
+        labelled = _previous_line_is_otp_label(text[prev_start:prev_end])
+    if not labelled:
+        return False
+    # Year/date exemption: compact 19xx/20xx followed by a non-hint word (2026 roadmap).
+    # Grouped forms and end-of-line / next-line labelled codes always redact.
+    if (
+        not _is_grouped_otp(raw)
+        and _year_like(raw)
+        and _nonfiller_follows(after)
+        and not _window_has_hint(after)
+    ):
+        return False
+    return True
 
 
 def _otp_tokens(fragment: str) -> list[str]:
-    return [token.lower() for token in re.findall(r"[A-Za-z0-9]+|[:=#]", fragment)]
+    return [
+        token.lower()
+        for token in re.findall(r"[A-Za-z]+(?:-[A-Za-z]+)+|[A-Za-z0-9]+|[:=#]", fragment)
+    ]
 
 
-def _looks_like_date(raw: str) -> bool:
+def _is_grouped_otp(raw: str) -> bool:
+    return any(char in raw for char in " \t/-")
+
+
+def _year_like(raw: str) -> bool:
     digits = "".join(char for char in raw if char.isdigit())
-    if len(digits) == 4 and digits.startswith(("19", "20")):
-        return True
-    if "-" in raw or "/" in raw:
-        if len(digits) >= 4 and digits[:4].startswith(("19", "20")):
-            return True
-    return False
+    return len(digits) >= 4 and digits.startswith(("19", "20"))
+
+
+def _nonfiller_follows(after: list[str]) -> bool:
+    return any(word not in _OTP_FILLERS for word in after)
 
 
 def _ticket_number(line: str, local_start: int) -> bool:
     before = _otp_tokens(line[:local_start])
-    return bool(before) and before[-1] in _OTP_TICKET_PREFIX
+    if not before:
+        return False
+    if before[-1] in _OTP_TICKET_PREFIX:
+        return True
+    return before[-1] == "#" and (
+        len(before) == 1 or before[-2] in _OTP_TICKET_PREFIX
+    )
 
 
 def _code_has_nonsecret_partner(before: list[str], after: list[str]) -> bool:

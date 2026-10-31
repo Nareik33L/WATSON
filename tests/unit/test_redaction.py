@@ -221,6 +221,39 @@ OTP_CORPUS: list[tuple[str, str, str]] = [
     ("code 1234 lines", "code 1234 lines", "keep: code N lines"),
     ("code coverage is 1234", "code coverage is 1234", "keep: code coverage"),
     ("code style 1234", "code style 1234", "keep: code style"),
+    # Round 5: year-like codes must still be redacted when labelled
+    ("Your PIN: 1987", "Your PIN: [OTP]", "r5: year-like PIN after label"),
+    ("Your code is 2024", "Your code is [OTP]", "r5: year-like code is N"),
+    ("Verification code: 2019", "Verification code: [OTP]", "r5: year-like verification code"),
+    ("Passcode 1999", "Passcode [OTP]", "r5: year-like passcode"),
+    ("PIN 2000", "PIN [OTP]", "r5: year-like PIN"),
+    ("Your Uber code: 2024", "Your Uber code: [OTP]", "r5: brand + year-like code"),
+    (
+        "2019 is your verification code",
+        "[OTP] is your verification code",
+        "r5: year-like N is your code",
+    ),
+    ("Your PIN\n1987", "Your PIN\n[OTP]", "r5: label line, year-like code next line"),
+    (
+        "Verification code:\n2019",
+        "Verification code:\n[OTP]",
+        "r5: colon label line, year-like next line",
+    ),
+    ("Your code is\n2024", "Your code is\n[OTP]", "r5: 'is' label line, year-like next line"),
+    ("Your code is 2048-1301", "Your code is [OTP]", "r5: 4+4 grouped starting 20"),
+    ("Your code: 20-19-87", "Your code: [OTP]", "r5: 2+2+2 grouped starting 20"),
+    ("Passcode: 2025-07", "Passcode: [OTP]", "r5: hyphenated year-like passcode"),
+    ("Your code: 2019/4821", "Your code: [OTP]", "r5: slash-split code starting 19/20"),
+    # Round 5 nits (optional)
+    ("Code #482913", "Code #[OTP]", "r5 nit: hash before code"),
+    ("Line 1234 of the code", "Line 1234 of the code", "r5 fp: line number"),
+    ("Invoice 48213 for code audit", "Invoice 48213 for code audit", "r5 fp: invoice number"),
+    (
+        "Meeting 14:30-15:30 PIN-protected room 4012",
+        "Meeting 14:30-15:30 PIN-protected room 4012",
+        "r5 fp: room number",
+    ),
+    ("See code at line 4821", "See code at line 4821", "r5 fp: line ref"),
 ]
 
 
