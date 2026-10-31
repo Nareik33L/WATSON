@@ -12,3 +12,14 @@ build/
 htmlcov/
 .DS_Store
 tools/bench/results/
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+*.p12
+*.pfx
+*.cer
+*.crt
+*.key
+*.pem

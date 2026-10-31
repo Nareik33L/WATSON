@@ -1,0 +1,62 @@
+name: Helper
+
+on:
+  push:
+    paths:
+      - "helper/**"
+      - ".github/workflows/helper.yml"
+  pull_request:
+    paths:
+      - "helper/**"
+      - ".github/workflows/helper.yml"
+
+permissions:
+  contents: read
+
+# macos-14 minutes are costly on a private repo. This workflow is the only
+# macOS job and it starts only when helper/ (or this file) changes.
+# No ScreenCaptureKit: build, unit tests, and --selftest only.
+
+jobs:
+  helper:
+    name: swift build + tests
+    runs-on: macos-14
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Swift toolchain
+        working-directory: helper
+        run: |
+          # Package.swift is swift-tools-version 6.0 (dev Mac is 6.0.3 / CLT).
+          # macos-14 images ship several Xcodes; pick a Swift 6 toolchain if present.
+          if ls -d /Applications/Xcode_16*.app >/dev/null 2>&1; then
+            newest="$(ls -d /Applications/Xcode_16*.app | sort | tail -n 1)"
+            sudo xcode-select -s "$newest"
+          fi
+          xcode-select -p
+          swift --version
+          sw_vers
+
+      - name: No network APIs in the helper
+        working-directory: helper
+        run: |
+          if grep -REn --include='*.swift' \
+            'import[[:space:]]+Network\b|URLSession|URLRequest|CFNetwork|NWConnection|URLSessionConfiguration' \
+            Sources Tests
+          then
+            echo "network APIs are not allowed in helper/" >&2
+            exit 1
+          fi
+
+      - name: Build
+        working-directory: helper
+        run: swift build
+
+      - name: Test (protocol, sidecar, filters, selftest)
+        working-directory: helper
+        run: swift test
+
+      - name: --selftest (no ScreenCaptureKit)
+        working-directory: helper
+        run: .build/debug/watson-capture --selftest
