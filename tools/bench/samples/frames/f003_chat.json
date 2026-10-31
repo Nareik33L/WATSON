@@ -1,0 +1,45 @@
+{
+  "frame_id": "f003_chat",
+  "captured_at": "2026-10-31T09:15:00+00:00",
+  "bundle_id": "com.example.chat",
+  "app_name": "Chat",
+  "window_title": "Delivery \u2014 Tom Ashworth",
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Tom Ashworth: agreed, 14 Nov works",
+        "bbox": [
+          12,
+          44,
+          300,
+          62
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "You: I will send the revised deck",
+        "bbox": [
+          12,
+          66,
+          300,
+          84
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Tom Ashworth: thanks \u2014 flag risks in Q4",
+        "bbox": [
+          12,
+          88,
+          300,
+          106
+        ],
+        "confidence": 0.98
+      }
+    ]
+  },
+  "width": 320,
+  "height": 180,
+  "capture_mode": "frontmost"
+}

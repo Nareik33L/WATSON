@@ -1,0 +1,55 @@
+{
+  "frame_id": "f001_mail",
+  "captured_at": "2026-10-31T09:15:00+00:00",
+  "bundle_id": "com.example.mail",
+  "app_name": "Mail",
+  "window_title": "Re: Acme Q4 Proposal \u2014 Priya Natarajan",
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "From: Priya Natarajan <priya@acme.example>",
+        "bbox": [
+          12,
+          44,
+          300,
+          62
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Subject: Re: Acme Q4 Proposal",
+        "bbox": [
+          12,
+          66,
+          300,
+          84
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Can we move the demo to 14 Nov?",
+        "bbox": [
+          12,
+          88,
+          300,
+          106
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Please send revised pricing by Friday.",
+        "bbox": [
+          12,
+          110,
+          300,
+          128
+        ],
+        "confidence": 0.98
+      }
+    ]
+  },
+  "width": 320,
+  "height": 180,
+  "capture_mode": "frontmost"
+}

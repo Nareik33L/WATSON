@@ -1,0 +1,45 @@
+{
+  "frame_id": "f004_ide",
+  "captured_at": "2026-10-31T09:15:00+00:00",
+  "bundle_id": "com.example.ide",
+  "app_name": "IDE",
+  "window_title": "watson/pipeline/extraction.py",
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "def extract_frame(path):",
+        "bbox": [
+          12,
+          44,
+          300,
+          62
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "    sidecar = load_ocr(path)",
+        "bbox": [
+          12,
+          66,
+          300,
+          84
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "    return Frame(text=sidecar.text)",
+        "bbox": [
+          12,
+          88,
+          300,
+          106
+        ],
+        "confidence": 0.98
+      }
+    ]
+  },
+  "width": 320,
+  "height": 180,
+  "capture_mode": "frontmost"
+}

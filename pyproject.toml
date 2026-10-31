@@ -12,21 +12,43 @@ dependencies = []
 
 [project.scripts]
 watson = "watson.cli:main"
+watson-bench = "watson_bench.cli:main"
+
+[project.optional-dependencies]
+# Runtime extras are optional so a missing backend is skipped, not a crash.
+# ollama uses stdlib HTTP to 127.0.0.1:11434 — no Python extra required.
+llamacpp = ["llama-cpp-python>=0.3.2"]
+mlx = ["mlx-lm>=0.21.0", "mlx-vlm>=0.1.14", "mlx-embeddings>=0.0.3"]
+fetch = ["huggingface-hub>=0.26.0"]
 
 [dependency-groups]
+bench = [
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+]
 dev = [
     "mypy>=1.13",
     "pytest>=8.0",
     "ruff>=0.8",
+    {include-group = "bench"},
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "tools/bench"]
 
 [tool.ruff]
 target-version = "py312"
-src = ["src", "tests"]
+src = ["src", "tests", "tools/bench"]
 line-length = 100
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watson"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"tools/bench/watson_bench" = "watson_bench"
+"tools/bench/candidates" = "watson_bench/data/candidates"
+"tools/bench/samples" = "watson_bench/data/samples"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

@@ -1,0 +1,55 @@
+{
+  "frame_id": "f005_slides",
+  "captured_at": "2026-10-31T09:15:00+00:00",
+  "bundle_id": "com.example.slides",
+  "app_name": "Keynote",
+  "window_title": "Acme Q4 Demo outline",
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Slide 4 \u2014 Risks",
+        "bbox": [
+          12,
+          44,
+          300,
+          62
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Timeline: demo 14 Nov",
+        "bbox": [
+          12,
+          66,
+          300,
+          84
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Owner: Delivery",
+        "bbox": [
+          12,
+          88,
+          300,
+          106
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "(visually dense placeholder)",
+        "bbox": [
+          12,
+          110,
+          300,
+          128
+        ],
+        "confidence": 0.98
+      }
+    ]
+  },
+  "width": 320,
+  "height": 180,
+  "capture_mode": "frontmost"
+}
