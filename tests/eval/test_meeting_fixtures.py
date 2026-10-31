@@ -31,6 +31,8 @@ def test_committed_edge_fixtures_exist() -> None:
     spoken = (speech / "transcript.txt").read_text(encoding="utf-8")
     assert "Good morning everyone" in spoken
     assert "Keel export lands Wednesday" in spoken
+    truth = (speech / "truth.yaml").read_text(encoding="utf-8")
+    assert "synthetic: true" in truth
     corrupt = MEETINGS / "corrupt" / "audio.wav"
     assert corrupt.is_file()
     assert corrupt.read_bytes().startswith(b"RIFF")

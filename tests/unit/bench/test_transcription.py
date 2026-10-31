@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,7 @@ from watson_bench.transcription.adapters import FakeTranscriptionRuntime
 from watson_bench.transcription.audio import load_pcm16_wav, spoken_from_transcript
 from watson_bench.transcription.protocol import TranscriptSegment, get_transcription_runtime
 from watson_bench.transcription.report import render_transcription_report
-from watson_bench.transcription.run import run_transcription
+from watson_bench.transcription.run import run_transcription, spawn_exit_main, wait_spawn_result
 from watson_bench.transcription.wer import compression_ratio, hallucination, word_error_rate
 from watson_fixturegen.meetings.render import render_meeting
 from watson_fixturegen.paths import meetings_scripts_dir
@@ -81,6 +83,15 @@ def test_rss_sampler_records_a_peak_during_fake_transcribe() -> None:
     assert peak >= before
 
 
+def test_committed_speech_short_is_synthetic() -> None:
+    from watson_bench.transcription.audio import discover_meeting_fixtures
+
+    fixtures = {item.name: item for item in discover_meeting_fixtures(FIXTURES)}
+    assert fixtures["speech_short"].synthetic is True
+    assert fixtures["speech_short"].exclude_from_wer is True
+    assert fixtures["silence_only"].synthetic is False
+
+
 def test_spoken_from_transcript_matches_fixturegen() -> None:
     raw = "[01:02.500-01:05.000] Samir Qureshi: Export lands Wednesday.\n"
     assert spoken_from_transcript(raw) == "Export lands Wednesday."
@@ -110,8 +121,11 @@ def test_run_transcription_fake_writes_json_and_report(tmp_path: Path) -> None:
     assert "text" not in row["hallucination"]["silence_only"]
     speech = next(item for item in row["fixtures"] if item["name"] == "speech_short")
     assert speech["wer"] == 0.0
+    assert speech["synthetic"] is True
     assert speech["realtime_factor"] is not None and speech["realtime_factor"] > 0
     assert "text" not in speech
+    # Linux placeholder must not pull the bake-off WER off a real clip.
+    assert row["wer"] is None
     dumped = json.dumps(row)
     assert "Good morning everyone" not in dumped
     text = report.read_text(encoding="utf-8")
@@ -258,6 +272,20 @@ def test_transcribe_forces_hf_offline(tmp_path: Path, monkeypatch: pytest.Monkey
     assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
 
 
+def test_spawn_crash_returns_error_quickly() -> None:
+    ctx = multiprocessing.get_context("spawn")
+    queue = ctx.Queue()
+    proc = ctx.Process(target=spawn_exit_main, args=(9, queue))
+    proc.start()
+    started = time.monotonic()
+    row = wait_spawn_result(proc, queue, "fake", "tiny")
+    elapsed = time.monotonic() - started
+    assert elapsed < 5.0
+    assert row["error"]
+    assert "exited 9" in str(row["error"])
+    assert row["skipped"] is False
+
+
 def test_each_engine_size_runs_in_a_fresh_subprocess(tmp_path: Path) -> None:
     out = run_transcription(
         profile="8gb",
@@ -270,6 +298,39 @@ def test_each_engine_size_runs_in_a_fresh_subprocess(tmp_path: Path) -> None:
     pids = [row["worker_pid"] for row in manifest["results"]]
     assert all(pid != os.getpid() for pid in pids)
     assert len(set(pids)) == len(pids)
+
+
+def test_transcribe_under_netns(tmp_path: Path) -> None:
+    import sys
+
+    from watson.privacy.netns import REQUIRE_NETNS_ENV, netns_available, run_in_netns
+
+    if not netns_available():
+        if os.environ.get(REQUIRE_NETNS_ENV) == "1":
+            pytest.fail("WATSON_REQUIRE_NETNS=1 but a network namespace could not be created")
+        pytest.skip("network namespace unavailable")
+
+    out = tmp_path / "netns"
+    inner = [
+        sys.executable,
+        "-m",
+        "watson_bench",
+        "transcribe",
+        "--profile",
+        "8gb",
+        "--engines",
+        "fake",
+        "--sizes",
+        "base",
+        "--fixtures",
+        str(FIXTURES),
+        "--out",
+        str(out),
+    ]
+    completed = run_in_netns(inner)
+    assert completed.returncode == 0, completed.stderr
+    manifest = json.loads((out / "run.json").read_text(encoding="utf-8"))
+    assert manifest["results"][0]["skipped"] is False
 
 
 def test_edge_render_roundtrip_for_harness(tmp_path: Path) -> None:

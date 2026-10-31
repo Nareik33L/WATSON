@@ -9,8 +9,10 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
+from queue import Empty
 from typing import Any
 
 from watson.privacy.network import localhost_only
@@ -34,6 +36,8 @@ from watson_bench.transcription.wer import hallucination, join_segment_text, wor
 
 INPROCESS_ENV = "WATSON_TRANSCRIBE_INPROCESS"
 _SPAWN_TIMEOUT_S = 3600
+_SPAWN_POLL_S = 0.2
+_SPAWN_JOIN_S = 5.0
 
 
 def parse_csv(value: str) -> list[str]:
@@ -197,16 +201,58 @@ def _spawn_one(
         name=f"transcribe-{engine}-{size}",
     )
     proc.start()
-    try:
-        row = queue.get(timeout=_SPAWN_TIMEOUT_S)
-    except Exception as exc:
-        proc.terminate()
-        proc.join(timeout=10)
-        return _empty_row(engine, size, error=f"spawn worker failed: {exc}")
-    proc.join(timeout=30)
+    return wait_spawn_result(proc, queue, engine, size)
+
+
+def wait_spawn_result(
+    proc: Any,
+    queue: Any,
+    engine: str,
+    size: str,
+    *,
+    timeout_s: float = _SPAWN_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Wait for a spawn worker. A crash must not block for ``timeout_s``."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            row = queue.get(timeout=_SPAWN_POLL_S)
+            break
+        except Empty:
+            if not proc.is_alive():
+                proc.join(timeout=_SPAWN_JOIN_S)
+                return _empty_row(
+                    engine,
+                    size,
+                    error=f"spawn worker exited {proc.exitcode} without a result",
+                )
+            if time.monotonic() >= deadline:
+                _kill_spawn(proc)
+                return _empty_row(engine, size, error="spawn worker timed out")
+        except Exception as exc:
+            _kill_spawn(proc)
+            return _empty_row(engine, size, error=f"spawn worker failed: {exc}")
+    proc.join(timeout=_SPAWN_JOIN_S)
+    if proc.is_alive():
+        _kill_spawn(proc)
     if not isinstance(row, dict):
         return _empty_row(engine, size, error="spawn worker returned a non-object")
     return row
+
+
+def _kill_spawn(proc: Any) -> None:
+    if proc.is_alive():
+        proc.terminate()
+    proc.join(timeout=_SPAWN_JOIN_S)
+    if proc.is_alive():
+        proc.kill()
+        proc.join(timeout=2)
+
+
+def spawn_exit_main(code: int, queue: Any) -> None:
+    """Spawn target that dies without putting a row. Used by crash tests."""
+    del queue
+    os._exit(code)
 
 
 def rss_probe_main(nbytes: int, queue: Any) -> None:
@@ -345,7 +391,7 @@ def _measure_fixtures(
         wer = None
         if fixture.reference_text or hyp:
             wer = word_error_rate(fixture.reference_text, hyp)
-        if wer is not None and not fixture.is_hallucination_probe:
+        if wer is not None and not fixture.exclude_from_wer:
             wers.append(wer)
         if fixture.is_hallucination_probe:
             probes[fixture.name] = hallucination(segments)
@@ -356,6 +402,7 @@ def _measure_fixtures(
                 "wer": wer,
                 "n_segments": len(segments),
                 "n_words": len(hyp.split()),
+                "synthetic": fixture.synthetic,
             }
         )
         details.append(item)

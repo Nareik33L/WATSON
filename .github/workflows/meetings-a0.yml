@@ -72,4 +72,4 @@ jobs:
           --fetch-only
 
       - name: Tiny faster-whisper smoke (must not skip)
-        run: uv run pytest tests/eval/test_a0_macos_smoke.py -v --tb=short
+        run: uv run pytest tests/eval/test_a0_macos_smoke.py -v --tb=short -s

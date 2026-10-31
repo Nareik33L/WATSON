@@ -1,5 +1,6 @@
 name: speech_short
 kind: dialogue
+synthetic: true
 title: Short WER probe
 date: '2026-10-31'
 language: en

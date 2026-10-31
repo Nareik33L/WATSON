@@ -50,4 +50,10 @@ def test_faster_whisper_tiny_speech_wer_rtf_not_skipped(tmp_path: Path) -> None:
     speech = next(item for item in row["fixtures"] if item["name"] == "speech_short")
     assert speech.get("skipped") is not True
     assert speech["wer"] is not None
+    print(
+        f"A0 smoke faster-whisper/tiny speech_short "
+        f"WER={speech['wer']:.4f} RTF={row['realtime_factor']:.4f} "
+        f"skipped={row['skipped']}",
+        flush=True,
+    )
     assert speech["wer"] <= WER_CEILING, speech

@@ -63,6 +63,6 @@ All names and companies are fictional. Output per fixture: 16 kHz mono `audio.wa
 
 ## What is committed
 
-Edge-case WAV + empty transcripts + `truth.yaml` are generated on Linux and committed (well under 8 MB). `speech_short` commits a short non-silent placeholder WAV plus the known transcript so Linux fake-runtime tests can score WER; macOS CI re-renders it with `say`. The 12-minute stand-up **audio is not committed** from this environment: `say` is macOS-only. macOS CI renders every A0 script and uploads the directory as an artifact. After a Mac render, if compressed `.m4a` + transcripts for the whole set stay ≤ 8 MB they can be committed; until then treat stand-up audio as artifacts-only.
+Edge-case WAV + empty transcripts + `truth.yaml` are generated on Linux and committed (well under 8 MB). `speech_short` commits a short non-silent placeholder WAV plus the known transcript (`synthetic: true` so it does not enter aggregate WER). Linux fake-runtime tests still score per-fixture WER; macOS CI re-renders it with `say` (no `synthetic` flag) and includes it in the bake-off WER. The 12-minute stand-up **audio is not committed** from this environment: `say` is macOS-only. macOS CI renders every A0 script and uploads the directory as an artifact. After a Mac render, if compressed `.m4a` + transcripts for the whole set stay ≤ 8 MB they can be committed; until then treat stand-up audio as artifacts-only.
 
 Do not commit the 16 kHz stand-up WAV (about 22 MB).

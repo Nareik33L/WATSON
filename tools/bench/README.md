@@ -173,7 +173,7 @@ That writes:
 | `--fetch-only` base+small × 3 engines | 10–20 min (network) | **~1.5–3 GB** under `~/Library/Application Support/WATSON/models` (faster-whisper CT2 + mlx snapshots + whisper.cpp ggml; some sizes overlap) |
 | `transcribe --profile 8gb` on A0 fixtures | **15–40 min** | results are tiny |
 
-Skip an engine that is not installed; the row records the reason. The macOS tiny smoke must **not** skip: fetch writes the canonical directory, then pytest asserts `skipped == False`, RTF > 0, and WER ≤ 50% on the `speech_short` `say` clip. Linux CI uses `--engines fake` plus the committed silence/tone/1-second/speech_short fixtures (speech_short is a non-silent placeholder WAV with a known transcript).
+Skip an engine that is not installed; the row records the reason. The macOS tiny smoke must **not** skip: fetch writes the canonical directory, then pytest asserts `skipped == False`, RTF > 0, and WER ≤ 50% on the `speech_short` `say` clip (WER/RTF are printed in the job log). Linux CI uses `--engines fake` plus the committed silence/tone/1-second/speech_short fixtures. The committed `speech_short` WAV is a synthetic tone placeholder (`synthetic: true`) so it cannot skew aggregate WER; per-fixture fake WER is still asserted.
 
 ### Metrics (plan A0 / A5)
 

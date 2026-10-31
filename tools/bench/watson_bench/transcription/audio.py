@@ -42,6 +42,7 @@ class MeetingFixture:
     duration_s: float
     reference_text: str
     load_error: str | None = None
+    synthetic: bool = False
 
     @property
     def is_hallucination_probe(self) -> bool:
@@ -53,6 +54,11 @@ class MeetingFixture:
     @property
     def is_decode_probe(self) -> bool:
         return self.kind in {"corrupt", "unsupported"}
+
+    @property
+    def exclude_from_wer(self) -> bool:
+        """Linux tone placeholders must not pull aggregate WER off a real clip."""
+        return self.synthetic or self.is_hallucination_probe
 
 
 def load_pcm16_wav(path: Path) -> tuple[bytes, int, float]:
@@ -105,7 +111,7 @@ def _load_one(directory: Path) -> MeetingFixture | None:
     truth = directory / "truth.yaml"
     if not wav.is_file() and not m4a.is_file() and not extras and not transcript.is_file():
         return None
-    kind = _kind_from_truth(truth) or directory.name
+    kind, synthetic = _truth_fields(truth)
     pcm: bytes | None = None
     rate = SAMPLE_RATE
     duration = 0.0
@@ -125,23 +131,25 @@ def _load_one(directory: Path) -> MeetingFixture | None:
         m4a_path=m4a if m4a.is_file() else None,
         transcript_path=transcript if transcript.is_file() else None,
         truth_path=truth if truth.is_file() else None,
-        kind=kind,
+        kind=kind or directory.name,
         pcm=pcm,
         sample_rate=rate,
         duration_s=duration,
         reference_text=reference,
         load_error=error,
+        synthetic=synthetic,
     )
 
 
-def _kind_from_truth(path: Path) -> str | None:
+def _truth_fields(path: Path) -> tuple[str | None, bool]:
     if not path.is_file():
-        return None
+        return None, False
     try:
         import yaml
     except ImportError:
-        return None
+        return None, False
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if isinstance(raw, dict) and raw.get("kind"):
-        return str(raw["kind"])
-    return None
+    if not isinstance(raw, dict):
+        return None, False
+    kind = str(raw["kind"]) if raw.get("kind") else None
+    return kind, bool(raw.get("synthetic"))
