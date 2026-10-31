@@ -1,0 +1,100 @@
+<section class="grid">
+  <article>
+    <h2>Capture</h2>
+    <p><span class="label">state</span> {{ status.capture_state }}</p>
+    <p><span class="label">queue depth</span> {{ status.queue_depth }}</p>
+  </article>
+  <article>
+    <h2>Frames</h2>
+    <ul>
+      {% for name, count in status.frames_by_state.items() %}
+      <li><span class="label">{{ name }}</span> {{ count }}</li>
+      {% endfor %}
+    </ul>
+  </article>
+  <article>
+    <h2>Deletion</h2>
+    <p><span class="label">verified</span> {{ status.deletion_verified_count }}</p>
+    <p><span class="label">unverified</span> {{ status.deletion_unverified_count }}</p>
+  </article>
+  <article>
+    <h2>Jobs</h2>
+    <ul>
+      {% for name, count in status.jobs_by_state.items() %}
+      <li><span class="label">{{ name }}</span> {{ count }}</li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+
+<section>
+  <h2>Last replay</h2>
+  {% if status.last_replay is none %}
+  <p>none</p>
+  {% else %}
+  <ul>
+    <li><span class="label">fixture</span> {{ status.last_replay.fixture }}</li>
+    <li><span class="label">finished</span> {{ status.last_replay.finished_at }}</li>
+    <li><span class="label">frames</span> {{ status.last_replay.frame_count }}</li>
+    <li><span class="label">verified</span> {{ status.last_replay.deletion_verified }}</li>
+  </ul>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Last frames</h2>
+  {% if not status.last_frames %}
+  <p>none</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>id</th>
+        <th>captured</th>
+        <th>app</th>
+        <th>bundle</th>
+        <th>state</th>
+        <th>verified</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for frame in status.last_frames %}
+      <tr>
+        <td class="mono">{{ frame.id }}</td>
+        <td>{{ frame.captured_at }}</td>
+        <td>{{ frame.app_name or "-" }}</td>
+        <td class="mono">{{ frame.bundle_id or "-" }}</td>
+        <td>{{ frame.state }}</td>
+        <td>{{ frame.deletion_verified }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Audit tail</h2>
+  {% if not status.audit_tail %}
+  <p>none</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>kind</th>
+        <th>when</th>
+        <th>actor</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in status.audit_tail %}
+      <tr>
+        <td>{{ item.kind }}</td>
+        <td>{{ item.created_at }}</td>
+        <td>{{ item.actor }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>

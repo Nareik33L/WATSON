@@ -2,7 +2,7 @@
 
 WATSON is a local-first, offline-capable work-memory system for macOS (Apple Silicon first). A signed Swift helper captures the frontmost window; a Python supervisor, inference worker, and local dashboard coordinate through a single encrypted SQLite database. Frames are extracted with on-device OCR, grouped into activity segments, and recorded as claims with evidence. No component opens an outbound socket during normal operation.
 
-This repository is at the layout-and-CI skeleton, the M0 bake-off and capture helper, and M1: config, encrypted SQLite, jobs queue, redacted logging, runtime network guard, and `watson replay` of the `day_acme_q4` fixture. The dashboard and production runtime adapters land later.
+This repository is at the layout-and-CI skeleton, the M0 bake-off and capture helper, and M1: config, encrypted SQLite, jobs queue, redacted logging, runtime network guard, `watson replay` of the `day_acme_q4` fixture, and a loopback-only FastAPI status page. Production runtime adapters land later.
 
 ## Development
 
@@ -34,7 +34,9 @@ helper/scripts/build.sh
 
 `watson replay <fixture_dir> [--speed N|--instant]` validates `manifest.json` (sha256/dims) and each sidecar against `schemas/sidecar.schema.json`, copies the fixture into a 0700/0600 temp spool, and ingests frames through the same spool reader live capture will use. An `extract` job stub records sidecar OCR as fixture-only `frame_text`, then deletes the spool PNG **and sidecar** (Tier 0 OCR) and sets `deletion_verified=1`. Source fixture files are never deleted. Re-runs are idempotent on frame id.
 
-`watson status` prints frame counts by state, job counts by state, and last replay (the upcoming status page will read the same numbers).
+`watson status` prints capture state, queue depth, frame counts by state, deletion-verified counts, last frames (metadata only), last replay, and an audit tail. The dashboard status page renders the same numbers and never shows OCR text.
+
+`watson dashboard [--host 127.0.0.1] [--port 8000] [--open]` serves the status page on loopback only. Any bind host other than `127.0.0.1` is refused. The per-install secret (macOS Keychain; `WATSON_DASHBOARD_TOKEN` or a `0600` file off-darwin) only signs session cookies and never appears in a URL or log. `watson dashboard` mints a single-use 60 s launch code and opens `/auth?code=…`, which sets an `HttpOnly; SameSite=Strict` session cookie. Sessions expire and a restart rotates them. Host/Origin are checked against DNS rebinding; POST requires CSRF; CSP is strict and HTMX is vendored (no CDN).
 
 Linux CI runs `watson replay tests/fixtures/day_acme_q4 --instant` and `watson db status` in a loopback-only network namespace (`sudo unshare --net` + `setpriv`; `unshare -rn` after relaxing AppArmor if needed). On Linux, set `WATSON_DB_KEY` to 64 hex characters; on macOS the key is Keychain-only and `WATSON_DB_KEY` is ignored. The key is never written to the data directory.
 
@@ -50,6 +52,6 @@ uv run watson-bench run --profile 8gb --runtime ollama --report
 
 ## Engineering plan
 
-Architecture decisions D1–D12, repository layout, and milestones are defined in [docs/WATSON_V1_ENGINEERING_PLAN.md](docs/WATSON_V1_ENGINEERING_PLAN.md) (Revision 2). Database encryption (§14 #4) is recorded in [docs/decisions/0004-db-encryption.md](docs/decisions/0004-db-encryption.md).
+Architecture decisions D1–D12, repository layout, and milestones are defined in [docs/WATSON_V1_ENGINEERING_PLAN.md](docs/WATSON_V1_ENGINEERING_PLAN.md) (Revision 2). Database encryption (§14 #4) is recorded in [docs/decisions/0004-db-encryption.md](docs/decisions/0004-db-encryption.md). Dashboard interactivity (§14 #8, HTMX vendored) is [docs/decisions/0005-dashboard-interactivity.md](docs/decisions/0005-dashboard-interactivity.md).
 
 The release ladder (V1.0 personal build → V1.1 meeting intelligence → V1.2 commercialisation → V2.0 → V3.0+ Organisation) is in [docs/ROADMAP.md](docs/ROADMAP.md). Follow-on plans: [docs/WATSON_V1_1_AUDIO_MEETINGS_PLAN.md](docs/WATSON_V1_1_AUDIO_MEETINGS_PLAN.md) and [docs/WATSON_V1_2_COMMERCIALISATION_PLAN.md](docs/WATSON_V1_2_COMMERCIALISATION_PLAN.md).
