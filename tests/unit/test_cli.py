@@ -22,7 +22,7 @@ def test_cli_imports_and_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert "watson" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("command", ["run", "replay", "models"])
+@pytest.mark.parametrize("command", ["run", "models"])
 def test_stub_commands_not_implemented(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main([command]) == 1
     assert "not implemented" in capsys.readouterr().err
@@ -47,7 +47,7 @@ def test_doctor_and_db_commands(
 
     assert cli.main(["db", "upgrade"]) == 0
     upgraded = capsys.readouterr().out
-    assert "0001_m1_foundation" in upgraded
+    assert "0002_frame_text" in upgraded
     assert TEST_KEY.hex() not in upgraded
 
     assert cli.main(["db", "status"]) == 0
@@ -64,6 +64,14 @@ def test_doctor_and_db_commands(
     assert "db_status: ok" in after
     assert "key_provider: in-memory" in after
     set_key_provider(None)
+
+
+def test_status_without_db(data_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "db_status: missing" in out
+    assert "frames.captured: 0" in out
+    assert "last_replay: none" in out
 
 
 def test_db_without_subcommand_is_help(capsys: pytest.CaptureFixture[str]) -> None:

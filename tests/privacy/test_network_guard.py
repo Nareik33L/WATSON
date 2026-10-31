@@ -62,3 +62,10 @@ def test_allow_network_env_bypasses_guard(monkeypatch: pytest.MonkeyPatch) -> No
             pytest.fail("WATSON_ALLOW_NETWORK=1 must disable the runtime guard")
         except OSError:
             pass
+
+
+def test_runtime_guard_blocks_non_loopback_connect_attempt() -> None:
+    """§6 / §11.3: worker/CLI refuse a non-loopback TCP connect."""
+    with runtime_network_guard():
+        with pytest.raises(NetworkGuardError, match="non-loopback"):
+            socket.create_connection(("1.1.1.1", 443), timeout=0.2)

@@ -1,4 +1,4 @@
-"""WATSON command-line interface: run, replay, models, db, doctor."""
+"""WATSON command-line interface: run, replay, models, db, doctor, status."""
 
 from __future__ import annotations
 
@@ -22,10 +22,12 @@ from watson.memory.db import (
 )
 from watson.memory.keys import KeyProviderError, get_key_provider
 from watson.memory.migrate import revision_status, upgrade_head
+from watson.pipeline.replay import ReplayError, replay_fixture
+from watson.pipeline.status import StatusReport, collect_status
 from watson.privacy.logging import configure_logging
 from watson.privacy.network import runtime_network_guard
 
-_STUB_COMMANDS = ("run", "replay", "models")
+_STUB_COMMANDS = ("run", "models")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -52,12 +54,37 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
     doctor.set_defaults(handler=_cmd_doctor)
 
+    status = subparsers.add_parser(
+        "status",
+        help="Print frame/job counts and last replay (for the status page)",
+    )
+    status.set_defaults(handler=_cmd_status)
+
+    replay = subparsers.add_parser(
+        "replay",
+        help="Validate a fixture and ingest it through the spool (D4 delete-after-extract)",
+    )
+    replay.add_argument("fixture_dir", type=Path, help="Fixture directory with manifest.json")
+    pace = replay.add_mutually_exclusive_group()
+    pace.add_argument(
+        "--speed",
+        type=float,
+        metavar="N",
+        help="Replay N× captured_at realtime (default 1 if --instant is not set)",
+    )
+    pace.add_argument(
+        "--instant",
+        action="store_true",
+        help="Ingest every frame with no inter-frame delay",
+    )
+    replay.set_defaults(handler=_cmd_replay)
+
     db = subparsers.add_parser("db", help="Encrypted-database migrations")
     db_sub = db.add_subparsers(dest="db_command")
     upgrade = db_sub.add_parser("upgrade", help="Apply Alembic migrations to head")
     upgrade.set_defaults(handler=_cmd_db_upgrade)
-    status = db_sub.add_parser("status", help="Show current and head Alembic revision")
-    status.set_defaults(handler=_cmd_db_status)
+    db_status = db_sub.add_parser("status", help="Show current and head Alembic revision")
+    db_status.set_defaults(handler=_cmd_db_status)
 
     for name in _STUB_COMMANDS:
         subparsers.add_parser(name, help="not implemented")
@@ -85,6 +112,9 @@ def _main(argv: Sequence[str] | None = None) -> int:
     except (KeyProviderError, DatabaseError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except ReplayError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 def _cmd_doctor(_args: argparse.Namespace) -> int:
@@ -106,6 +136,43 @@ def _cmd_doctor(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_status(_args: argparse.Namespace) -> int:
+    config = load_config()
+    if not config.db_path.is_file():
+        print("db_status: missing")
+        print("\n".join(StatusReport({}, {}, None).lines()))
+        return 0
+    conn = _open_db(config, upgrade=True)
+    try:
+        print("\n".join(collect_status(conn).lines()))
+    finally:
+        conn.close()
+    return 0
+
+
+def _cmd_replay(args: argparse.Namespace) -> int:
+    config = load_config()
+    instant = bool(args.instant)
+    speed = 1.0 if args.speed is None else float(args.speed)
+    conn = _open_db(config, upgrade=True)
+    try:
+        result = replay_fixture(
+            args.fixture_dir,
+            conn,
+            instant=instant,
+            speed=speed,
+        )
+    finally:
+        conn.close()
+    print(f"replay: {result.fixture_name}")
+    print(f"frames: {result.frame_count}")
+    print(f"ingested: {result.ingested}")
+    print(f"extracted: {result.extracted}")
+    print(f"deleted: {result.deleted}")
+    print(f"deletion_verified: {result.deletion_verified}")
+    return 0
+
+
 def _cmd_db_upgrade(_args: argparse.Namespace) -> int:
     config = load_config()
     ensure_runtime_dirs(config)
@@ -122,6 +189,16 @@ def _cmd_db_status(_args: argparse.Namespace) -> int:
     config = load_config()
     print("\n".join(_db_status_lines(config)))
     return 0
+
+
+def _open_db(config: WatsonConfig, *, upgrade: bool = False) -> sqlcipher.Connection:
+    ensure_runtime_dirs(config)
+    key = get_key_provider().get_key()
+    if upgrade:
+        upgrade_head(config.db_path, key)
+    if config.db_path.is_file():
+        config.db_path.chmod(0o600)
+    return connect(config.db_path, key)
 
 
 def _db_status_lines(config: WatsonConfig) -> list[str]:
@@ -175,6 +252,8 @@ def _try_key() -> tuple[str, bytes | None]:
     label = type(provider).__name__
     if label == "InMemoryKeyProvider":
         return "in-memory", provider.get_key()
+    if label == "EnvKeyProvider":
+        return "env", provider.get_key()
     if label == "KeychainKeyProvider":
         return "keychain", provider.get_key()
     return label, provider.get_key()

@@ -32,12 +32,18 @@ jobs:
       - name: Type check
         run: uv run mypy src/watson tools/fixture_gen
 
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
       - name: Tests
+        env:
+          WATSON_REQUIRE_NETNS: "1"
         run: uv run pytest
         # Playwright regen is .github/workflows/fixture-regen.yml and runs by
         # default on PRs/pushes that touch tools/fixture_gen or tests/fixtures.
         # This job validates committed sidecars, PNG↔sidecar binding, and the
         # 12 MB/day budget without installing Chromium.
+        # WATSON_REQUIRE_NETNS=1: the netns privacy test must run, not skip.
 
       - name: Fake-runtime bench smoke
         run: >
@@ -47,3 +53,35 @@ jobs:
           --frames tools/bench/samples/frames
           --out /tmp/watson-bench-ci
           --report /tmp/watson-bench-ci/report.md
+
+  no-network:
+    name: OS-level no-network replay
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked --group dev
+
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Replay and db status with only loopback
+        env:
+          WATSON_DATA_DIR: ${{ runner.temp }}/watson-offline
+          WATSON_DB_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+          WATSON_REQUIRE_NETNS: "1"
+        run: |
+          set -euo pipefail
+          # Ubuntu 24.04 AppArmor blocks unshare -rn (uid_map). The helper
+          # uses sudo unshare --net + setpriv (no user ns) and asserts only lo.
+          uv run python -m watson.privacy.netns --assert-isolated
+          uv run python -m watson.privacy.netns -- .venv/bin/watson replay tests/fixtures/day_acme_q4 --instant
+          uv run python -m watson.privacy.netns -- .venv/bin/watson db status

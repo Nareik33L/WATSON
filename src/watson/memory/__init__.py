@@ -2,6 +2,8 @@
 
 from watson.memory.db import DatabaseError, connect, open_database
 from watson.memory.keys import (
+    ENV_KEY,
+    EnvKeyProvider,
     InMemoryKeyProvider,
     KeychainKeyProvider,
     KeyProvider,
@@ -11,7 +13,9 @@ from watson.memory.keys import (
 )
 
 __all__ = [
+    "ENV_KEY",
     "DatabaseError",
+    "EnvKeyProvider",
     "InMemoryKeyProvider",
     "KeychainKeyProvider",
     "KeyProvider",
