@@ -31,14 +31,27 @@ _PLACEHOLDERS = frozenset(
 _EMAIL = re.compile(
     r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
 )
-_IBAN = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b")
+# Compact IBAN, or the usual grouped display (4-character clumps).
+_IBAN_COMPACT = re.compile(r"\b([A-Za-z]{2}\d{2}[A-Za-z0-9]{11,30})\b")
+_IBAN_GROUPED = re.compile(
+    r"\b([A-Za-z]{2}\d{2}(?:[ \t][A-Za-z0-9]{4}){2,7}(?:[ \t][A-Za-z0-9]{1,4})?)\b"
+)
 _CARD = re.compile(r"(?<!\w)(?:\d[ \-]?){13,19}(?!\d)")
 _SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 _NATIONAL_ID_COMPACT = re.compile(r"\b\d{6}[- ]?\d{4,6}\b")
-_OTP_LABELED = re.compile(
-    r"(?i)\b(?:verification code|one[-\s]?time(?:\s+pass(?:word|code))?|"
-    r"otp|2fa|auth(?:entication)? code|login code)\b"
-    r"(?:[^\n\d]{0,16})(\d{4,8})\b"
+# UK NINO shape: two letters, six digits, one letter (A–D), spaces or hyphens optional.
+_NINO = re.compile(
+    r"\b([A-Za-z]{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*[A-Da-d])\b"
+)
+# 4–8 digit OTP, optional Google-style letter prefix (G-482913).
+_OTP_TOKEN = re.compile(r"(?i)(?<![A-Za-z0-9])(?:[A-Z]-)?(\d{4,8})(?![0-9])")
+_OTP_HINT = re.compile(
+    r"(?i)\b(?:verification|security|login|auth(?:entication)?|"
+    r"one[-\s]?time(?:\s+pass(?:word|code))?|otp|2fa|passcodes?|pins?|codes?)\b"
+)
+_OTP_FALSE = re.compile(
+    r"(?i)\b(?:zip|postal|area|country|error|status|exit|http|source|"
+    r"qr|promo|coupon|discount|dial(?:ling|ing)?)\s+codes?\b"
 )
 _PASSWORD_SAME_LINE = re.compile(
     r"(?i)\b(pass(?:word|phrase|wd)|pwd)\b([ \t]*[:=][ \t]*|[ \t]+)(\S+)"
@@ -94,14 +107,13 @@ def redact_ocr_text(text: str) -> str:
         lambda match: match.group(0).replace(match.group(1), PLACEHOLDER_SECRET),
         redacted,
     )
-    redacted = _IBAN.sub(PLACEHOLDER_IBAN, redacted)
+    redacted = _IBAN_GROUPED.sub(_replace_iban, redacted)
+    redacted = _IBAN_COMPACT.sub(_replace_iban, redacted)
     redacted = _CARD.sub(_replace_card, redacted)
     redacted = _SSN.sub(PLACEHOLDER_SECRET, redacted)
+    redacted = _NINO.sub(PLACEHOLDER_SECRET, redacted)
     redacted = _NATIONAL_ID_COMPACT.sub(_replace_national_id, redacted)
-    redacted = _OTP_LABELED.sub(
-        lambda match: match.group(0).replace(match.group(1), PLACEHOLDER_OTP),
-        redacted,
-    )
+    redacted = _redact_otps(redacted)
     redacted = _PASSWORD_SAME_LINE.sub(_replace_password_same_line, redacted)
     redacted = _redact_password_next_line(redacted)
     redacted = _EMAIL.sub(PLACEHOLDER_EMAIL, redacted)
@@ -127,10 +139,61 @@ def luhn_valid(raw: str) -> bool:
 
 
 def _replace_card(match: re.Match[str]) -> str:
-    candidate = match.group(0)
+    raw = match.group(0)
+    candidate = raw.rstrip(" -")
+    trailing = raw[len(candidate) :]
     if not luhn_valid(candidate):
-        return candidate
-    return PLACEHOLDER_CARD
+        return raw
+    return PLACEHOLDER_CARD + trailing
+
+
+def iban_compact(raw: str) -> str:
+    return re.sub(r"[\s\t]", "", raw).upper()
+
+
+def iban_checksum_ok(compact: str) -> bool:
+    """ISO 13616: rearrange, A=10…Z=35, value mod 97 == 1."""
+    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", compact):
+        return False
+    if not (15 <= len(compact) <= 34):
+        return False
+    rearranged = compact[4:] + compact[:4]
+    numeric = "".join(
+        str(ord(char) - 55) if char.isalpha() else char for char in rearranged
+    )
+    return int(numeric) % 97 == 1
+
+
+def _replace_iban(match: re.Match[str]) -> str:
+    compact = iban_compact(match.group(1))
+    if not iban_checksum_ok(compact):
+        return match.group(0)
+    return PLACEHOLDER_IBAN
+
+
+def _redact_otps(text: str) -> str:
+    """Replace 4–8 digit codes that sit near code/PIN/passcode/OTP wording."""
+    pieces: list[str] = []
+    last = 0
+    for match in _OTP_TOKEN.finditer(text):
+        if not _otp_related(text, match.start(), match.end()):
+            continue
+        pieces.append(text[last : match.start()])
+        pieces.append(PLACEHOLDER_OTP)
+        last = match.end()
+    pieces.append(text[last:])
+    return "".join(pieces)
+
+
+def _otp_related(text: str, start: int, end: int) -> bool:
+    before = text[max(0, start - 48) : start]
+    after = text[end : min(len(text), end + 48)]
+    before_clause = re.split(r"[.!?]", before)[-1]
+    after_clause = re.split(r"[.!?]", after)[0]
+    clause = f"{before_clause}{text[start:end]}{after_clause}"
+    if _OTP_FALSE.search(clause):
+        return False
+    return _OTP_HINT.search(clause) is not None
 
 
 def _replace_national_id(match: re.Match[str]) -> str:

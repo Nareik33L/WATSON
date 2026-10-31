@@ -5,6 +5,8 @@ from __future__ import annotations
 import random
 import string
 
+import pytest
+
 from watson.pipeline.redaction import (
     PLACEHOLDER_CARD,
     PLACEHOLDER_EMAIL,
@@ -48,6 +50,107 @@ def test_luhn_card_is_replaced_non_luhn_is_kept() -> None:
     kept = redact_ocr_text(f"PO {not_card} filed")
     assert not_card in kept
     assert PLACEHOLDER_CARD not in kept
+
+
+@pytest.mark.parametrize(
+    "text, secret",
+    [
+        ("Your code is 739104", "739104"),
+        ("Code: 482913", "482913"),
+        ("Your security code: 482913", "482913"),
+        ("482913 is your verification code", "482913"),
+        ("G-482913 is your Google verification code", "482913"),
+        ("PIN: 4829", "4829"),
+        ("Passcode: 7391", "7391"),
+        ("one-time code 482913", "482913"),
+        ("one time password 739104", "739104"),
+        ("OTP 739104", "739104"),
+        ("739104 is your code", "739104"),
+        ("Your one-time passcode is 482913", "482913"),
+        ("login code 482913", "482913"),
+        ("2FA 739104", "739104"),
+        ("authentication code 482913", "482913"),
+        ("Your PIN is 4829", "4829"),
+        ("enter the passcode 7391", "7391"),
+        ("4829 is your PIN", "4829"),
+        ("security PIN 7391", "7391"),
+        ("auth code: 482913", "482913"),
+    ],
+)
+def test_otp_phrasings_before_and_after_the_number(text: str, secret: str) -> None:
+    redacted = redact_ocr_text(text)
+    assert secret not in redacted
+    assert PLACEHOLDER_OTP in redacted
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Demo on 14 Nov section 3 amount 1200",
+        "zip code 90210",
+        "postal code 90210",
+        "area code 21255",
+        "error code 404",
+        "status code 200",
+        "promo code 48291",
+        "coupon code 12345",
+        "QR code 998877",
+        "discount code 482913",
+        "source code 482913",
+        "PO 12345678 filed",
+        "GB20 Q4 proposal",
+        "Invoice 482913 due Friday",
+        "room 1200 at 14:00",
+        "The verification is done. Call 482913.",
+        "Dial 482913 for the front desk",
+    ],
+)
+def test_ordinary_numbers_are_not_treated_as_otps(text: str) -> None:
+    assert redact_ocr_text(text) == text
+    assert PLACEHOLDER_OTP not in redact_ocr_text(text)
+
+
+@pytest.mark.parametrize(
+    "iban",
+    [
+        "GB82 WEST 1234 5698 7654 32",
+        "DE89 3704 0044 0532 0130 00",
+        "GB82WEST12345698765432",
+        "gb82 west 1234 5698 7654 32",
+        "NO93 8601 1117 947",
+        "NL91 ABNA 0417 1643 00",
+    ],
+)
+def test_spaced_and_compact_iban_is_replaced(iban: str) -> None:
+    redacted = redact_ocr_text(f"Pay to {iban} today")
+    assert iban not in redacted
+    assert iban.replace(" ", "") not in redacted.replace(" ", "")
+    assert PLACEHOLDER_IBAN in redacted
+    assert "Pay to" in redacted
+
+
+@pytest.mark.parametrize(
+    "nino",
+    ["QQ 12 34 56 C", "QQ123456C", "qq 12 34 56 c", "QQ-12-34-56-C"],
+)
+def test_uk_nino_with_and_without_spaces(nino: str) -> None:
+    redacted = redact_ocr_text(f"NI number {nino} on file")
+    assert nino not in redacted
+    assert nino.replace(" ", "").replace("-", "") not in redacted.replace(" ", "")
+    assert PLACEHOLDER_SECRET in redacted
+
+
+def test_iban_shaped_without_checksum_and_partial_nino_are_kept() -> None:
+    fake_iban = "GB00 WEST 1234 5698 7654 32"
+    fragment = "Ref QQ 12 34 on the cover"
+    assert redact_ocr_text(f"Pay to {fake_iban} today") == f"Pay to {fake_iban} today"
+    assert redact_ocr_text(fragment) == fragment
+
+
+def test_card_keeps_trailing_space() -> None:
+    redacted = redact_ocr_text("card 4111111111111111 amount")
+    assert "4111111111111111" not in redacted
+    assert f"{PLACEHOLDER_CARD} amount" in redacted
 
 
 def test_iban_api_key_jwt_and_password_are_secrets() -> None:

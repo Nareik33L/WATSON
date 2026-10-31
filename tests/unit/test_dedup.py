@@ -12,8 +12,10 @@ from PIL import Image
 from tests.replay_support import open_test_db, write_mini_fixture, write_png
 from watson.capture.spool import copy_pairs_to_spool, iter_pairs
 from watson.pipeline.dedup import (
+    DEFAULT_DEDUP_THRESHOLD,
     HASH_HEX_LEN,
     DedupError,
+    FrameHashes,
     decide_duplicate,
     difference_hash_hex,
     hash_png,
@@ -90,25 +92,82 @@ def test_different_images_are_not_near_duplicates(tmp_path: Path) -> None:
     assert decision.duplicate is False
 
 
-def test_threshold_is_configurable(tmp_path: Path) -> None:
-    first = tmp_path / "a.png"
-    second = tmp_path / "b.png"
-    _solid(first, (10, 10, 10), size=(32, 32))
-    Image.new("RGB", (32, 32), (10, 10, 10)).save(second, format="PNG")
-    # One bright pixel changes the downscaled sample only slightly — or not at
-    # all. Force a known pair of hashes and vary the threshold.
-    left = hash_png(first)
-    right = hash_png(second)
-    far = decide_duplicate(
-        left,
-        right,
-        frame_id="11111111-1111-4111-8111-111111111111",
-        previous_frame_id="22222222-2222-4222-8222-222222222222",
-        threshold=0,
+_ZERO_HASH = "0" * HASH_HEX_LEN
+_FRAME_ID = "11111111-1111-4111-8111-111111111111"
+_PREV_ID = "22222222-2222-4222-8222-222222222222"
+# Far Hamming distance: max() of the two hashes would use this and miss a near-dup.
+_FAR_DISTANCE = 32
+
+
+def _flip_low_bits(hex_hash: str, distance: int) -> str:
+    value = int(hex_hash, 16)
+    for index in range(distance):
+        value ^= 1 << index
+    return f"{value:016x}"
+
+
+def _hashes_at(
+    *, close_on: str, close_distance: int, far_distance: int = _FAR_DISTANCE
+) -> tuple[FrameHashes, FrameHashes]:
+    previous = FrameHashes(phash=_ZERO_HASH, dhash=_ZERO_HASH)
+    close = _flip_low_bits(_ZERO_HASH, close_distance)
+    far = _flip_low_bits(_ZERO_HASH, far_distance)
+    if close_on == "phash":
+        current = FrameHashes(phash=close, dhash=far)
+    else:
+        current = FrameHashes(phash=far, dhash=close)
+    return current, previous
+
+
+@pytest.mark.parametrize("threshold", [2, 6])
+@pytest.mark.parametrize("close_on", ["phash", "dhash"])
+@pytest.mark.parametrize(
+    "offset, expect_duplicate",
+    [(-1, True), (0, True), (1, False)],
+)
+def test_threshold_boundaries_use_min_distance(
+    threshold: int, close_on: str, offset: int, expect_duplicate: bool
+) -> None:
+    """distance at T-1 / T / T+1. Fails if threshold is hard-coded or min/max is swapped."""
+    assert threshold != DEFAULT_DEDUP_THRESHOLD
+    distance = threshold + offset
+    assert 0 < distance < _FAR_DISTANCE
+    current, previous = _hashes_at(close_on=close_on, close_distance=distance)
+    decision = decide_duplicate(
+        current,
+        previous,
+        frame_id=_FRAME_ID,
+        previous_frame_id=_PREV_ID,
+        threshold=threshold,
     )
-    # Identical solids: still a duplicate at threshold 0.
-    assert far.duplicate is True
-    assert far.distance == 0
+    # min(close, far) == close. A swapped max() would report 32 and miss T/T-1.
+    assert decision.distance == distance
+    assert decision.threshold == threshold
+    assert decision.duplicate is expect_duplicate
+
+
+def test_configured_non_default_threshold_is_honoured() -> None:
+    """Distance 3 is a duplicate at 4 but not at 2 — a hard-coded 4 fails the tight case."""
+    current, previous = _hashes_at(close_on="phash", close_distance=3)
+    tight = decide_duplicate(
+        current,
+        previous,
+        frame_id=_FRAME_ID,
+        previous_frame_id=_PREV_ID,
+        threshold=2,
+    )
+    default = decide_duplicate(
+        current,
+        previous,
+        frame_id=_FRAME_ID,
+        previous_frame_id=_PREV_ID,
+        threshold=DEFAULT_DEDUP_THRESHOLD,
+    )
+    assert tight.distance == default.distance == 3
+    assert tight.threshold == 2
+    assert default.threshold == DEFAULT_DEDUP_THRESHOLD == 4
+    assert tight.duplicate is False
+    assert default.duplicate is True
 
 
 def test_hash_is_not_the_image_and_cannot_reconstruct(tmp_path: Path) -> None:
@@ -254,3 +313,55 @@ def test_extract_hashes_before_delete(
         assert verified == 1
     finally:
         conn.close()
+
+
+def test_replay_honours_configured_non_default_threshold(
+    data_dir: Path, key_provider: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pair at Hamming 3 is kept at threshold 2 and dropped at the default 4."""
+    fixture = write_mini_fixture(tmp_path, frames=2)
+    previous = FrameHashes(phash=_ZERO_HASH, dhash=_ZERO_HASH)
+    current = FrameHashes(phash=_flip_low_bits(_ZERO_HASH, 3), dhash=_flip_low_bits(_ZERO_HASH, 32))
+    supplied = iter((previous, current, previous, current))
+
+    def fake_hash(_path: Path) -> FrameHashes:
+        return next(supplied)
+
+    monkeypatch.setattr("watson.pipeline.frames.hash_png", fake_hash)
+
+    tight_dir = data_dir / "tight"
+    tight_dir.mkdir()
+    tight_conn = open_test_db(tight_dir)
+    try:
+        tight = replay_fixture(
+            fixture, tight_conn, instant=True, spool_dir=tight_dir / "spool", dedup_threshold=2
+        )
+        assert tight.deduped == 0
+        assert tight.deletion_verified == 2
+    finally:
+        tight_conn.close()
+
+    loose_dir = data_dir / "loose"
+    loose_dir.mkdir()
+    loose_conn = open_test_db(loose_dir)
+    try:
+        loose = replay_fixture(
+            fixture,
+            loose_conn,
+            instant=True,
+            spool_dir=loose_dir / "spool",
+            dedup_threshold=DEFAULT_DEDUP_THRESHOLD,
+        )
+        assert loose.deduped == 1
+        assert loose.deletion_verified == 2
+        details = [
+            str(row[0])
+            for row in loose_conn.execute(
+                "SELECT detail_json FROM audit_events WHERE kind = ?", (KIND_DEDUPED,)
+            ).fetchall()
+        ]
+        assert details
+        assert '"distance": 3' in details[0]
+        assert '"threshold": 4' in details[0]
+    finally:
+        loose_conn.close()

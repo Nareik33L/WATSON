@@ -8,6 +8,8 @@ from tests.replay_support import open_test_db, write_mini_fixture
 from watson.pipeline.redaction import (
     PLACEHOLDER_CARD,
     PLACEHOLDER_EMAIL,
+    PLACEHOLDER_IBAN,
+    PLACEHOLDER_OTP,
     PLACEHOLDER_SECRET,
 )
 from watson.pipeline.replay import replay_fixture
@@ -60,6 +62,95 @@ def test_planted_secrets_are_redacted_before_frame_text(
     assert PLANTED_EMAIL.encode() not in db_bytes
     assert PLANTED_PASSWORD.encode() not in db_bytes
     assert PLANTED_KEY.encode() not in db_bytes
+
+
+def _table_blob(conn: object, table: str) -> str:
+    if table not in {"jobs", "audit_events", "frames", "working_days", "frame_text", "settings"}:
+        raise ValueError("unknown table")
+    rows = conn.execute("SELECT * FROM " + table).fetchall()
+    return "\n".join(str(item) for row in rows for item in row)
+
+
+def _replay_planted(
+    data_dir: Path, tmp_path: Path, planted: str
+) -> tuple[str, str, str, str]:
+    fixture = write_mini_fixture(tmp_path, frames=1, planted=planted)
+    conn = open_test_db(data_dir)
+    try:
+        result = replay_fixture(fixture, conn, instant=True, spool_dir=data_dir / "spool")
+        assert result.extracted == 1
+        assert result.deletion_verified == 1
+        text = str(conn.execute("SELECT text_redacted FROM frame_text").fetchone()[0])
+        jobs = _table_blob(conn, "jobs")
+        audit = _table_blob(conn, "audit_events")
+        tables = "\n".join(
+            _table_blob(conn, name)
+            for name in ("frames", "working_days", "frame_text", "settings")
+        )
+        return text, jobs, audit, tables
+    finally:
+        conn.close()
+
+
+def test_planted_otp_phrasings_never_reach_frame_text(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    secrets = ("739104", "482913", "4829", "7391")
+    planted = (
+        "Your code is 739104. Code: 482913. Your security code: 482913. "
+        "482913 is your verification code. "
+        "G-482913 is your Google verification code. "
+        "PIN: 4829 Passcode: 7391 one-time code 482913"
+    )
+    text, jobs, audit, tables = _replay_planted(data_dir, tmp_path, planted)
+    for secret in secrets:
+        assert secret not in text
+        assert secret not in jobs
+        assert secret not in audit
+        assert secret not in tables
+    assert PLACEHOLDER_OTP in text
+    assert "14 Nov" not in planted
+    clean = "Demo 14 Nov section 3 amount 1200 zip code 90210"
+    clean_dir = data_dir / "clean-otp"
+    clean_dir.mkdir()
+    clean_text, _, _, _ = _replay_planted(clean_dir, tmp_path / "clean-otp", clean)
+    assert "1200" in clean_text
+    assert "90210" in clean_text
+    assert "14 Nov" in clean_text
+
+
+def test_planted_spaced_iban_never_reaches_frame_text(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    ibans = (
+        "GB82 WEST 1234 5698 7654 32",
+        "DE89 3704 0044 0532 0130 00",
+        "GB82WEST12345698765432",
+    )
+    planted = "Pay " + " and ".join(ibans)
+    text, jobs, audit, tables = _replay_planted(data_dir, tmp_path, planted)
+    for iban in ibans:
+        assert iban not in text
+        assert iban.replace(" ", "") not in text.replace(" ", "")
+        assert iban not in jobs
+        assert iban not in audit
+        assert iban not in tables
+    assert PLACEHOLDER_IBAN in text
+
+
+def test_planted_uk_nino_never_reaches_frame_text(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    ninos = ("QQ 12 34 56 C", "QQ123456C")
+    planted = "National insurance " + " or ".join(ninos)
+    text, jobs, audit, tables = _replay_planted(data_dir, tmp_path, planted)
+    for nino in ninos:
+        assert nino not in text
+        assert nino.replace(" ", "") not in text.replace(" ", "")
+        assert nino not in jobs
+        assert nino not in audit
+        assert nino not in tables
+    assert PLACEHOLDER_SECRET in text
 
 
 def test_dedup_audit_has_no_hashes_or_ocr(
