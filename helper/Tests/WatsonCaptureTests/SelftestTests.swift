@@ -100,11 +100,12 @@ final class SelftestTests: XCTestCase {
         )
 
         source.armGate()
-        async let outcome = engine.tick()
+        async let inflight = engine.tick()
         await source.waitUntilCaptureStarted()
         probes.setLocked(true)
         source.releaseCapture()
-        XCTAssertEqual(await outcome, .skipped(.locked, afterCapture: true))
+        let outcome = await inflight
+        XCTAssertEqual(outcome, .skipped(.locked, afterCapture: true))
         XCTAssertEqual(state.snapshot().written, 0)
     }
 
