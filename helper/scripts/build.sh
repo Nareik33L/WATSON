@@ -138,7 +138,16 @@ build_spm() {
   (
     cd "$ROOT"
     # --disable-sandbox: the linker must read Info.plist via -sectcreate.
-    swift build -c "$CONFIG" --disable-sandbox "${PLIST_LINK[@]}"
+    # Do not expand an empty array under `set -u` (macOS bash 3.2).
+    if [[ "$EMBED_PLIST" -eq 1 ]]; then
+      swift build -c "$CONFIG" --disable-sandbox \
+        -Xlinker -sectcreate \
+        -Xlinker __TEXT \
+        -Xlinker __info_plist \
+        -Xlinker "$ROOT/Info.plist"
+    else
+      swift build -c "$CONFIG" --disable-sandbox
+    fi
   )
 }
 
@@ -201,32 +210,41 @@ build_swiftc() {
     "${FRAMEWORKS[@]}"
 
   # -parse-as-library keeps @main on WatsonCaptureCLI working.
-  swiftc \
-    -parse-as-library \
-    "${OPT_FLAGS[@]}" \
-    -swift-version "$SWIFT_VERSION" \
-    -target "$TARGET" \
-    -sdk "$sdk" \
-    -I "$work" \
-    -module-cache-path "$work/ModuleCache" \
-    -o "$bin" \
-    "$cli_main" \
-    "$work/WatsonCapture.o" \
-    "${PLIST_LINK[@]}" \
-    "${FRAMEWORKS[@]}"
+  # Do not expand an empty array under `set -u` (macOS bash 3.2).
+  if [[ "$EMBED_PLIST" -eq 1 ]]; then
+    swiftc \
+      -parse-as-library \
+      "${OPT_FLAGS[@]}" \
+      -swift-version "$SWIFT_VERSION" \
+      -target "$TARGET" \
+      -sdk "$sdk" \
+      -I "$work" \
+      -module-cache-path "$work/ModuleCache" \
+      -o "$bin" \
+      "$cli_main" \
+      "$work/WatsonCapture.o" \
+      -Xlinker -sectcreate \
+      -Xlinker __TEXT \
+      -Xlinker __info_plist \
+      -Xlinker "$ROOT/Info.plist" \
+      "${FRAMEWORKS[@]}"
+  else
+    swiftc \
+      -parse-as-library \
+      "${OPT_FLAGS[@]}" \
+      -swift-version "$SWIFT_VERSION" \
+      -target "$TARGET" \
+      -sdk "$sdk" \
+      -I "$work" \
+      -module-cache-path "$work/ModuleCache" \
+      -o "$bin" \
+      "$cli_main" \
+      "$work/WatsonCapture.o" \
+      "${FRAMEWORKS[@]}"
+  fi
 
   chmod +x "$bin"
 }
-
-PLIST_LINK=()
-if [[ "$EMBED_PLIST" -eq 1 ]]; then
-  PLIST_LINK=(
-    -Xlinker -sectcreate
-    -Xlinker __TEXT
-    -Xlinker __info_plist
-    -Xlinker "$ROOT/Info.plist"
-  )
-fi
 
 if [[ "$USE_SPM" -eq 1 ]]; then
   build_spm
