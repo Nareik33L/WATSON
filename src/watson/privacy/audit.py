@@ -16,6 +16,8 @@ _FORBIDDEN_DETAIL_KEYS = frozenset(
         "text",
         "ocr",
         "window_title",
+        "bundle_id",
+        "app_name",
         "frame_text",
         "merged_text",
         "snippet",

@@ -85,10 +85,7 @@ def test_replay_is_idempotent_and_sets_fixture_only_text(
         rows = conn.execute("SELECT id, state, deletion_verified FROM frames").fetchall()
         assert len(rows) == 2
         assert all(row["state"] == "deleted" and row["deletion_verified"] == 1 for row in rows)
-        sources = [
-            row[0]
-            for row in conn.execute("SELECT source FROM frame_text").fetchall()
-        ]
+        sources = [row[0] for row in conn.execute("SELECT source FROM frame_text").fetchall()]
         assert sources == [FIXTURE_TEXT_SOURCE, FIXTURE_TEXT_SOURCE]
 
         second = replay_fixture(fixture, conn, instant=True, spool_dir=spool)
@@ -227,6 +224,9 @@ def test_delete_failure_stays_unverified_then_retry(
         assert "still_present" in details[1]
         assert all(planted not in item for item in details)
         assert all("ocr" not in item for item in details)
+        status = collect_status(conn)
+        assert status.deletion_failed_count == 2
+        assert "deletion.failed: 2" in "\n".join(status.lines())
 
         monkeypatch.setattr("pathlib.Path.unlink", original_unlink)
         delete_and_verify(

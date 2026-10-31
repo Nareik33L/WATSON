@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Starter lists match helper/Sources/watson-capture/Filters.swift (plan §5.1).
 DEFAULT_EXCLUDED_BUNDLE_IDS: tuple[str, ...] = (
@@ -70,13 +71,77 @@ class CaptureConfig(_StrictModel):
     interval_max_seconds: int = Field(default=120, ge=5, le=3600)
 
 
+def _clean_ids(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise TypeError("exclusion lists must be arrays of strings")
+    return tuple(item.strip() for item in (str(raw) for raw in value) if item.strip())
+
+
+def _extend_defaults(
+    defaults: tuple[str, ...],
+    extras: tuple[str, ...],
+    *,
+    casefold: bool = True,
+) -> tuple[str, ...]:
+    """Keep built-in defaults intact and append user extras that are not already present."""
+    seen = {item.casefold() if casefold else item for item in defaults}
+    out = list(defaults)
+    for item in extras:
+        key = item.casefold() if casefold else item
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return tuple(out)
+
+
 class ExclusionsConfig(_StrictModel):
-    """Capture exclusions (plan §5.1). Prevention only; not a secret store."""
+    """Capture exclusions (plan §5.1). Prevention only; not a secret store.
+
+    User lists **merge** with the built-in defaults. Password managers and
+    other defaults stay excluded unless named in ``allowed_bundle_ids``.
+    """
 
     bundle_ids: tuple[str, ...] = DEFAULT_EXCLUDED_BUNDLE_IDS
     window_title_patterns: tuple[str, ...] = DEFAULT_WINDOW_TITLE_PATTERNS
     denied_domains: tuple[str, ...] = DEFAULT_DENIED_DOMAINS
     allowed_domains: tuple[str, ...] = ()
+    allowed_bundle_ids: tuple[str, ...] = Field(
+        default=(),
+        description="Visible override: these bundle IDs are not excluded.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def merge_builtin_defaults(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        incoming = dict(data)
+        allowed = {item.casefold() for item in _clean_ids(incoming.get("allowed_bundle_ids"))}
+        extras = _clean_ids(incoming["bundle_ids"]) if "bundle_ids" in incoming else ()
+        incoming["bundle_ids"] = tuple(
+            item
+            for item in _extend_defaults(DEFAULT_EXCLUDED_BUNDLE_IDS, extras)
+            if item.casefold() not in allowed
+        )
+        if "window_title_patterns" in incoming:
+            incoming["window_title_patterns"] = _extend_defaults(
+                DEFAULT_WINDOW_TITLE_PATTERNS,
+                _clean_ids(incoming.get("window_title_patterns")),
+                casefold=False,
+            )
+        if "denied_domains" in incoming:
+            incoming["denied_domains"] = _extend_defaults(
+                DEFAULT_DENIED_DOMAINS,
+                _clean_ids(incoming.get("denied_domains")),
+            )
+        if "allowed_bundle_ids" in incoming:
+            incoming["allowed_bundle_ids"] = _clean_ids(incoming.get("allowed_bundle_ids"))
+        if "allowed_domains" in incoming:
+            incoming["allowed_domains"] = _clean_ids(incoming.get("allowed_domains"))
+        return incoming
 
 
 class RetentionConfig(_StrictModel):

@@ -21,9 +21,9 @@ def exclusion_reason(
     exclusions: ExclusionsConfig,
 ) -> str | None:
     """Return a skip reason, or ``None`` if the frame may be stored."""
-    bundle = str(sidecar.get("bundle_id") or "")
-    app = str(sidecar.get("app_name") or "")
-    title = str(sidecar.get("window_title") or "")
+    bundle = str(sidecar.get("bundle_id") or "").strip()
+    app = str(sidecar.get("app_name") or "").strip()
+    title = str(sidecar.get("window_title") or "").strip()
     excluded_apps = {item.casefold() for item in exclusions.bundle_ids if item}
     if bundle.casefold() in excluded_apps or app.casefold() in excluded_apps:
         return REASON_EXCLUDED_APP

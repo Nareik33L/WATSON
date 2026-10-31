@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from watson.config import ConfigError, load_config
-from watson.config.schema import APPLICATION_SUPPORT_WATSON, DEFAULT_EXCLUDED_BUNDLE_IDS
+from watson.config.schema import (
+    APPLICATION_SUPPORT_WATSON,
+    DEFAULT_DENIED_DOMAINS,
+    DEFAULT_EXCLUDED_BUNDLE_IDS,
+    DEFAULT_WINDOW_TITLE_PATTERNS,
+)
 
 
 def test_defaults_use_application_support_path(
@@ -50,7 +55,11 @@ window_title_days = 14
     config = load_config()
     assert config.capture.interval_seconds == 90
     assert config.spool_dir == data_dir / "custom-spool"
-    assert config.exclusions.bundle_ids == ("com.example.secret",)
+    assert "com.example.secret" in config.exclusions.bundle_ids
+    assert "com.apple.Passwords" in config.exclusions.bundle_ids
+    assert set(DEFAULT_EXCLUDED_BUNDLE_IDS).issubset(config.exclusions.bundle_ids)
+    assert "example.bank" in config.exclusions.denied_domains
+    assert set(DEFAULT_DENIED_DOMAINS).issubset(config.exclusions.denied_domains)
     assert config.retention.window_title_days == 14
     assert config.db_path == data_dir / "watson.db"
 
@@ -66,6 +75,32 @@ interval_seconds = "fast"
     with pytest.raises(ConfigError, match=r"capture\.interval_seconds") as raised:
         load_config()
     assert "Invalid config" in str(raised.value)
+
+
+def test_user_exclusions_merge_defaults_and_strip(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = data_dir / "config.toml"
+    config_path.write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[exclusions]
+bundle_ids = ["com.example.secret", "com.apple.Passwords ", "  "]
+window_title_patterns = ["Vault unlock"]
+allowed_bundle_ids = ["com.apple.FaceTime"]
+""",
+        encoding="utf-8",
+    )
+    config = load_config()
+    assert "com.example.secret" in config.exclusions.bundle_ids
+    assert "com.apple.Passwords" in config.exclusions.bundle_ids
+    assert "com.1password.1password" in config.exclusions.bundle_ids
+    assert "com.apple.FaceTime" not in config.exclusions.bundle_ids
+    assert all(item == item.strip() and item for item in config.exclusions.bundle_ids)
+    assert "Vault unlock" in config.exclusions.window_title_patterns
+    assert set(DEFAULT_WINDOW_TITLE_PATTERNS).issubset(config.exclusions.window_title_patterns)
+    assert config.exclusions.allowed_bundle_ids == ("com.apple.FaceTime",)
 
 
 def test_unknown_key_is_named(data_dir: Path) -> None:

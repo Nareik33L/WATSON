@@ -146,7 +146,11 @@ def reject_excluded_pair(
     fixture_dir: Path | None = None,
 ) -> None:
     """Delete an excluded spool pair and record a content-free audit event."""
-    unlink_spool_pair(pair.png_path, pair.sidecar_path, fixture_dir=fixture_dir)
+    try:
+        unlink_spool_pair(pair.png_path, pair.sidecar_path, fixture_dir=fixture_dir)
+    except FrameError as exc:
+        _record_excluded_unlink_failure(conn, reason=reason, error=_excluded_unlink_error(exc))
+        raise
     record_audit(
         conn,
         kind=KIND_SKIPPED,
@@ -175,6 +179,25 @@ def unlink_spool_pair(
         raise FrameError(f"excluded spool delete failed for {png_path.name}") from exc
     if not (_path_gone(png_path) and _path_gone(sidecar_path)):
         raise FrameError(f"excluded spool files still present after unlink for {png_path.name}")
+
+
+def _excluded_unlink_error(exc: FrameError) -> str:
+    cause = exc.__cause__
+    if isinstance(cause, OSError):
+        return type(cause).__name__
+    if "still present" in str(exc):
+        return "still_present"
+    return "unlink_failed"
+
+
+def _record_excluded_unlink_failure(conn: sqlcipher.Connection, *, reason: str, error: str) -> None:
+    record_audit(
+        conn,
+        kind=KIND_DELETE_FAILED,
+        detail={"error": error, "reason": reason, "scope": "excluded"},
+        commit=True,
+    )
+    log.info("excluded spool delete failed", extra={"error": error, "reason": reason})
 
 
 def extract_fixture_stub(
