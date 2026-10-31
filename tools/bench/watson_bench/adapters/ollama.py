@@ -15,7 +15,11 @@ from watson_bench.adapters.base import AdapterError, RuntimeCall, Skipped
 from watson_bench.candidates import Candidate
 from watson_bench.frames import Frame
 from watson_bench.metrics import CallMetrics, estimate_tokens, timed
-from watson_bench.network import NetworkGuardError, assert_loopback_url
+from watson_bench.network import (
+    DEFAULT_OLLAMA_URL,
+    NetworkGuardError,
+    ollama_endpoint_or_reason,
+)
 from watson_bench.prompts import (
     UNDERSTANDING_SCHEMA,
     VLM_SCHEMA,
@@ -24,19 +28,25 @@ from watson_bench.prompts import (
     vlm_prompt,
 )
 
-DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
-
 
 class OllamaRuntime:
     name = "ollama"
 
     def __init__(self, base_url: str | None = None) -> None:
-        host = base_url or os.environ.get("OLLAMA_HOST") or DEFAULT_OLLAMA_URL
-        self.base_url = assert_loopback_url(host)
+        raw = (
+            base_url
+            if base_url is not None
+            else os.environ.get("OLLAMA_HOST") or DEFAULT_OLLAMA_URL
+        )
+        endpoint, reason = ollama_endpoint_or_reason(raw)
+        self._host_skip = reason
+        self.base_url = endpoint.base_url if endpoint is not None else ""
         self._loaded: Candidate | None = None
 
     def availability(self, candidate: Candidate, models_dir: Path) -> Skipped | None:
         del models_dir
+        if self._host_skip:
+            return Skipped(self._host_skip)
         try:
             tags = self._request_json("GET", "/api/tags")
         except NetworkGuardError as exc:

@@ -10,9 +10,7 @@ from pathlib import Path
 
 from watson_bench.adapters.base import model_dir_for
 from watson_bench.candidates import Candidate
-from watson_bench.network import assert_loopback_url
-
-DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+from watson_bench.network import configured_ollama_raw, ollama_endpoint_or_reason
 
 
 class FetchError(RuntimeError):
@@ -30,7 +28,9 @@ def fetch_candidate(candidate: Candidate, models_dir: Path) -> str:
 
 
 def _fetch_ollama(candidate: Candidate) -> str:
-    assert_loopback_url(DEFAULT_OLLAMA_URL)
+    endpoint, error = ollama_endpoint_or_reason(configured_ollama_raw())
+    if error or endpoint is None:
+        raise FetchError(error or "invalid OLLAMA_HOST")
     if shutil.which("ollama"):
         proc = subprocess.run(
             ["ollama", "pull", candidate.model_id],
@@ -41,7 +41,7 @@ def _fetch_ollama(candidate: Candidate) -> str:
         return f"{candidate.id}: pulled {candidate.model_id} via ollama CLI"
     payload = json.dumps({"name": candidate.model_id, "stream": False}).encode("utf-8")
     request = urllib.request.Request(
-        f"{DEFAULT_OLLAMA_URL}/api/pull",
+        f"{endpoint.base_url}/api/pull",
         data=payload,
         method="POST",
         headers={"Content-Type": "application/json"},

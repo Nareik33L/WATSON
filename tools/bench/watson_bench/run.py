@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +14,7 @@ from watson_bench.candidates import Candidate, load_candidates
 from watson_bench.frames import Frame, load_frames
 from watson_bench.hardware import HardwareInfo, detect_hardware
 from watson_bench.metrics import RssSampler, find_process_pids, mean, timed
-from watson_bench.network import localhost_only
+from watson_bench.network import allowed_ollama_port, localhost_only
 from watson_bench.paths import default_models_dir, default_results_dir, samples_dir
 from watson_bench.quality import sample_frames, write_frame_output, write_scoring_csv
 from watson_bench.report import write_report
@@ -45,7 +46,9 @@ def run_bakeoff(
     scoring_csv = out_dir / "scoring.csv"
 
     results: list[dict[str, Any]] = []
-    with localhost_only():
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    with localhost_only(allowed_port=allowed_ollama_port()):
         for candidate in candidates:
             results.append(
                 _run_one(
@@ -119,8 +122,6 @@ def _run_one(
     use_fake: bool,
 ) -> dict[str, Any]:
     runtime_name = "fake" if use_fake else candidate.runtime
-    runtime: BenchRuntime = get_runtime(runtime_name)
-    skip = runtime.availability(candidate, models_dir)
     row = {
         "candidate": asdict(candidate),
         "adapter": runtime_name,
@@ -136,6 +137,13 @@ def _run_one(
         "n_calls": 0,
         "completion_tokens": 0,
     }
+    try:
+        runtime: BenchRuntime = get_runtime(runtime_name)
+    except Exception as exc:
+        row["skipped"] = True
+        row["skip_reason"] = f"{runtime_name} could not start: {exc}"
+        return row
+    skip = runtime.availability(candidate, models_dir)
     if skip is not None:
         row["skipped"] = True
         row["skip_reason"] = skip.reason

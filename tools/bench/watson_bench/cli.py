@@ -12,7 +12,7 @@ from pathlib import Path
 from watson_bench.candidates import PROFILES, ROLES, RUNTIMES, load_candidates
 from watson_bench.fetch import FetchError, fetch_candidate
 from watson_bench.hardware import HardwareInfo, detect_hardware, format_hardware
-from watson_bench.paths import default_models_dir, default_report_path
+from watson_bench.paths import default_models_dir, default_report_path, set_repo_root
 from watson_bench.report import load_run_manifest, write_report
 from watson_bench.run import run_bakeoff
 
@@ -20,6 +20,8 @@ from watson_bench.run import run_bakeoff
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "repo_root", None) is not None:
+        set_repo_root(args.repo_root)
     try:
         return args.handler(args)
     except (FetchError, ValueError, FileNotFoundError, OSError) as exc:
@@ -34,6 +36,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "M0-A model/hardware bake-off. Fetch is the only command that downloads. "
             "run talks only to a local Ollama server on localhost."
         ),
+    )
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="WATSON checkout (default: cwd / git root). Results and reports use this tree.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

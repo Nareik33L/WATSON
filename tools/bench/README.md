@@ -16,7 +16,10 @@ Every YAML row is marked `status: candidate`. Nothing here is a chosen default.
 ## Safety
 
 - `watson-bench fetch` is the **only** command that downloads weights.
-- `watson-bench run` installs a localhost-only socket guard. The only network it may use is a local Ollama server (`127.0.0.1:11434`). Missing models are skipped with a fetch hint; they are never pulled implicitly.
+- `watson-bench run` installs a localhost-only socket guard covering `connect`, `connect_ex`, UDP `sendto`/`sendmsg`, and `getaddrinfo`/`gethostbyname`. The only allowed destination is loopback on the Ollama port (default `11434`). Missing models are skipped with a fetch hint; they are never pulled implicitly.
+- `OLLAMA_HOST` accepts Ollama's own forms (`127.0.0.1:11434`, `localhost`, `http(s)://host:port`). An invalid or non-loopback value skips the ollama runtime instead of crashing.
+- Default outputs are always in the checkout: `tools/bench/results/<profile>-<timestamp>/` and `docs/benchmarks/<date>.md`, even when the package is installed into `.venv`. Override with `--repo-root` / `WATSON_REPO_ROOT`.
+- Per-candidate rows are appended to that run's `scoring.csv` (one shared sheet per run directory).
 
 ## One-or-two command path (8 GB Mac, Ollama)
 
