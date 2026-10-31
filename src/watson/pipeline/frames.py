@@ -103,34 +103,38 @@ def ingest_pair(
     title_hash = hashlib.sha256(title.encode("utf-8")).hexdigest() if title else None
     png_sha256 = sha256_file(pair.png_path)
     stamp = iso_now()
-    conn.execute(
-        """
-        INSERT INTO frames (
-            id, created_at, updated_at, working_day_id, captured_at,
-            bundle_id, app_name, window_title_hash, window_title,
-            url_domain, phash, state, failure_count, deleted_at, deletion_verified
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'captured', 0, NULL, 0)
-        """,
-        (
-            pair.frame_id,
-            stamp,
-            stamp,
-            working_day_id,
-            str(pair.sidecar["captured_at"]),
-            str(pair.sidecar["bundle_id"]),
-            str(pair.sidecar["app_name"]),
-            title_hash,
-            title or None,
-            str(pair.sidecar["phash"]),
-        ),
-    )
-    record_audit(
-        conn,
-        kind=KIND_INGESTED,
-        detail={"frame_id": pair.frame_id, "png_sha256": png_sha256},
-        commit=False,
-    )
-    conn.commit()
+    try:
+        conn.execute(
+            """
+            INSERT INTO frames (
+                id, created_at, updated_at, working_day_id, captured_at,
+                bundle_id, app_name, window_title_hash, window_title,
+                url_domain, phash, state, failure_count, deleted_at, deletion_verified
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'captured', 0, NULL, 0)
+            """,
+            (
+                pair.frame_id,
+                stamp,
+                stamp,
+                working_day_id,
+                str(pair.sidecar["captured_at"]),
+                str(pair.sidecar["bundle_id"]),
+                str(pair.sidecar["app_name"]),
+                title_hash,
+                title or None,
+                str(pair.sidecar["phash"]),
+            ),
+        )
+        record_audit(
+            conn,
+            kind=KIND_INGESTED,
+            detail={"frame_id": pair.frame_id, "png_sha256": png_sha256},
+            commit=False,
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     enqueue(
         conn,
         kind=EXTRACT_JOB_KIND,

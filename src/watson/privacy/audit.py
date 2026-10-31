@@ -37,8 +37,22 @@ ERROR_VALUES = frozenset({ERROR_PERMISSION, ERROR_STILL_PRESENT, ERROR_UNLINK_FA
 
 _SCALAR_TYPES = (str, int, float, bool)
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
+# Lowercase slug, 1–64 chars. Covers day_acme_q4, day_fragmented_multi, day_mini.
+_FIXTURE_SLUG = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 _UUID_KEY_STEMS = frozenset({"frameid"})
 _HEX64_KEY_STEMS = frozenset({"pngsha256"})
+_COUNT_KEY_STEMS = frozenset(
+    {
+        "framecount",
+        "ingested",
+        "extracted",
+        "deleted",
+        "deletionverified",
+        "skippedexcluded",
+        "png",
+        "sidecar",
+    }
+)
 
 # Normalised keys (casefold, strip, drop ``_`` / ``-`` / space) permitted per kind.
 _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
@@ -133,19 +147,31 @@ def _validate_values(detail: dict[str, Any]) -> None:
             raise AuditError(f"audit detail values must be scalars; {key!r} is not")
         normalized = normalize_audit_key(str(key))
         if normalized == "reason" and value not in REASON_VALUES:
-            raise AuditError(f"invalid audit reason {value!r}")
-        if normalized == "error" and value not in ERROR_VALUES:
-            raise AuditError(f"invalid audit error {value!r}")
-        if normalized == "scope" and value not in SCOPE_VALUES:
-            raise AuditError(f"invalid audit scope {value!r}")
-        if _is_id_key(normalized):
+            raise AuditError("invalid audit reason")
+        elif normalized == "error" and value not in ERROR_VALUES:
+            raise AuditError("invalid audit error")
+        elif normalized == "scope" and value not in SCOPE_VALUES:
+            raise AuditError("invalid audit scope")
+        elif normalized == "fixture":
+            if type(value) is not str or _FIXTURE_SLUG.fullmatch(value) is None:
+                raise AuditError("invalid audit fixture")
+        elif _is_count_key(normalized):
+            if type(value) is not int or value < 0:
+                raise AuditError(f"audit {key} must be a non-negative int")
+        elif _is_id_key(normalized):
+            if type(value) is not str:
+                raise AuditError(f"audit {key} must be a UUID")
             try:
-                uuid.UUID(str(value))
+                uuid.UUID(value)
             except (ValueError, TypeError, AttributeError) as exc:
                 raise AuditError(f"audit {key} must be a UUID") from exc
-        if _is_hex_key(normalized):
-            if not isinstance(value, str) or _HEX64.fullmatch(value) is None:
+        elif _is_hex_key(normalized):
+            if type(value) is not str or _HEX64.fullmatch(value) is None:
                 raise AuditError(f"audit {key} must be a 64-char hex digest")
+
+
+def _is_count_key(normalized: str) -> bool:
+    return normalized in _COUNT_KEY_STEMS
 
 
 def _is_id_key(normalized: str) -> bool:
@@ -188,7 +214,7 @@ def record_audit(
         raise AuditError(f"invalid audit actor {actor!r}")
     _validate_detail(kind, detail)
     try:
-        detail_json = json.dumps(detail, sort_keys=True)
+        detail_json = json.dumps(detail, sort_keys=True, allow_nan=False)
     except TypeError as exc:
         raise AuditError("audit detail values must be scalars") from exc
     stamp = iso_now()

@@ -394,7 +394,7 @@ Structured JSON logs. A `ContentField` wrapper marks any value derived from scre
 | Understanding / consolidation / reports / Q&A | `LanguageRuntime.complete(messages, schema)` | Ollama, `llama3.2:3b` provisional (ADR 0001) | llama.cpp or MLX LLM; **~3–4B Q4** on 8 GB (V1.0, §0.1); ~7–9B Q4–Q5 is the 16 GB V1.2 profile |
 | Embeddings | `EmbeddingRuntime.embed(texts)` | Ollama, `nomic-embed-text` (ADR 0001) | in-process small embedding model (≤ 0.5B on 8 GB) |
 
-Model identifiers are configuration. Candidate families are enumerated and benchmarked at M0 rather than named here, because the local-model landscape changes faster than this document.
+The table names the current defaults from the M0-A bake-off (ADR 0001). Identifiers remain configuration because the local-model landscape still changes faster than this document.
 
 ### 7.2 Prompting and output
 

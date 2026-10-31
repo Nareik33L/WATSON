@@ -2,8 +2,8 @@
   "note": "Post-run annotation. Does not alter measured fields in run.json.",
   "run_json": "tools/bench/results/8gb-20261031T143012Z/run.json",
   "paths_as_recorded": {
-    "frames_dir": "/Users/eversign/WATSON/tools/bench/samples/frames",
-    "scoring_csv": "/Users/eversign/WATSON/tools/bench/results/8gb-20261031T143012Z/scoring.csv"
+    "frames_dir": "~/WATSON/tools/bench/samples/frames",
+    "scoring_csv": "~/WATSON/tools/bench/results/8gb-20261031T143012Z/scoring.csv"
   },
   "paths_repo_relative": {
     "frames_dir": "tools/bench/samples/frames",
