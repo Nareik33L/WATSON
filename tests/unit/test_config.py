@@ -1,0 +1,80 @@
+"""Config schema, TOML load, env overrides, and keyed validation errors."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from watson.config import ConfigError, load_config
+from watson.config.schema import APPLICATION_SUPPORT_WATSON, DEFAULT_EXCLUDED_BUNDLE_IDS
+
+
+def test_defaults_use_application_support_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("WATSON_DATA_DIR", raising=False)
+    monkeypatch.delenv("WATSON_CONFIG_PATH", raising=False)
+    # Point HOME at tmp so we do not touch the real Application Support tree.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config = load_config()
+    assert config.data_dir == Path(tmp_path) / APPLICATION_SUPPORT_WATSON
+    assert config.db_path == config.data_dir / "watson.db"
+    assert config.spool_dir == config.data_dir / "spool"
+    assert config.capture.interval_seconds == 45
+    assert config.exclusions.bundle_ids == DEFAULT_EXCLUDED_BUNDLE_IDS
+    assert config.retention.window_title_days == 30
+    assert config.retention.derived_days is None
+
+
+def test_toml_and_env_overrides(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = data_dir / "config.toml"
+    config_path.write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[capture]
+interval_seconds = 60
+
+[exclusions]
+bundle_ids = ["com.example.secret"]
+denied_domains = ["example.bank"]
+
+[retention]
+window_title_days = 14
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WATSON_CAPTURE_INTERVAL", "90")
+    monkeypatch.setenv("WATSON_SPOOL_DIR", str(data_dir / "custom-spool"))
+    config = load_config()
+    assert config.capture.interval_seconds == 90
+    assert config.spool_dir == data_dir / "custom-spool"
+    assert config.exclusions.bundle_ids == ("com.example.secret",)
+    assert config.retention.window_title_days == 14
+    assert config.db_path == data_dir / "watson.db"
+
+
+def test_bad_key_is_named_in_the_error(data_dir: Path) -> None:
+    (data_dir / "config.toml").write_text(
+        """
+[capture]
+interval_seconds = "fast"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"capture\.interval_seconds") as raised:
+        load_config()
+    assert "Invalid config" in str(raised.value)
+
+
+def test_unknown_key_is_named(data_dir: Path) -> None:
+    (data_dir / "config.toml").write_text(
+        """
+[capture]
+not_a_real_field = 1
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"capture\.not_a_real_field"):
+        load_config()

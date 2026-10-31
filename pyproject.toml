@@ -8,7 +8,14 @@ version = "0.1.0"
 description = "Local-first, offline-capable work memory for macOS"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.14",
+    "keyring>=25.0",
+    "pydantic>=2.10",
+    "sqlalchemy>=2.0",
+    "sqlcipher3>=0.6.2",
+    "sqlite-vec>=0.1.6",
+]
 
 [project.scripts]
 watson = "watson.cli:main"
@@ -74,3 +81,9 @@ mypy_path = "src, tools/fixture_gen"
 packages = ["watson", "watson_fixturegen"]
 explicit_package_bases = true
 warn_unused_ignores = true
+strict = true
+exclude = "(?x)(^src/watson/memory/migrations/env\\.py$)"
+
+[[tool.mypy.overrides]]
+module = ["sqlcipher3", "sqlcipher3.*", "sqlite_vec"]
+ignore_missing_imports = true

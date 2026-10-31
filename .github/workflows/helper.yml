@@ -13,8 +13,9 @@ on:
 permissions:
   contents: read
 
-# macos-15 minutes are costly on a private repo. This workflow is the only
-# macOS job and it starts only when helper/ (or this file) changes.
+# macos-15 minutes are costly on a private repo. This workflow starts only
+# when helper/ (or this file) changes. SQLCipher wheel smoke is a separate
+# lightweight macos-15 job in .github/workflows/db-smoke.yml.
 # No ScreenCaptureKit: both build paths, unit tests, and --selftest only.
 # GitHub retired macos-14 images (brownout / 2026-11-02 sunset).
 # No WATSON Dev certificate — ad-hoc sign.

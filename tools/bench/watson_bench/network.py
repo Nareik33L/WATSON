@@ -3,26 +3,28 @@
 The guard is deliberately literal: it never calls DNS to decide whether a
 host is local. Only loopback IPs/names, and only the configured Ollama
 port, are allowed.
+
+Socket patching lives in ``watson.privacy.network`` so the runtime guard
+and this harness stay in lockstep.
 """
 
 from __future__ import annotations
 
-import ipaddress
 import os
-import socket
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from watson.privacy.network import (  # noqa: F401 — re-exported for tests
+    LOOPBACK_HOSTS,
+    NetworkGuardError,
+    guard_is_active,
+    is_loopback_host,
+)
+from watson.privacy.network import localhost_only as _localhost_only
+
 OLLAMA_DEFAULT_PORT = 11434
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
-LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"})
-
-_guard_depth = 0
-
-
-class NetworkGuardError(RuntimeError):
-    """Raised when the bench run tries to leave the loopback interface."""
 
 
 @dataclass(frozen=True)
@@ -31,19 +33,6 @@ class OllamaEndpoint:
     host: str
     port: int
     scheme: str
-
-
-def is_loopback_host(host: str) -> bool:
-    """True only for a literal loopback name or IP. Never performs a lookup."""
-    cleaned = host.strip().strip("[]").lower()
-    if not cleaned:
-        return False
-    if cleaned in LOOPBACK_HOSTS:
-        return True
-    try:
-        return ipaddress.ip_address(cleaned).is_loopback
-    except ValueError:
-        return False
 
 
 def parse_ollama_host(value: str) -> OllamaEndpoint:
@@ -109,81 +98,18 @@ def assert_loopback_url(url: str) -> str:
     return endpoint.base_url
 
 
-def guard_is_active() -> bool:
-    return _guard_depth > 0
-
-
 @contextmanager
 def localhost_only(*, allowed_port: int | None = None) -> Iterator[None]:
     """Patch outbound socket/DNS so only loopback→Ollama-port succeeds."""
-    global _guard_depth
     port = OLLAMA_DEFAULT_PORT if allowed_port is None else allowed_port
-    originals = {
-        "create_connection": socket.create_connection,
-        "connect": socket.socket.connect,
-        "connect_ex": socket.socket.connect_ex,
-        "sendto": socket.socket.sendto,
-        "sendmsg": socket.socket.sendmsg,
-        "getaddrinfo": socket.getaddrinfo,
-        "gethostbyname": socket.gethostbyname,
-        "gethostbyname_ex": socket.gethostbyname_ex,
-    }
-
-    def guarded_create(address, *args, **kwargs):  # type: ignore[no-untyped-def]
-        _reject_destination(address, allowed_port=port, kind="connect")
-        return originals["create_connection"](address, *args, **kwargs)
-
-    def guarded_connect(self, address):  # type: ignore[no-untyped-def]
-        _reject_destination(address, allowed_port=port, kind="connect")
-        return originals["connect"](self, address)
-
-    def guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
-        _reject_destination(address, allowed_port=port, kind="connect_ex")
-        return originals["connect_ex"](self, address)
-
-    def guarded_sendto(self, data, *args):  # type: ignore[no-untyped-def]
-        if args:
-            _reject_destination(args[-1], allowed_port=port, kind="sendto")
-        return originals["sendto"](self, data, *args)
-
-    def guarded_sendmsg(self, buffers, ancdata=(), flags=0, address=None):  # type: ignore[no-untyped-def]
-        if address:
-            _reject_destination(address, allowed_port=port, kind="sendmsg")
-        return originals["sendmsg"](self, buffers, ancdata, flags, address)
-
-    def guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
-        _reject_lookup(host)
-        return originals["getaddrinfo"](host, *args, **kwargs)
-
-    def guarded_gethostbyname(host):  # type: ignore[no-untyped-def]
-        _reject_lookup(host)
-        return originals["gethostbyname"](host)
-
-    def guarded_gethostbyname_ex(host):  # type: ignore[no-untyped-def]
-        _reject_lookup(host)
-        return originals["gethostbyname_ex"](host)
-
-    socket.create_connection = guarded_create  # type: ignore[assignment]
-    socket.socket.connect = guarded_connect  # type: ignore[method-assign]
-    socket.socket.connect_ex = guarded_connect_ex  # type: ignore[method-assign]
-    socket.socket.sendto = guarded_sendto  # type: ignore[method-assign]
-    socket.socket.sendmsg = guarded_sendmsg  # type: ignore[method-assign]
-    socket.getaddrinfo = guarded_getaddrinfo  # type: ignore[assignment]
-    socket.gethostbyname = guarded_gethostbyname  # type: ignore[assignment]
-    socket.gethostbyname_ex = guarded_gethostbyname_ex  # type: ignore[assignment]
-    _guard_depth += 1
-    try:
+    with _localhost_only(
+        allowed_port=port,
+        error_prefix="Benchmark run",
+        lookup_hint="Models are downloaded only by `watson-bench fetch`.",
+        connect_hint="Models are downloaded only by `watson-bench fetch`.",
+        port_hint=f"(only the Ollama port {port} is allowed).",
+    ):
         yield
-    finally:
-        socket.create_connection = originals["create_connection"]
-        socket.socket.connect = originals["connect"]
-        socket.socket.connect_ex = originals["connect_ex"]
-        socket.socket.sendto = originals["sendto"]
-        socket.socket.sendmsg = originals["sendmsg"]
-        socket.getaddrinfo = originals["getaddrinfo"]
-        socket.gethostbyname = originals["gethostbyname"]
-        socket.gethostbyname_ex = originals["gethostbyname_ex"]
-        _guard_depth -= 1
 
 
 def _split_host_port(rest: str) -> tuple[str, int | None]:
@@ -216,57 +142,3 @@ def _parse_port(text: str) -> int:
     if port < 1 or port > 65535:
         raise ValueError(f"invalid port {port}")
     return port
-
-
-def _reject_lookup(host: object) -> None:
-    if host in (None, "", b""):
-        return
-    host_s = _as_text(host)
-    if is_loopback_host(host_s):
-        return
-    raise NetworkGuardError(
-        f"Benchmark run blocked a DNS/lookup for {host_s!r}. "
-        "Models are downloaded only by `watson-bench fetch`."
-    )
-
-
-def _reject_destination(address: object, *, allowed_port: int, kind: str) -> None:
-    host, port = _address_parts(address)
-    if host is None:
-        raise NetworkGuardError(f"Benchmark run blocked {kind} without a host.")
-    if host.startswith("/") or host.startswith("\x00"):
-        return
-    if not is_loopback_host(host):
-        raise NetworkGuardError(
-            f"Benchmark run blocked a non-loopback {kind} to {host!r}. "
-            "Models are downloaded only by `watson-bench fetch`."
-        )
-    if port is not None and port != allowed_port:
-        raise NetworkGuardError(
-            f"Benchmark run blocked loopback {kind} to port {port} "
-            f"(only the Ollama port {allowed_port} is allowed)."
-        )
-
-
-def _address_parts(address: object) -> tuple[str | None, int | None]:
-    if address is None:
-        return None, None
-    if isinstance(address, (str, bytes)):
-        return _as_text(address), None
-    if isinstance(address, tuple) and address:
-        host = address[0]
-        host_s = None if host in (None, "") else _as_text(host)
-        port_i: int | None = None
-        if len(address) > 1 and address[1] is not None:
-            try:
-                port_i = int(address[1])
-            except (TypeError, ValueError):
-                port_i = None
-        return host_s, port_i
-    return _as_text(address), None
-
-
-def _as_text(value: object) -> str:
-    if isinstance(value, bytes):
-        return value.decode("utf-8", "replace")
-    return str(value)

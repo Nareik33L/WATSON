@@ -2,7 +2,7 @@
 
 WATSON is a local-first, offline-capable work-memory system for macOS (Apple Silicon first). A signed Swift helper captures the frontmost window; a Python supervisor, inference worker, and local dashboard coordinate through a single encrypted SQLite database. Frames are extracted with on-device OCR, grouped into activity segments, and recorded as claims with evidence. No component opens an outbound socket during normal operation.
 
-This repository is at the layout-and-CI skeleton, the M0-A bake-off harness, and the M0-B Swift capture helper. Production runtime adapters and the dashboard land in later milestones.
+This repository is at the layout-and-CI skeleton, the M0-A bake-off harness, the M0-B Swift capture helper, and the first M1 foundation slice (config, encrypted SQLite, jobs queue, redacted logging, runtime network guard). Replay, the dashboard, and production runtime adapters land later.
 
 ## Development
 
@@ -24,6 +24,16 @@ helper/scripts/build.sh
 #   helper/scripts/build.sh --spm && cd helper && swift test
 ```
 
+### CLI (this slice)
+
+`watson doctor` prints resolved config paths (`~/Library/Application Support/WATSON` or `WATSON_DATA_DIR`) and database status. It never prints secrets or the SQLCipher key.
+
+`watson db upgrade` creates the runtime directories if needed and applies Alembic migrations to the encrypted database.
+
+`watson db status` shows whether `watson.db` exists, whether it opens with the current key provider, WAL/FTS5/sqlite-vec, and the current vs head Alembic revision.
+
+`run`, `replay`, and `models` remain stubs until later milestones.
+
 The M0-A model bake-off lives in [`tools/bench/`](tools/bench/README.md). On the 8 GB development Mac:
 
 ```bash
@@ -34,4 +44,4 @@ uv run watson-bench run --profile 8gb --runtime ollama --report
 
 ## Engineering plan
 
-Architecture decisions D1–D12, repository layout, and milestones are defined in [docs/WATSON_V1_ENGINEERING_PLAN.md](docs/WATSON_V1_ENGINEERING_PLAN.md) (Revision 2).
+Architecture decisions D1–D12, repository layout, and milestones are defined in [docs/WATSON_V1_ENGINEERING_PLAN.md](docs/WATSON_V1_ENGINEERING_PLAN.md) (Revision 2). Database encryption (§14 #4) is recorded in [docs/decisions/0004-db-encryption.md](docs/decisions/0004-db-encryption.md).

@@ -1,0 +1,51 @@
+name: DB smoke
+
+on:
+  push:
+    paths:
+      - "src/watson/memory/**"
+      - "src/watson/pipeline/jobs.py"
+      - "src/watson/config/**"
+      - "tests/unit/test_db_smoke.py"
+      - "tests/unit/test_keys.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "docs/decisions/0004-db-encryption.md"
+      - ".github/workflows/db-smoke.yml"
+  pull_request:
+    paths:
+      - "src/watson/memory/**"
+      - "src/watson/pipeline/jobs.py"
+      - "src/watson/config/**"
+      - "tests/unit/test_db_smoke.py"
+      - "tests/unit/test_keys.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "docs/decisions/0004-db-encryption.md"
+      - ".github/workflows/db-smoke.yml"
+
+permissions:
+  contents: read
+
+# macos-14 minutes are costly. This job only proves the sqlcipher3 + sqlite-vec
+# wheels on macOS arm64 (FTS5, extension load, unreadable without the key).
+
+jobs:
+  db-smoke-macos:
+    name: SQLCipher smoke (macos-14)
+    runs-on: macos-14
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked --group dev
+
+      - name: SQLCipher + FTS5 + sqlite-vec + key hygiene
+        run: uv run pytest tests/unit/test_db_smoke.py tests/unit/test_keys.py -q
