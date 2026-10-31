@@ -1,0 +1,24 @@
+# Tiny always-on check so docs-only PRs (which skip CI via paths-ignore)
+# still get a green required status. See docs/ci.md.
+
+name: required
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  required:
+    name: required
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pass
+        run: echo "ok"

@@ -1,29 +1,33 @@
 name: Helper
 
 on:
+  workflow_dispatch:
   push:
-    paths:
-      - "helper/**"
-      - ".github/workflows/helper.yml"
-  pull_request:
-    paths:
-      - "helper/**"
-      - ".github/workflows/helper.yml"
+    tags:
+      - "v*"
+  schedule:
+    - cron: "0 3 * * 0"
 
 permissions:
   contents: read
 
-# macos-15 minutes are costly on a private repo. This workflow starts only
-# when helper/ (or this file) changes. SQLCipher wheel smoke is a separate
-# lightweight macos-15 job in .github/workflows/db-smoke.yml.
+# macos-15 minutes count 10× on a private repo. Not on push/pull_request.
+# Trigger by hand, on a v* tag, or Sunday 03:00 UTC (skipped if main was
+# idle). See docs/ci.md. SQLCipher wheel smoke is db-smoke.yml.
 # No ScreenCaptureKit: both build paths, unit tests, and --selftest only.
 # GitHub retired macos-14 images (brownout / 2026-11-02 sunset).
 # No WATSON Dev certificate — ad-hoc sign.
 
 jobs:
+  gate:
+    uses: ./.github/workflows/macos-gate.yml
+
   helper:
     name: swiftc + SwiftPM + tests
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - name: Check out
         uses: actions/checkout@v4

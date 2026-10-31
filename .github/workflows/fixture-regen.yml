@@ -12,16 +12,22 @@ on:
       - "tests/fixtures/**"
       - ".github/workflows/fixture-regen.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 # Default (not opt-in) regen for PRs/pushes that touch the generator or goldens.
 # Main CI still skips Playwright; this job installs Chromium and diffs sidecars.
+# Docs-only PRs do not match these paths, so this workflow stays idle.
 
 jobs:
   regen:
     name: playwright fixture regen
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -31,6 +37,17 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Sync dependencies
         run: uv sync --locked --group dev
