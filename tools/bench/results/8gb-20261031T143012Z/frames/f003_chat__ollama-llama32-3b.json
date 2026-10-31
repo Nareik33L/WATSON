@@ -1,0 +1,19 @@
+{
+  "candidate_id": "ollama-llama32-3b",
+  "completion_tokens": 66,
+  "frame_id": "f003_chat",
+  "latency_s": 7.72186,
+  "output": {
+    "activity_type": "Conversation",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "You: I will send the revised deck",
+        "kind": "outcome",
+        "text": "Revised deck to be sent"
+      }
+    ],
+    "description": "Conversation between Tom Ashworth and the user"
+  },
+  "role": "llm"
+}

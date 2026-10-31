@@ -1,0 +1,25 @@
+{
+  "candidate_id": "ollama-qwen25-3b",
+  "completion_tokens": 153,
+  "frame_id": "f002_doc",
+  "latency_s": 18.427092,
+  "output": {
+    "activity_type": "user_engagement",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "dwell_seconds: 45",
+        "kind": "activity",
+        "text": "User engaged with the 'Internal Onboarding Guide \u2014 Section 3' for 45 seconds"
+      },
+      {
+        "assertion": "observed",
+        "evidence_snippet": "line_changes: 2",
+        "kind": "activity",
+        "text": "User made 2 line changes to the 'Internal Onboarding Guide \u2014 Section 3'"
+      }
+    ],
+    "description": "User engagement with a specific section of an app"
+  },
+  "role": "llm"
+}

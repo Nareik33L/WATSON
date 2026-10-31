@@ -1,0 +1,25 @@
+{
+  "candidate_id": "ollama-qwen25-3b",
+  "completion_tokens": 173,
+  "frame_id": "f004_ide",
+  "latency_s": 19.790935,
+  "output": {
+    "activity_type": "observation",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "def extract_frame(path):\n    sidecar = load_ocr(path)\n    return Frame(text=sidecar.text)",
+        "kind": "activity",
+        "text": "User observed the code for the `extract_frame` function in the `watson/pipeline/extraction.py` file."
+      },
+      {
+        "assertion": "observed",
+        "evidence_snippet": "line_changes: 2",
+        "kind": "outcome",
+        "text": "User observed 2 line changes in the `extract_frame` function."
+      }
+    ],
+    "description": "Observation of code activity in the IDE application for the extraction.py file."
+  },
+  "role": "llm"
+}

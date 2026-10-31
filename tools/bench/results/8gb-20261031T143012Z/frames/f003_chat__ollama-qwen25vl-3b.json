@@ -1,0 +1,13 @@
+{
+  "candidate_id": "ollama-qwen25vl-3b",
+  "completion_tokens": 97,
+  "frame_id": "f003_chat",
+  "latency_s": 11.938968,
+  "output": {
+    "app_guess": "Chat Application",
+    "ui_description": "A chat conversation between two individuals, Tom Ashworth and an unnamed person, discussing a revised deck and flagging risks in Q4.",
+    "visible_text": "Chat Delivery Tom Ashworth\nTom Ashworth: agreed, 14 Nov works\nYou: I will send the revised deck\nTom Ashworth: thanks flag risks in Q4",
+    "visual_density": "text"
+  },
+  "role": "vlm"
+}

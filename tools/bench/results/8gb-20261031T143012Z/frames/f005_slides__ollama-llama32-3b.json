@@ -1,0 +1,19 @@
+{
+  "candidate_id": "ollama-llama32-3b",
+  "completion_tokens": 68,
+  "frame_id": "f005_slides",
+  "latency_s": 8.136433,
+  "output": {
+    "activity_type": "activity",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "dwell_seconds: 45",
+        "kind": "activity",
+        "text": "The Keynote activity had a dwell time of 45 seconds"
+      }
+    ],
+    "description": "Observation of Keynote activity"
+  },
+  "role": "llm"
+}

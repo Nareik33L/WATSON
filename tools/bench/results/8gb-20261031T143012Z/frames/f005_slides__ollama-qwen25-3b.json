@@ -1,0 +1,31 @@
+{
+  "candidate_id": "ollama-qwen25-3b",
+  "completion_tokens": 216,
+  "frame_id": "f005_slides",
+  "latency_s": 25.439729,
+  "output": {
+    "activity_type": "user_interaction",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "User viewed a slide titled 'Risks' in the Keynote app (com.example.slides)",
+        "kind": "activity",
+        "text": "User viewed a slide in the Keynote app"
+      },
+      {
+        "assertion": "observed",
+        "evidence_snippet": "User viewed the 'Risks' slide for 45 seconds",
+        "kind": "activity",
+        "text": "User interacted with a slide that had 45 seconds of dwell time"
+      },
+      {
+        "assertion": "observed",
+        "evidence_snippet": "User viewed the 'Risks' slide with 2 line changes",
+        "kind": "activity",
+        "text": "User interacted with a slide that had 2 line changes"
+      }
+    ],
+    "description": "User interaction with a presentation slide"
+  },
+  "role": "llm"
+}

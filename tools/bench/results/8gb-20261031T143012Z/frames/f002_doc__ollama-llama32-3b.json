@@ -1,0 +1,25 @@
+{
+  "candidate_id": "ollama-llama32-3b",
+  "completion_tokens": 130,
+  "frame_id": "f002_doc",
+  "latency_s": 15.902965,
+  "output": {
+    "activity_type": "activity",
+    "claims": [
+      {
+        "assertion": "observed",
+        "evidence_snippet": "dwell_seconds: 45",
+        "kind": "outcome",
+        "text": "The document has been viewed for 45 seconds."
+      },
+      {
+        "assertion": "observed",
+        "evidence_snippet": "line_changes: 2",
+        "kind": "activity",
+        "text": "The document has undergone 2 line changes."
+      }
+    ],
+    "description": "Internal Onboarding Guide \u2014 Section 3"
+  },
+  "role": "llm"
+}
