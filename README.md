@@ -45,3 +45,5 @@ uv run watson-bench run --profile 8gb --runtime ollama --report
 ## Engineering plan
 
 Architecture decisions D1–D12, repository layout, and milestones are defined in [docs/WATSON_V1_ENGINEERING_PLAN.md](docs/WATSON_V1_ENGINEERING_PLAN.md) (Revision 2). Database encryption (§14 #4) is recorded in [docs/decisions/0004-db-encryption.md](docs/decisions/0004-db-encryption.md).
+
+The release ladder (V1 personal build → V1.5 distribution → V2 meeting intelligence) is in [docs/ROADMAP.md](docs/ROADMAP.md). The V2 audio/meeting plan is [docs/WATSON_V2_AUDIO_MEETINGS_PLAN.md](docs/WATSON_V2_AUDIO_MEETINGS_PLAN.md).

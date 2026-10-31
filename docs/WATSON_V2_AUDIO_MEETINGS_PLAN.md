@@ -1,23 +1,23 @@
-# WATSON V1.1 — Audio Processing & Meeting Intelligence: Engineering Plan (Revision 2)
+# WATSON V2 — Audio Processing & Meeting Intelligence: Engineering Plan (Revision 2)
 
-**Supersedes:** WATSON V1.1 Product Scope — Audio Processing & Meeting Intelligence (v1.1, proposed)
+**Supersedes:** WATSON Product Scope — Audio Processing & Meeting Intelligence (originally numbered "V1.1", proposed). Renumbered **V2** per `docs/ROADMAP.md`: V1 is the personal build, V1.5 is distribution, V2 adds meetings.
 **Depends on:** `WATSON_V1_ENGINEERING_PLAN.md` (Revision 2) — the claims/evidence memory model, retention tiers, job queue, runtime adapters, replay harness and eval gates defined there are reused, not duplicated.
 **Status:** Proposed engineering baseline
 
-The product scope, retention policy, exclusions and acceptance criteria of the v1.1 document stand. This plan changes how it is built so that meetings are a *second source* into the existing memory engine rather than a parallel subsystem, and it closes several gaps the scope does not address: long transcripts that exceed a local model's context, speaker attribution without diarization, Whisper's well-known hallucination modes, audio decoding without a bundled ffmpeg, and the fact that the imported file is a copy of a recording the employee still holds elsewhere.
+The product scope, retention policy, exclusions and acceptance criteria of the original scope document stand. This plan changes how it is built so that meetings are a *second source* into the existing memory engine rather than a parallel subsystem, and it closes several gaps the scope does not address: long transcripts that exceed a local model's context, speaker attribution without diarization, Whisper's well-known hallucination modes, audio decoding without a bundled ffmpeg, and the fact that the imported file is a copy of a recording the employee still holds elsewhere.
 
 ---
 
-## 0. Summary of changes from the v1.1 scope
+## 0. Summary of changes from the original scope
 
-| Area | v1.1 scope | Revision 2 | Why |
+| Area | Original scope | Revision 2 | Why |
 |---|---|---|---|
 | Position in architecture | New "meeting processor" with its own summaries | Meetings are a **source** producing segments → observations → **claims + evidence**, like screen capture | One memory model, one search, one correction loop, one deletion path; weekly reports and Ask WATSON get meetings for free |
 | When audio is deleted | After summarisation and persistence (step 9) | **As soon as the transcript is durably persisted** | Audio is the most sensitive artefact; the transcript is sufficient to retry every later stage |
 | Transcript retention | Delete after successful processing | Delete after summary persisted (default), with an **opt-in tier-2 grace window** identical to screen text | Lets a user who corrects a summary ask for re-summarisation; default remains immediate deletion |
 | Evidence | "Summary, key points" | Each claim carries **≤ 200-char verbatim quote with `start_ms–end_ms`** | Provenance without a transcript archive; "where did this come from?" has an answer |
 | Long meetings | Not addressed | **Chunked map-reduce** extraction (~10-min windows with overlap) then cross-chunk consolidation | A one-hour meeting is 12k+ tokens; local models have 8k–32k contexts and degrade long before the limit |
-| Speaker attribution | "Participants where reliably identifiable" | **No automatic diarization in V1.1.** Participants are user-entered or explicitly named in speech; first-person commitments are `unconfirmed` owner until the user confirms "that was me" | Local diarization (pyannote) is heavy, PyTorch-based and gated behind an online account; unreliable attribution is worse than none |
+| Speaker attribution | "Participants where reliably identifiable" | **No automatic diarization in V2.** Participants are user-entered or explicitly named in speech; first-person commitments are `unconfirmed` owner until the user confirms "that was me" | Local diarization (pyannote) is heavy, PyTorch-based and gated behind an online account; unreliable attribution is worse than none |
 | Transcription engine | "Whisper" | `TranscriptionRuntime` adapter; **whisper.cpp (Core ML/Metal) or mlx-whisper** chosen by bake-off; openai-whisper (PyTorch) excluded from the package | PyTorch adds >1 GB and no Metal acceleration path we would ship; whisper.cpp/MLX are fast and bundle cleanly |
 | Hallucination control | Not addressed | **VAD pre-pass**, no-speech/compression-ratio gating, repetition-loop detection, silence fixture in CI | Whisper invents text on silence and music ("Thanks for watching") and loops on long files |
 | Audio decoding | Implicit (ffmpeg) | **AVFoundation via the Swift helper** → 16 kHz mono PCM | No ffmpeg to bundle/license; handles m4a, mp3, mp4, mov, caf, aiff, wav natively |
@@ -65,13 +65,13 @@ Without diarization the model cannot know who said "I'll send the pricing by Fri
 - A commitment's `owner` is set only when the transcript names the owner ("Priya will…", "can you, Tom, …" followed by assent). First-person commitments get `owner = unknown_speaker`, `assertion = unconfirmed`, and the Meetings page shows "Was this you?" with one-click confirm → `user_confirmed`, owner = employee.
 - Decisions require explicit agreement language; proposals and open questions are classified as `discussion_point`, not `decision`.
 
-Speaker diarization is recorded as an open decision for V1.2, with the pyannote licensing/online-gating constraint noted.
+Speaker diarization is recorded as an open decision for V2.1, with the pyannote licensing/online-gating constraint noted.
 
 ### A5 — Whisper via adapter; whisper.cpp or MLX in the package
 
 `intelligence/runtime/transcription.py` defines `TranscriptionRuntime.transcribe(pcm16k, language_hint) -> list[TranscriptSegment(start_ms, end_ms, text, avg_logprob, no_speech_prob, compression_ratio)]`. Implementations evaluated at the bake-off: `pywhispercpp` (whisper.cpp with Core ML encoder and Metal), `mlx-whisper`, `faster-whisper` (CTranslate2, CPU-only on macOS, as fallback). Apple's on-device `SFSpeechRecognizer`/`SpeechAnalyzer` is listed as a future adapter but not relied upon because of locale/version constraints.
 
-Model sizes are configuration; the bake-off chooses a default (expected: a `large-v3-turbo`-class model on 24 GB+, `small`/`medium` on 16 GB) and records real-time factor, WER on fixtures and peak RSS.
+Model sizes are configuration; the bake-off chooses a default per RAM profile (expected: `base`/`small`-class on the 8 GB V1 machine, `small`/`medium` on 16 GB, a `large-v3-turbo`-class model on 24 GB+) and records real-time factor, WER on fixtures and peak RSS. On 8 GB, Whisper and the LLM cannot be resident together, so the pipeline must fully unload the transcription model before summarising; V2 therefore depends on the sequential-loading governance delivered in V1 M7.
 
 ### A6 — Hallucination and quality gating
 
@@ -80,11 +80,11 @@ After transcription: segments with `no_speech_prob > 0.6` or `compression_ratio 
 
 ### A7 — Decoding in the Swift helper
 
-`watson-capture` gains an `audio decode <in> <out.pcm>` subcommand using AVFoundation/`AVAssetReader` to produce 16 kHz mono 16-bit PCM and emit duration, channel count, codec and embedded creation date (used as the default meeting date). This avoids bundling ffmpeg, stays under the same code signature, and supports every container macOS can play. Stereo recordings are downmixed; multichannel files preserve per-channel transcription only if a future diarization-by-channel feature needs it (not in V1.1).
+`watson-capture` gains an `audio decode <in> <out.pcm>` subcommand using AVFoundation/`AVAssetReader` to produce 16 kHz mono 16-bit PCM and emit duration, channel count, codec and embedded creation date (used as the default meeting date). This avoids bundling ffmpeg, stays under the same code signature, and supports every container macOS can play. Stereo recordings are downmixed; multichannel files preserve per-channel transcription only if a future diarization-by-channel feature needs it (not in V2).
 
 ### A8 — Scheduling and resource governance
 
-Meeting jobs run in the existing inference worker with **lower priority than live frame extraction** and never concurrently with the VLM (memory). Whisper and the LLM are loaded sequentially, not together, on 16 GB. Progress is reported per stage with percentage (VAD chunk count gives transcription progress; chunk count gives summarisation progress). Battery/thermal policy defers meeting processing to AC power unless the user forces it.
+Meeting jobs run in the existing inference worker with **lower priority than live frame extraction** and never concurrently with the VLM (memory). Whisper and the LLM are loaded sequentially, not together, on every profile up to 16 GB. Progress is reported per stage with percentage (VAD chunk count gives transcription progress; chunk count gives summarisation progress). Battery/thermal policy defers meeting processing to AC power unless the user forces it.
 
 ---
 
@@ -192,7 +192,7 @@ Fixtures are generated on a Mac and committed as audio plus transcripts so Linux
 
 | Metric | Target |
 |---|---|
-| WER on scripted fixtures (chosen model, 16 GB config) | ≤ 15 % (TTS audio; real speech will be worse and is dogfooded) |
+| WER on scripted fixtures (chosen model, 8 GB profile) | ≤ 20 % ; 16 GB profile ≤ 15 % (TTS audio; real speech will be worse and is dogfooded) |
 | Decisions precision / recall | ≥ 0.85 / ≥ 0.70 |
 | Commitments precision / recall | ≥ 0.85 / ≥ 0.70 |
 | Commitment owner correct when explicit; `unconfirmed` when not | ≥ 0.90 ; 100 % |
@@ -223,7 +223,7 @@ Before the milestone closes, the developer processes several recordings of ficti
 ### A0 — Transcription bake-off and decoding spike (parallel with Rev 2 M0)
 
 Benchmark `pywhispercpp`, `mlx-whisper`, `faster-whisper` on the fixtures at two model sizes: real-time factor, WER, peak RSS, load time. Add `audio decode` to the Swift helper and verify output on m4a/mp3/mp4/mov/wav.
-*Acceptance:* benchmark report with recommended default and 16 GB fallback; decoder round-trips all fixture formats.
+*Acceptance:* benchmark report with recommended default per RAM profile (8 GB first); decoder round-trips all fixture formats.
 
 ### A1 — Pipeline on fixtures (after Rev 2 M3)
 
@@ -235,10 +235,10 @@ Adapter, VAD, gating, chunked extraction, consolidation, linking, retention, del
 Import flow with consent attestation, list/detail, "Was this you?", edit/versions, deletion, status surfaces.
 *Acceptance:* a fixture imported through the UI reaches "Completed — temporary files deleted"; edits persist; deletion removes all derived rows and re-renders affected reports.
 
-### A3 — Hardening and packaging (with Rev 2 M7)
+### A3 — Hardening (personal use), then packaging (with V1.5)
 
-Worker scheduling and memory governance with VLM/LLM, battery/thermal policy, failure injection suite, packaged runtime and model manifest, IT pack additions (model inventory, decoding/transcription data flow, microphone-absence evidence, deletion semantics).
-*Acceptance:* packaged offline build processes the 90-minute fixture on a 16 GB test machine within 15 minutes with the UI responsive; privacy and failure suites pass against the package.
+Worker scheduling and memory governance with the LLM (sequential loading on 8 GB), battery/thermal policy, failure injection suite, daily dogfooding on the author's real recordings; then, as part of V1.5 distribution, packaged runtime and model manifest and IT pack additions (model inventory, decoding/transcription data flow, microphone-absence evidence, deletion semantics).
+*Acceptance:* the author has processed ten real authorised recordings on the 8 GB Mac with the UI responsive and every one reaching "Completed — temporary files deleted"; the 90-minute fixture completes within 25 minutes on 8 GB (15 minutes on the 16 GB profile); privacy and failure suites pass, and against the packaged binary once V1.5 exists.
 
 ---
 
@@ -247,7 +247,7 @@ Worker scheduling and memory governance with VLM/LLM, battery/thermal policy, fa
 | Risk | Mitigation |
 |---|---|
 | Real-world audio (crosstalk, accents, laptop mics) far below fixture WER | Dogfood early; expose confidence gating stats; "Uncertainties" section; model size configurable |
-| Users expect "who said what" | Explicit A4 behaviour in the UI; participants field at import; diarization tracked for V1.2 |
+| Users expect "who said what" | Explicit A4 behaviour in the UI; participants field at import; diarization tracked for V2.1 |
 | Long meetings exhaust memory alongside live capture | Sequential model loading, priority below frame extraction, AC-power deferral |
 | Whisper hallucinated text becomes a "decision" | VAD + gating + quote verification + zero-invention gate |
 | Teams/Zoom cloud recordings include consent banners/chat exports the user forgets | Import is per-file with attestation; documentation on what to export and what WATSON ignores |
@@ -258,9 +258,9 @@ Worker scheduling and memory governance with VLM/LLM, battery/thermal policy, fa
 | # | Decision | Decide at |
 |---|---|---|
 | 1 | whisper.cpp vs mlx-whisper default; model sizes per RAM tier | A0 |
-| 2 | Transcript grace window: offer at all in V1.1, or defer | A1, after seeing how often re-summarisation is wanted |
+| 2 | Transcript grace window: offer at all in V2, or defer | A1, after seeing how often re-summarisation is wanted |
 | 3 | Minimum macOS for AVFoundation path (aligns with Rev 2 decision 5) | A0 |
-| 4 | Diarization in V1.2 and acceptable licensing/offline constraints | after V1.1 |
+| 4 | Diarization in V2.1 and acceptable licensing/offline constraints | after V2 |
 | 5 | Supported maximum duration/size defaults | A1 benchmarks |
 
 ## 12. Immediate next steps
