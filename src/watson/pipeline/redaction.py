@@ -6,6 +6,7 @@ This module is deterministic and has no network I/O.
 
 from __future__ import annotations
 
+import datetime
 import math
 import re
 from dataclasses import dataclass
@@ -43,18 +44,33 @@ _NATIONAL_ID_COMPACT = re.compile(r"\b\d{6}[- ]?\d{4,6}\b")
 _NINO = re.compile(
     r"\b([A-Za-z]{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*[A-Da-d])\b"
 )
-# Compact 4–8 digits, or common splits (3+3, 4+4, 2+2+2, 4+2). Optional G- prefix.
-# ISO YYYY-MM-DD is skipped separately so 4+2 does not eat 2026-11-03.
+# Compact 4–8 digits, or common splits (3+3, 4+4, 2+2+2, 4+2, YYYY-MM-DD shape).
 _OTP_TOKEN = re.compile(
     r"(?i)(?<![A-Za-z0-9])(?:[A-Z]-)?(?:"
-    r"\d{2}[ \t/-]\d{2}[ \t/-]\d{2}(?![0-9])"
+    r"\d{4}[ \t/-]\d{1,2}[ \t/-]\d{1,2}(?![0-9])"
+    r"|\d{2}[ \t/-]\d{2}[ \t/-]\d{2}(?![0-9])"
     r"|\d{3}[ \t/-]\d{3}(?![0-9])"
     r"|\d{4}[ \t/-]\d{4}(?![0-9])"
     r"|\d{4}[ \t/-]\d{2}(?![0-9])"
     r"|\d{4,8}(?![0-9/-])"
     r")"
 )
-_ISO_DATE = re.compile(r"(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])")
+_ISO_DATE = re.compile(
+    r"(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])(?![0-9])"
+)
+_YEAR_MONTH = re.compile(r"(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])\Z")
+_OTP_STRONG_HINTS = frozenset(
+    {
+        "pin",
+        "pins",
+        "passcode",
+        "passcodes",
+        "otp",
+        "2fa",
+        "verification",
+        "confirmation",
+    }
+)
 _OTP_ORDINARY_PREFIX = frozenset(
     {"line", "lines", "invoice", "invoices", "room", "po", "amount", "section"}
 )
@@ -266,8 +282,6 @@ def _redact_otps(text: str) -> str:
             and text[match.start() - 2].isdigit()
         ):
             continue
-        if _ISO_DATE.match(text, match.start()):
-            continue
         if not _otp_related(text, match.start(), match.end()):
             continue
         pieces.append(text[last : match.start()])
@@ -278,7 +292,7 @@ def _redact_otps(text: str) -> str:
 
 
 def _otp_related(text: str, start: int, end: int) -> bool:
-    """A keyword/label wins; year-like keep only for unlabelled follow-on words."""
+    """Label/hint wins. Real unlabelled calendar dates are not OTPs."""
     raw = text[start:end]
     line_start = text.rfind("\n", 0, start) + 1
     newline_at = text.find("\n", end)
@@ -301,16 +315,11 @@ def _otp_related(text: str, start: int, end: int) -> bool:
         prev_end = line_start - 1
         prev_start = text.rfind("\n", 0, prev_end) + 1
         labelled = _previous_line_is_otp_label(text[prev_start:prev_end])
+    if _is_real_calendar_date(raw):
+        return labelled
     if not labelled:
         return False
-    # Year/date exemption: compact 19xx/20xx followed by a non-hint word (2026 roadmap).
-    # Grouped forms and end-of-line / next-line labelled codes always redact.
-    if (
-        not _is_grouped_otp(raw)
-        and _year_like(raw)
-        and _nonfiller_follows(after)
-        and not _window_has_hint(after)
-    ):
+    if _YEAR_MONTH.fullmatch(raw) and not _has_strong_hint(before, after):
         return False
     return True
 
@@ -322,17 +331,20 @@ def _otp_tokens(fragment: str) -> list[str]:
     ]
 
 
-def _is_grouped_otp(raw: str) -> bool:
-    return any(char in raw for char in " \t/-")
+def _is_real_calendar_date(raw: str) -> bool:
+    """True only for a full, valid civil date. Invalid day/month is not a date."""
+    if _ISO_DATE.fullmatch(raw) is None:
+        return False
+    year_s, month_s, day_s = re.split(r"[-/]", raw)
+    try:
+        datetime.date(int(year_s), int(month_s), int(day_s))
+    except ValueError:
+        return False
+    return True
 
 
-def _year_like(raw: str) -> bool:
-    digits = "".join(char for char in raw if char.isdigit())
-    return len(digits) >= 4 and digits.startswith(("19", "20"))
-
-
-def _nonfiller_follows(after: list[str]) -> bool:
-    return any(word not in _OTP_FILLERS for word in after)
+def _has_strong_hint(before: list[str], after: list[str]) -> bool:
+    return any(word in _OTP_STRONG_HINTS for word in (*before, *after))
 
 
 def _ticket_number(line: str, local_start: int) -> bool:
@@ -386,6 +398,7 @@ def _window_has_hint(toward: list[str]) -> bool:
             or passed_suffix
             or nxt in _OTP_FALSE_SUFFIX
             or nxt in _OTP_FALSE_PREFIX
+            or "of" in toward[:index]
         ):
             return False
         if word in {"pin", "pins"} and toward[:index] and toward[0] in {"the", "a", "this", "that"}:

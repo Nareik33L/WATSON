@@ -217,7 +217,7 @@ OTP_CORPUS: list[tuple[str, str, str]] = [
     ),
     ("issue 1234 assigned", "issue 1234 assigned", "keep: issue ticket"),
     ("ticket 482913 filed", "ticket 482913 filed", "keep: ticket id"),
-    ("Code: 2026 roadmap", "Code: 2026 roadmap", "keep: year, date-like"),
+    ("Code: 2026 roadmap", "Code: [OTP] roadmap", "r6: labelled year is OTP"),
     ("code 1234 lines", "code 1234 lines", "keep: code N lines"),
     ("code coverage is 1234", "code coverage is 1234", "keep: code coverage"),
     ("code style 1234", "code style 1234", "keep: code style"),
@@ -254,6 +254,64 @@ OTP_CORPUS: list[tuple[str, str, str]] = [
         "r5 fp: room number",
     ),
     ("See code at line 4821", "See code at line 4821", "r5 fp: line ref"),
+    # Round 6: labelled year-like codes with trailing text must still redact
+    (
+        "Your code: 2026 expires soon",
+        "Your code: [OTP] expires soon",
+        "r6: year-like + trailing words",
+    ),
+    (
+        "Your PIN is 1987 do not share",
+        "Your PIN is [OTP] do not share",
+        "r6: PIN is year-like + trailing",
+    ),
+    (
+        "Verification code 2019 valid for 10 minutes",
+        "Verification code [OTP] valid for 10 minutes",
+        "r6: verification + validity text",
+    ),
+    (
+        "Code: 2024 (expires in 5 min)",
+        "Code: [OTP] (expires in 5 min)",
+        "r6: year-like + parenthetical",
+    ),
+    (
+        "Your code is 2024, valid 10 min",
+        "Your code is [OTP], valid 10 min",
+        "r6: year-like + comma clause",
+    ),
+    ("Passcode: 2001 thanks", "Passcode: [OTP] thanks", "r6: passcode + trailing word"),
+    ("PIN 1987 OK", "PIN [OTP] OK", "r6: PIN + trailing word"),
+    (
+        "Your WhatsApp code: 2019 expires",
+        "Your WhatsApp code: [OTP] expires",
+        "r6: brand + year-like + trailing",
+    ),
+    (
+        "Your Instagram code is 2031 – valid 10 min",
+        "Your Instagram code is [OTP] – valid 10 min",
+        "r6: brand + dash clause",
+    ),
+    (
+        "Your code\n2024 expires in 5 min",
+        "Your code\n[OTP] expires in 5 min",
+        "r6: next-line year-like + trailing",
+    ),
+    (
+        "Your code is\n2019 (valid 10 min)",
+        "Your code is\n[OTP] (valid 10 min)",
+        "r6: 'is' label line + trailing",
+    ),
+    # Round 6: ISO-date exemption must only match real calendar dates
+    ("Your code: 2019-04-82", "Your code: [OTP]", "r6: invalid day is not a date"),
+    ("Your code: 2019-02-30", "Your code: [OTP]", "r6: impossible date is not a date"),
+    # Round 6 false-positive nits (optional)
+    (
+        "Codes of conduct updated 2025",
+        "Codes of conduct updated 2025",
+        "r6 fp: year after 'codes of conduct'",
+    ),
+    ("code 2026-11", "code 2026-11", "r6 fp: year-month after code"),
 ]
 
 
