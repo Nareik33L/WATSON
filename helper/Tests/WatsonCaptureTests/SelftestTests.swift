@@ -71,11 +71,7 @@ final class SelftestTests: XCTestCase {
         let outcome = await inflight
         XCTAssertEqual(outcome, .skipped(.paused, afterCapture: true))
         XCTAssertEqual(state.snapshot().written, 0)
-        let day = try? dayDir(spool)
-        if let day {
-            let leftover = try FileManager.default.contentsOfDirectory(at: day, includingPropertiesForKeys: nil)
-            XCTAssertTrue(leftover.filter { $0.pathExtension == "png" || $0.pathExtension == "json" }.isEmpty)
-        }
+        XCTAssertEqual(frameFiles(under: spool).count, 0)
         let drop = try XCTUnwrap(box.snapshot().compactMap { parseEvent($0) }.first {
             $0["event"] as? String == "skipped" && $0["after_capture"] as? Bool == true
         })
