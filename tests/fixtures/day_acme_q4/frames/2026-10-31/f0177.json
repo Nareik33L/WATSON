@@ -1,0 +1,209 @@
+{
+  "frame_id": "f0177",
+  "captured_at": "2026-10-31T15:54:00+00:00",
+  "display_id": 1,
+  "bundle_id": "com.lumen.anvil",
+  "app_name": "Lumen Anvil",
+  "window_title": "anvil \u2014 proposals/acme_q4.md",
+  "window_id": 2601,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Anvil \u2014 anvil \u2014 proposals/acme_q4.md",
+        "bbox": [
+          66,
+          9,
+          305,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:54",
+        "bbox": [
+          1233,
+          10,
+          35,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "LUMEN-DELIVERY",
+        "bbox": [
+          14,
+          48,
+          191,
+          15
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "proposals/acme_q4.md",
+        "bbox": [
+          0,
+          71,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "rates/published.yaml",
+        "bbox": [
+          0,
+          104,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "README.md",
+        "bbox": [
+          0,
+          137,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "proposals/acme_q4.md",
+        "bbox": [
+          234,
+          46,
+          151,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "markdown",
+        "bbox": [
+          395,
+          46,
+          74,
+          19
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "1",
+        "bbox": [
+          220,
+          88,
+          48,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "# Acme Q4 notes",
+        "bbox": [
+          268,
+          88,
+          117,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "2",
+        "bbox": [
+          220,
+          106,
+          48,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "3",
+        "bbox": [
+          220,
+          124,
+          48,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Demo: 14 Nov (agreed with Tom Ashworth).",
+        "bbox": [
+          268,
+          124,
+          313,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "4",
+        "bbox": [
+          220,
+          143,
+          48,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Card: published three-tier rate card, Current 18500.",
+        "bbox": [
+          268,
+          143,
+          407,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "5",
+        "bbox": [
+          220,
+          161,
+          48,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "TODO: finish Q4 delivery risks appendix.",
+        "bbox": [
+          268,
+          161,
+          313,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "anvil: opened proposals/acme_q4.md",
+        "bbox": [
+          232,
+          200,
+          1036,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "anvil: no tests in this tree",
+        "bbox": [
+          232,
+          217,
+          1036,
+          17
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "20a8400000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

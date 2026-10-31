@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block css %}
+.tabs { display: flex; gap: 4px; padding: 6px 8px 0; background: #c9cdd3; }
+.tab { padding: 6px 12px; background: #dfe2e7; border-radius: 8px 8px 0 0; max-width: 220px; }
+.tab.active { background: #fff; }
+.omnibox { height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid #d5d8de; }
+.lock { width: 10px; height: 10px; border-radius: 2px; background: #3d8a55; }
+.page { padding: 22px 40px; overflow: hidden; }
+.page h1 { margin: 0 0 8px; font-size: 24px; }
+.kicker { color: #5c6570; margin-bottom: 12px; }
+.event { display: flex; gap: 16px; padding: 8px 0; border-bottom: 1px solid #eceff3; }
+.personal { background: #fff6e8; }
+{% endblock %}
+{% block app %}
+<div class="app" style="flex-direction: column;">
+  <div class="tabs">
+    {% for tab in content.tabs %}
+    <div class="tab{% if tab.active %} active{% endif %} ocr" data-ocr>{{ tab.title }}</div>
+    {% endfor %}
+  </div>
+  <div class="omnibox">
+    <div class="lock" aria-hidden="true"></div>
+    <div class="ocr" data-ocr>{{ content.address }}</div>
+  </div>
+  <section class="main page">
+    <div class="kicker ocr" data-ocr>{{ content.kicker }}</div>
+    <h1 class="ocr" data-ocr>{{ content.page_title }}</h1>
+    {% if content.badge %}
+    <div class="badge ok ocr" data-ocr>{{ content.badge }}</div>
+    {% endif %}
+    {% if content.kind == "calendar" %}
+      {% for event in content.events %}
+      <div class="event{% if event.personal %} personal{% endif %}">
+        <div class="ocr" data-ocr>{{ event.time }}</div>
+        <div class="ocr" data-ocr>{{ event.title }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      {% for para in content.paragraphs %}
+      <p class="wrap ocr" data-ocr>{{ para }}</p>
+      {% endfor %}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

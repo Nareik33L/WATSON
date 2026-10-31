@@ -65,7 +65,7 @@ Each captured frame writes `<spool>/<yyyy-MM-dd>/<frame_id>.png` and `<frame_id>
 | `ocr.lines[].confidence` | number | 0…1 |
 | `phash` | string | 16 lowercase hex chars; 64-bit average hash |
 | `width`, `height` | number | PNG pixel size |
-| `capture_mode` | string | `"frontmost"` (D1) or `"selftest"` |
+| `capture_mode` | string | `"frontmost"` (D1), `"selftest"`, or `"fixture"` (synthetic frames from `tools/fixture_gen`) |
 
 Skipped frames are **not** written. They appear only as stdout `skipped` events.
 

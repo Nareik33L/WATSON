@@ -1,0 +1,239 @@
+{
+  "frame_id": "f0024",
+  "captured_at": "2026-10-31T09:38:00+00:00",
+  "display_id": 1,
+  "bundle_id": "com.lumen.quill",
+  "app_name": "Lumen Quill",
+  "window_title": "Acme Q4 Proposal \u2014 Draft",
+  "window_id": 2201,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Quill \u2014 Acme Q4 Proposal \u2014 Draft",
+        "bbox": [
+          66,
+          9,
+          271,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:38",
+        "bbox": [
+          1233,
+          10,
+          35,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          191,
+          15
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-Q4-Proposal.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          191,
+          15
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          0,
+          128,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open questions",
+        "bbox": [
+          0,
+          161,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-Q4-Proposal.quill",
+        "bbox": [
+          276,
+          46,
+          151,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          437,
+          46,
+          44,
+          19
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          491,
+          46,
+          75,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme Q4 Proposal",
+        "bbox": [
+          276,
+          94,
+          708,
+          36
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft for Lumen Delivery \u00b7 owner you",
+        "bbox": [
+          276,
+          136,
+          708,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          276,
+          189,
+          708,
+          22
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "This draft sets out how Lumen Delivery will run the Acme Q4 rollout, including discovery, the live demo, and a priced statement of work.",
+        "bbox": [
+          276,
+          218,
+          708,
+          42
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Audience: Priya Natarajan (Acme Procurement) and the Lumen delivery lead Tom Ashworth.",
+        "bbox": [
+          276,
+          268,
+          708,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open questions",
+        "bbox": [
+          276,
+          313,
+          708,
+          22
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Demo date is still the week of 7 Nov in this draft \u2014 Priya asked for 14 Nov this morning.",
+        "bbox": [
+          276,
+          341,
+          708,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pricing table is a placeholder. Do not send until Tom confirms the rate card.",
+        "bbox": [
+          276,
+          370,
+          708,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          211,
+          15
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya asked for 14 Nov",
+        "bbox": [
+          1041,
+          73,
+          239,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pricing still a placeholder",
+        "bbox": [
+          1041,
+          106,
+          239,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Keep this as the focus of the day",
+        "bbox": [
+          1041,
+          139,
+          239,
+          33
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "2242222402020202",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

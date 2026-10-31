@@ -1,0 +1,139 @@
+{
+  "frame_id": "f0123",
+  "captured_at": "2026-10-31T14:30:00+00:00",
+  "display_id": 1,
+  "bundle_id": "com.lumen.compass",
+  "app_name": "Lumen Compass",
+  "window_title": "Pocket Calendar \u2014 Today",
+  "window_id": 2402,
+  "is_private_browsing": false,
+  "url": "https://calendar.pocket.example/today",
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Compass \u2014 Pocket Calendar \u2014 Today",
+        "bbox": [
+          66,
+          9,
+          293,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "14:30",
+        "bbox": [
+          1233,
+          10,
+          35,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pocket Calendar",
+        "bbox": [
+          8,
+          42,
+          145,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://calendar.pocket.example/today",
+        "bbox": [
+          32,
+          84,
+          290,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pocket Calendar \u00b7 personal",
+        "bbox": [
+          40,
+          137,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Today \u2014 Sat 31 Oct",
+        "bbox": [
+          40,
+          170,
+          1200,
+          34
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "12:00",
+        "bbox": [
+          40,
+          220,
+          43,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Lunch (already passed)",
+        "bbox": [
+          99,
+          220,
+          175,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "17:30",
+        "bbox": [
+          40,
+          258,
+          43,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Piano lesson \u2014 Rowan Vale",
+        "bbox": [
+          99,
+          258,
+          204,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "19:00",
+        "bbox": [
+          40,
+          296,
+          43,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Library hold expires",
+        "bbox": [
+          99,
+          296,
+          149,
+          21
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "8000000000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

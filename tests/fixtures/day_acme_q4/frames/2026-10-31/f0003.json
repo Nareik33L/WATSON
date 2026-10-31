@@ -1,0 +1,269 @@
+{
+  "frame_id": "f0003",
+  "captured_at": "2026-10-31T09:01:15+00:00",
+  "display_id": 1,
+  "bundle_id": "com.lumen.mail",
+  "app_name": "Lumen Mail",
+  "window_title": "Re: Acme Q4 Proposal \u2014 Priya Natarajan",
+  "window_id": 2101,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Mail \u2014 Re: Acme Q4 Proposal \u2014 Priya Natarajan",
+        "bbox": [
+          66,
+          9,
+          361,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:01",
+        "bbox": [
+          1233,
+          10,
+          35,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FOLDERS",
+        "bbox": [
+          14,
+          48,
+          191,
+          15
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Inbox",
+        "bbox": [
+          0,
+          71,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Sent",
+        "bbox": [
+          0,
+          104,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Drafts",
+        "bbox": [
+          0,
+          137,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "ACCOUNT",
+        "bbox": [
+          14,
+          170,
+          191,
+          15
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "you@lumen.example",
+        "bbox": [
+          0,
+          194,
+          219,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya Natarajan",
+        "bbox": [
+          232,
+          46,
+          275,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Re: Acme Q4 Proposal",
+        "bbox": [
+          232,
+          67,
+          275,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "08:41 \u00b7 Can we move the demo to 14 Nov?",
+        "bbox": [
+          232,
+          88,
+          275,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          232,
+          126,
+          275,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Standup notes",
+        "bbox": [
+          232,
+          147,
+          275,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "08:12 \u00b7 Flag Q4 delivery risks in the appendix",
+        "bbox": [
+          232,
+          168,
+          275,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Lumen Desk",
+        "bbox": [
+          232,
+          206,
+          275,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Building access this afternoon",
+        "bbox": [
+          232,
+          227,
+          275,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "07:50 \u00b7 West stair closed until 16:00",
+        "bbox": [
+          232,
+          248,
+          275,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Re: Acme Q4 Proposal",
+        "bbox": [
+          540,
+          52,
+          720,
+          25
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "From: Priya Natarajan <priya@acme.example>",
+        "bbox": [
+          540,
+          85,
+          720,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "To: you@lumen.example",
+        "bbox": [
+          540,
+          106,
+          720,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Time: 08:41",
+        "bbox": [
+          540,
+          127,
+          720,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hello \u2014",
+        "bbox": [
+          540,
+          162,
+          720,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Can we move the demo to 14 Nov? The procurement panel is travelling the week of the 7th.",
+        "bbox": [
+          540,
+          191,
+          720,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Please send revised pricing by Friday so we can lock the Q4 statement of work.",
+        "bbox": [
+          540,
+          220,
+          720,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "\u2014 Priya Natarajan, Acme Procurement",
+        "bbox": [
+          540,
+          249,
+          720,
+          21
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "4000000000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

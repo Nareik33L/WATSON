@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block css %}
+.grid { border-collapse: collapse; width: 100%; }
+.grid th, .grid td {
+  border: 1px solid #d0d5dc;
+  padding: 6px 8px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.grid th { background: #eef2f6; font-size: 12px; }
+.grid td.sel { outline: 2px solid #3d6ea8; background: #e7eef8; }
+.formula { font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; }
+{% endblock %}
+{% block app %}
+<div class="app">
+  <aside class="sidebar">
+    <h2 class="ocr" data-ocr>Sheets</h2>
+    {% for sheet in content.sheets %}
+    <div class="nav-item{% if sheet == content.sheet %} active{% endif %} ocr" data-ocr>{{ sheet }}</div>
+    {% endfor %}
+    <h2 class="ocr" data-ocr>File</h2>
+    <div class="nav-item ocr" data-ocr>{{ content.filename }}</div>
+  </aside>
+  <section class="main">
+    <div class="toolbar">
+      <span class="ocr" data-ocr>{{ content.filename }}</span>
+      <span class="badge ocr" data-ocr>{{ content.sheet }}</span>
+      <span class="formula ocr" data-ocr>{{ content.formula }}</span>
+    </div>
+    <div style="padding: 10px 12px;">
+      <table class="grid">
+        <thead>
+          <tr>
+            {% for col in content.headers %}
+            <th class="ocr" data-ocr>{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in content.rows %}
+          {% set row_i = loop.index0 %}
+          <tr>
+            {% for cell in row %}
+            <td class="{% if row_i == content.selected[0] and loop.index0 == content.selected[1] %}sel {% endif %}ocr" data-ocr>{{ cell }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="wrap ocr" data-ocr style="margin-top: 12px;">{{ content.note }}</p>
+    </div>
+  </section>
+</div>
+{% endblock %}

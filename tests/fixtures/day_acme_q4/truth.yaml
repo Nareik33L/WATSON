@@ -1,0 +1,235 @@
+projects: [Acme Q4 Proposal, Internal Onboarding Guide]
+people: [Priya Natarajan (Acme), Tom Ashworth (Delivery)]
+decisions:
+- text: Agreed to move the Acme demo to 14 Nov
+  evidence_frames: [f0079, f0080, f0081, f0082, f0083, f0084, f0085, f0086]
+- text: Adopt the published three-tier rate card for Acme
+  evidence_frames: [f0084, f0085, f0086]
+commitments:
+- text: Send revised pricing to Priya by Friday
+  status: open
+- text: Flag Q4 delivery risks in the proposal appendix
+  status: open
+completed: [Onboarding Guide section 3 published]
+not_completed: [Acme proposal (still editing at day end)]
+noise: ['Cedar Daily 10:40–10:46', 'Pocket Calendar glance 14:30–14:33']
+expected_segments:
+- start: '2026-10-31T09:00:00+00:00'
+  end: '2026-10-31T09:06:00+00:00'
+  start_frame: f0001
+  end_frame: f0006
+  bundle_id: com.lumen.mail
+  window_title: 'Re: Acme Q4 Proposal — Priya Natarajan'
+  frame_ids: [f0001, f0002, f0003, f0004, f0005, f0006]
+- start: '2026-10-31T09:08:00+00:00'
+  end: '2026-10-31T10:38:00+00:00'
+  start_frame: f0007
+  end_frame: f0054
+  bundle_id: com.lumen.quill
+  window_title: Acme Q4 Proposal — Draft
+  frame_ids:
+  - f0007
+  - f0008
+  - f0009
+  - f0010
+  - f0011
+  - f0012
+  - f0013
+  - f0014
+  - f0015
+  - f0016
+  - f0017
+  - f0018
+  - f0019
+  - f0020
+  - f0021
+  - f0022
+  - f0023
+  - f0024
+  - f0025
+  - f0026
+  - f0027
+  - f0028
+  - f0029
+  - f0030
+  - f0031
+  - f0032
+  - f0033
+  - f0034
+  - f0035
+  - f0036
+  - f0037
+  - f0038
+  - f0039
+  - f0040
+  - f0041
+  - f0042
+  - f0043
+  - f0044
+  - f0045
+  - f0046
+  - f0047
+  - f0048
+  - f0049
+  - f0050
+  - f0051
+  - f0052
+  - f0053
+  - f0054
+- start: '2026-10-31T10:40:00+00:00'
+  end: '2026-10-31T10:44:00+00:00'
+  start_frame: f0055
+  end_frame: f0059
+  bundle_id: com.lumen.compass
+  window_title: Cedar Daily — Harbor ferry changes
+  frame_ids: [f0055, f0056, f0057, f0058, f0059]
+- start: '2026-10-31T10:46:00+00:00'
+  end: '2026-10-31T11:18:00+00:00'
+  start_frame: f0060
+  end_frame: f0078
+  bundle_id: com.lumen.quill
+  window_title: Acme Q4 Proposal — Draft
+  frame_ids:
+  - f0060
+  - f0061
+  - f0062
+  - f0063
+  - f0064
+  - f0065
+  - f0066
+  - f0067
+  - f0068
+  - f0069
+  - f0070
+  - f0071
+  - f0072
+  - f0073
+  - f0074
+  - f0075
+  - f0076
+  - f0077
+  - f0078
+- start: '2026-10-31T13:00:00+00:00'
+  end: '2026-10-31T13:10:00+00:00'
+  start_frame: f0079
+  end_frame: f0086
+  bundle_id: com.lumen.relay
+  window_title: Relay — Tom Ashworth
+  frame_ids: [f0079, f0080, f0081, f0082, f0083, f0084, f0085, f0086]
+- start: '2026-10-31T13:12:00+00:00'
+  end: '2026-10-31T14:18:00+00:00'
+  start_frame: f0087
+  end_frame: f0122
+  bundle_id: com.lumen.quill
+  window_title: Acme Q4 Proposal — Draft
+  frame_ids:
+  - f0087
+  - f0088
+  - f0089
+  - f0090
+  - f0091
+  - f0092
+  - f0093
+  - f0094
+  - f0095
+  - f0096
+  - f0097
+  - f0098
+  - f0099
+  - f0100
+  - f0101
+  - f0102
+  - f0103
+  - f0104
+  - f0105
+  - f0106
+  - f0107
+  - f0108
+  - f0109
+  - f0110
+  - f0111
+  - f0112
+  - f0113
+  - f0114
+  - f0115
+  - f0116
+  - f0117
+  - f0118
+  - f0119
+  - f0120
+  - f0121
+  - f0122
+- start: '2026-10-31T14:30:00+00:00'
+  end: '2026-10-31T14:32:00+00:00'
+  start_frame: f0123
+  end_frame: f0126
+  bundle_id: com.lumen.compass
+  window_title: Pocket Calendar — Today
+  frame_ids: [f0123, f0124, f0125, f0126]
+- start: '2026-10-31T14:34:00+00:00'
+  end: '2026-10-31T15:04:00+00:00'
+  start_frame: f0127
+  end_frame: f0144
+  bundle_id: com.lumen.grid
+  window_title: Acme rate card — Grid
+  frame_ids:
+  - f0127
+  - f0128
+  - f0129
+  - f0130
+  - f0131
+  - f0132
+  - f0133
+  - f0134
+  - f0135
+  - f0136
+  - f0137
+  - f0138
+  - f0139
+  - f0140
+  - f0141
+  - f0142
+  - f0143
+  - f0144
+- start: '2026-10-31T15:06:00+00:00'
+  end: '2026-10-31T15:20:00+00:00'
+  start_frame: f0145
+  end_frame: f0154
+  bundle_id: com.lumen.compass
+  window_title: Onboarding Guide — Section 3
+  frame_ids: [f0145, f0146, f0147, f0148, f0149, f0150, f0151, f0152, f0153, f0154]
+- start: '2026-10-31T15:22:00+00:00'
+  end: '2026-10-31T15:34:00+00:00'
+  start_frame: f0155
+  end_frame: f0163
+  bundle_id: com.lumen.mail
+  window_title: Compose — Revised pricing for Acme
+  frame_ids: [f0155, f0156, f0157, f0158, f0159, f0160, f0161, f0162, f0163]
+- start: '2026-10-31T15:36:00+00:00'
+  end: '2026-10-31T15:46:00+00:00'
+  start_frame: f0164
+  end_frame: f0171
+  bundle_id: com.lumen.relay
+  window_title: Relay — Tom Ashworth
+  frame_ids: [f0164, f0165, f0166, f0167, f0168, f0169, f0170, f0171]
+- start: '2026-10-31T15:48:00+00:00'
+  end: '2026-10-31T16:00:00+00:00'
+  start_frame: f0172
+  end_frame: f0180
+  bundle_id: com.lumen.anvil
+  window_title: anvil — proposals/acme_q4.md
+  frame_ids: [f0172, f0173, f0174, f0175, f0176, f0177, f0178, f0179, f0180]
+- start: '2026-10-31T16:02:00+00:00'
+  end: '2026-10-31T16:16:00+00:00'
+  start_frame: f0181
+  end_frame: f0190
+  bundle_id: com.lumen.quill
+  window_title: Acme Q4 Proposal — Draft
+  frame_ids: [f0181, f0182, f0183, f0184, f0185, f0186, f0187, f0188, f0189, f0190]
+meta:
+  name: day_acme_q4
+  date: '2026-10-31'
+  seed: 42
+  frame_count: 190
+  first_frame: f0001
+  last_frame: f0190

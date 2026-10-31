@@ -1,0 +1,129 @@
+{
+  "frame_id": "f0147",
+  "captured_at": "2026-10-31T15:07:15+00:00",
+  "display_id": 1,
+  "bundle_id": "com.lumen.compass",
+  "app_name": "Lumen Compass",
+  "window_title": "Onboarding Guide \u2014 Section 3",
+  "window_id": 2403,
+  "is_private_browsing": false,
+  "url": "https://intranet.lumen.example/onboarding/section-3",
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Compass \u2014 Onboarding Guide \u2014 Section 3",
+        "bbox": [
+          66,
+          9,
+          329,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:07",
+        "bbox": [
+          1233,
+          10,
+          35,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Onboarding",
+        "bbox": [
+          8,
+          42,
+          112,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Daily",
+        "bbox": [
+          124,
+          42,
+          111,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://intranet.lumen.example/onboarding/section-3",
+        "bbox": [
+          32,
+          84,
+          399,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Lumen Intranet \u00b7 Internal Onboarding Guide",
+        "bbox": [
+          40,
+          137,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Section 3 \u2014 Access and tools",
+        "bbox": [
+          40,
+          170,
+          1200,
+          34
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Published this morning",
+        "bbox": [
+          40,
+          212,
+          1200,
+          19
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Section 3 of the Internal Onboarding Guide is published this morning.",
+        "bbox": [
+          40,
+          246,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Covers desk access, Lumen Quill, Lumen Grid, and the Acme client folder.",
+        "bbox": [
+          40,
+          297,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "This is complete. The Acme proposal is a separate draft and is not published.",
+        "bbox": [
+          40,
+          348,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "c0c0000000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

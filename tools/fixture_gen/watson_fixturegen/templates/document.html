@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block css %}
+.paper { padding: 28px 56px; }
+.paper h1 { margin: 0 0 6px; font-size: 26px; }
+.kicker { color: #5c6570; margin-bottom: 16px; }
+.section-h { margin: 16px 0 6px; font-size: 16px; }
+.para { margin: 0 0 8px; max-width: 720px; }
+.rail { width: 240px; flex: 0 0 240px; background: #f6f3ec; border-left: 1px solid #e2dac8; padding: 14px 0; }
+{% endblock %}
+{% block app %}
+<div class="app">
+  <aside class="sidebar">
+    <h2 class="ocr" data-ocr>Document</h2>
+    <div class="nav-item ocr" data-ocr>{{ content.filename }}</div>
+    <h2 class="ocr" data-ocr>Outline</h2>
+    {% for section in content.sections %}
+    <div class="nav-item{% if loop.index0 == content.current_section %} active{% endif %} ocr" data-ocr>{{ section.heading }}</div>
+    {% endfor %}
+  </aside>
+  <section class="main paper">
+    <div class="toolbar" style="margin: -28px -56px 18px; padding: 0 56px;">
+      <span class="ocr" data-ocr>{{ content.filename }}</span>
+      <span class="badge{% if content.status == 'Draft' %} warn{% endif %} ocr" data-ocr>{{ content.status }}</span>
+      <span class="ocr" data-ocr>Owner: {{ content.owner }}</span>
+    </div>
+    <h1 class="ocr" data-ocr>{{ content.title }}</h1>
+    <div class="kicker ocr" data-ocr>{{ content.subtitle }}</div>
+    {% for section in content.sections %}
+    <h2 class="section-h ocr" data-ocr>{{ section.heading }}</h2>
+    {% for para in section.paragraphs %}
+    <p class="para wrap ocr" data-ocr>{{ para }}</p>
+    {% endfor %}
+    {% endfor %}
+  </section>
+  <aside class="rail">
+    <h2 class="ocr" data-ocr>Notes</h2>
+    {% for note in content.notes %}
+    <div class="nav-item ocr" data-ocr>{{ note }}</div>
+    {% endfor %}
+  </aside>
+</div>
+{% endblock %}

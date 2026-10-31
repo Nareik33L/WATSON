@@ -1,0 +1,119 @@
+{
+  "frame_id": "f0057",
+  "captured_at": "2026-10-31T10:41:15+00:00",
+  "display_id": 1,
+  "bundle_id": "com.lumen.compass",
+  "app_name": "Lumen Compass",
+  "window_title": "Cedar Daily \u2014 Harbor ferry changes",
+  "window_id": 2401,
+  "is_private_browsing": false,
+  "url": "https://news.cedardaily.example/harbor-ferry",
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Compass \u2014 Cedar Daily \u2014 Harbor ferry changes",
+        "bbox": [
+          66,
+          9,
+          364,
+          18
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:41",
+        "bbox": [
+          1233,
+          10,
+          35,
+          17
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Daily",
+        "bbox": [
+          8,
+          42,
+          111,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Intranet",
+        "bbox": [
+          123,
+          42,
+          84,
+          33
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://news.cedardaily.example/harbor-ferry",
+        "bbox": [
+          32,
+          84,
+          337,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Daily \u00b7 civic",
+        "bbox": [
+          40,
+          137,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor ferry timetable changes next week",
+        "bbox": [
+          40,
+          170,
+          1200,
+          34
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "The Harbor crossing will run a reduced Saturday timetable from next week while the north berth is repainted.",
+        "bbox": [
+          40,
+          227,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "First boat 07:40, last return 21:10. No change to weekday commuter sailings.",
+        "bbox": [
+          40,
+          278,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "This is a civic bulletin, not a Lumen Delivery work item.",
+        "bbox": [
+          40,
+          329,
+          1200,
+          21
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "8000000000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

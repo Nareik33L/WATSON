@@ -24,6 +24,7 @@ def run_bakeoff(
     *,
     profile: str,
     frames_dir: Path | None = None,
+    frame_ids: list[str] | None = None,
     out_dir: Path | None = None,
     models_dir: Path | None = None,
     runtimes: list[str] | None = None,
@@ -36,7 +37,7 @@ def run_bakeoff(
     hardware = hardware or detect_hardware()
     frames_dir = frames_dir or samples_dir()
     models_dir = models_dir or default_models_dir()
-    frames = load_frames(frames_dir)
+    frames = load_frames(frames_dir, frame_ids=frame_ids)
     scored = sample_frames(frames, limit=score_sample)
     candidates = _select_candidates(profile, runtimes, roles, ids)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

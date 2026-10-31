@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block css %}
+.mail-list { width: 300px; flex: 0 0 300px; border-right: 1px solid #d5d8de; background: #fbfcfe; }
+.mail-row { padding: 10px 12px; border-bottom: 1px solid #eceff3; }
+.mail-row.selected { background: #e7eef8; }
+.mail-from { font-weight: 600; }
+.mail-subject { color: #243040; }
+.mail-preview { color: #66707c; font-size: 12px; }
+.read { padding: 16px 20px; }
+.read h1 { margin: 0 0 8px; font-size: 18px; }
+.meta { color: #5c6570; margin-bottom: 14px; }
+.body-line { margin: 0 0 8px; }
+{% endblock %}
+{% block app %}
+<div class="app">
+  <aside class="sidebar">
+    <h2 class="ocr" data-ocr>Folders</h2>
+    {% for folder in content.folders %}
+    <div class="nav-item{% if folder == content.folder %} active{% endif %} ocr" data-ocr>{{ folder }}</div>
+    {% endfor %}
+    <h2 class="ocr" data-ocr>Account</h2>
+    <div class="nav-item ocr" data-ocr>{{ content.account }}</div>
+  </aside>
+  <section class="mail-list">
+    {% for msg in content.messages %}
+    <div class="mail-row{% if loop.index0 == content.selected %} selected{% endif %}">
+      <div class="mail-from ocr" data-ocr>{{ msg.sender }}</div>
+      <div class="mail-subject ocr" data-ocr>{{ msg.subject }}</div>
+      <div class="mail-preview ocr" data-ocr>{{ msg.time }} · {{ msg.preview }}</div>
+    </div>
+    {% endfor %}
+  </section>
+  <section class="main read">
+    {% set msg = content.messages[content.selected] %}
+    <h1 class="ocr" data-ocr>{{ msg.subject }}</h1>
+    <div class="meta">
+      <div class="ocr" data-ocr>From: {{ msg.sender }} &lt;{{ msg.email }}&gt;</div>
+      <div class="ocr" data-ocr>To: {{ content.account }}</div>
+      <div class="ocr" data-ocr>Time: {{ msg.time }}</div>
+    </div>
+    {% if content.draft %}
+    <div class="badge warn ocr" data-ocr>Draft</div>
+    {% endif %}
+    {% for line in msg.body %}
+    <p class="body-line wrap ocr" data-ocr>{{ line }}</p>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

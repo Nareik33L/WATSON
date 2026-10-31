@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block css %}
+body { color: #d7d8dc; }
+.titlebar { background: #16181d; }
+.app { background: #1e2127; }
+.sidebar { background: #16181d; border-right-color: #2a2e36; color: #c5c7cc; }
+.sidebar h2 { color: #8b9098; }
+.file-item.active { background: #2a3344; }
+.editor {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", "JetBrains Mono", monospace;
+  font-size: 13px;
+  padding: 12px 0;
+  background: #1e2127;
+}
+.gutter { display: flex; }
+.ln { width: 48px; color: #6b7180; text-align: right; padding-right: 12px; flex: 0 0 48px; }
+.code { white-space: pre; }
+.term {
+  height: 120px;
+  flex: 0 0 120px;
+  background: #12141a;
+  border-top: 1px solid #2a2e36;
+  padding: 8px 12px;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 12px;
+}
+{% endblock %}
+{% block app %}
+<div class="app">
+  <aside class="sidebar">
+    <h2 class="ocr" data-ocr>{{ content.project }}</h2>
+    {% for path in content.files %}
+    <div class="file-item{% if path == content.filename %} active{% endif %} ocr" data-ocr>{{ path }}</div>
+    {% endfor %}
+  </aside>
+  <section class="main" style="background: #1e2127;">
+    <div class="toolbar" style="background: #1a1d23; border-bottom-color: #2a2e36; color: #d7d8dc;">
+      <span class="ocr" data-ocr>{{ content.filename }}</span>
+      <span class="badge ocr" data-ocr>{{ content.language }}</span>
+    </div>
+    <div class="editor">
+      {% for line in content.lines %}
+      <div class="gutter">
+        <div class="ln ocr" data-ocr>{{ loop.index }}</div>
+        <div class="code ocr" data-ocr>{{ line if line else " " }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="term">
+      {% for line in content.terminal %}
+      <div class="ocr" data-ocr>{{ line }}</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

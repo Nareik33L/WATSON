@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block css %}
+.stage { padding: 24px; background: #1b1e24; color: #e8eaed; }
+.grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.tile {
+  width: 360px;
+  height: 220px;
+  background: #2a2e36;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #4a5568;
+  margin-bottom: 10px;
+}
+.tile.speaking { outline: 2px solid #7aa87a; }
+{% endblock %}
+{% block app %}
+<div class="app" style="flex-direction: column; background: #1b1e24;">
+  <div class="toolbar" style="background: #16181d; color: #e8eaed; border-bottom-color: #2a2e36;">
+    <span class="ocr" data-ocr>{{ content.meeting }}</span>
+    <span class="badge ocr" data-ocr>{{ content.status }}</span>
+  </div>
+  <section class="main stage">
+    <div class="grid">
+      {% for person in content.participants %}
+      <div class="tile{% if person.speaking %} speaking{% endif %}">
+        <div class="avatar" aria-hidden="true"></div>
+        <div class="ocr" data-ocr>{{ person.name }}</div>
+        <div class="ocr" data-ocr>{{ person.caption }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="wrap ocr" data-ocr style="margin-top: 18px;">{{ content.placeholder }}</p>
+  </section>
+</div>
+{% endblock %}

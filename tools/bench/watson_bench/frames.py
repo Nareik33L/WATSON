@@ -28,13 +28,38 @@ class Frame:
         return str(self.sidecar.get("bundle_id") or "")
 
 
-def load_frames(directory: Path) -> list[Frame]:
+def load_frame_id_list(path: Path) -> list[str]:
+    """Read a sample50.txt-style list of frame ids (one per line, # comments)."""
+    if not path.is_file():
+        raise FileNotFoundError(f"frame list not found: {path}")
+    ids: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        ids.append(line)
+    if not ids:
+        raise ValueError(f"no frame ids in {path}")
+    return ids
+
+
+def load_frames(directory: Path, frame_ids: list[str] | None = None) -> list[Frame]:
     if not directory.is_dir():
         raise FileNotFoundError(f"frames directory not found: {directory}")
-    frames = [_load_one(path) for path in sorted(directory.glob("*.png"))]
+    pngs = sorted(directory.glob("*.png"))
+    if not pngs:
+        pngs = sorted(path for path in directory.glob("**/*.png") if path.is_file())
+    frames = [_load_one(path) for path in pngs]
     if not frames:
         raise FileNotFoundError(f"no PNG frames in {directory}")
-    return frames
+    if frame_ids is None:
+        return frames
+    by_id = {frame.frame_id: frame for frame in frames}
+    missing = [frame_id for frame_id in frame_ids if frame_id not in by_id]
+    if missing:
+        preview = ", ".join(missing[:8])
+        raise FileNotFoundError(f"frame ids not in {directory}: {preview}")
+    return [by_id[frame_id] for frame_id in frame_ids]
 
 
 def _load_one(image_path: Path) -> Frame:
