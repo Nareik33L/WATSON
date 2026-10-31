@@ -1,0 +1,149 @@
+{
+  "frame_id": "5ef4478f-b9e8-54b7-b187-fee2f49e8983",
+  "captured_at": "2026-11-04T09:34:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.room",
+  "app_name": "Lumen Room",
+  "window_title": "Lumen Room \u2014 Harbor planning",
+  "window_id": 4102,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Room \u2014 Lumen Room \u2014 Harbor planning",
+        "bbox": [
+          66,
+          9,
+          367,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:34",
+        "bbox": [
+          1234,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor planning",
+        "bbox": [
+          14,
+          46,
+          113,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Live \u00b7 4 on the call",
+        "bbox": [
+          123,
+          46,
+          233,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          191,
+          230,
+          217,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Host",
+        "bbox": [
+          188,
+          251,
+          220,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ned Quinn",
+        "bbox": [
+          542,
+          230,
+          618,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor Line",
+        "bbox": [
+          538,
+          251,
+          622,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          905,
+          230,
+          1007,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery",
+        "bbox": [
+          927,
+          251,
+          985,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          171,
+          466,
+          237,
+          487
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor Line",
+        "bbox": [
+          162,
+          487,
+          246,
+          508
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Video tiles only. Planning the Thursday walkthrough.",
+        "bbox": [
+          24,
+          574,
+          1256,
+          595
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "00fefec0c0c00000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

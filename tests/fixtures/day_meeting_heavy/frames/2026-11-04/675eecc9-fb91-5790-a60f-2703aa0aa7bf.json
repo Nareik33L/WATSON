@@ -1,0 +1,219 @@
+{
+  "frame_id": "675eecc9-fb91-5790-a60f-2703aa0aa7bf",
+  "captured_at": "2026-11-04T09:20:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.quill",
+  "app_name": "Lumen Quill",
+  "window_title": "Standup notes \u2014 4 Nov",
+  "window_id": 4201,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Quill \u2014 Standup notes \u2014 4 Nov",
+        "bbox": [
+          66,
+          9,
+          305,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:20",
+        "bbox": [
+          1235,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Standup-4-Nov.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Decisions",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Standup-4-Nov.quill",
+        "bbox": [
+          276,
+          46,
+          401,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          411,
+          46,
+          452,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          462,
+          46,
+          533,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Standup notes",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Lumen Delivery \u00b7 4 Nov",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Decisions",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Keep the Harbor walkthrough on Thursday. Ned Quinn will bring the latch notes.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme demo prep stays at 11:00 with Tom Ashworth.",
+        "bbox": [
+          276,
+          247,
+          984,
+          268
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open",
+        "bbox": [
+          276,
+          292,
+          984,
+          314
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Samira Cole still owes the slide order. Not marked complete.",
+        "bbox": [
+          276,
+          320,
+          984,
+          341
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor walkthrough still Thursday",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme demo prep at 11:00",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "7c7c7c7c7c7c7c7c",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

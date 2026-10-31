@@ -1,0 +1,123 @@
+projects: [North Pier invoice]
+people: [Mina Okonkwo (North Pier), Jun Park (Cedar Works)]
+decisions:
+- text: Send the North Pier hours grid today
+  evidence_frames: [3874501c-17d0-5177-a86e-18a662f18675, 2a156fc6-91eb-58ba-80a4-4f9c8ed54eb4, 4b1f21a1-1089-5b5e-8ed1-493dd06094a6,
+    c038a95e-099b-59e3-a0c9-9d2862c72e60, 86acdd85-8692-5ea8-9b2b-46d7f3e8d555, 171be150-f00b-5434-be6a-5cde6e5ac010]
+commitments:
+- text: Send the hours grid to Mina today
+  status: open
+completed: []
+not_completed: [Hours grid not yet sent]
+noise: []
+skipped:
+- reason: excluded_app
+  frame_id: c35af200-7afa-5f4f-9e63-7ee4ea8b3573
+  bundle_id: com.cedar.compass
+  captured_at: '2026-11-05T09:10:00Z'
+- reason: excluded_app
+  frame_id: f0924835-782a-5e37-83cd-801aac4deab5
+  bundle_id: com.cedar.compass
+  captured_at: '2026-11-05T09:10:30Z'
+- reason: excluded_app
+  frame_id: 558412ea-a821-508a-ba64-a0288c1f38b3
+  bundle_id: com.cedar.compass
+  captured_at: '2026-11-05T09:11:15Z'
+- reason: excluded_app
+  frame_id: 9f2855ee-a0a4-5e96-95b7-552173c04fdb
+  bundle_id: com.cedar.compass
+  captured_at: '2026-11-05T09:12:00Z'
+- reason: excluded_app
+  frame_id: 6963360e-27ab-52f5-bcd1-700fabce3c2a
+  bundle_id: com.cedar.compass
+  captured_at: '2026-11-05T09:14:00Z'
+- reason: excluded_app
+  frame_id: 79780730-3e9e-5c87-84ce-84deed3037e1
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-05T09:40:00Z'
+- reason: excluded_app
+  frame_id: df8409d9-9acf-5897-bb22-99cce4f0d35a
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-05T09:40:30Z'
+- reason: excluded_app
+  frame_id: f1b541b5-a2c1-5848-9c4c-dae2bff2c188
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-05T09:41:15Z'
+- reason: excluded_app
+  frame_id: 2a591495-b785-57b3-99a2-394fdd2191b3
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-05T09:42:00Z'
+- reason: excluded_app
+  frame_id: 05b03029-f634-52d1-ae4d-97e51b6c8af2
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-05T09:44:00Z'
+expected_segments:
+- start: '2026-11-05T09:00:00Z'
+  end: '2026-11-05T09:08:00Z'
+  start_frame: fc66dd8b-d491-5a3a-bd43-3a62a9977a54
+  end_frame: aafe7ce8-0465-5c9c-bb77-2aba75b929c9
+  fixture_index:
+  - 1
+  - 7
+  bundle_id: com.cedar.mail
+  window_title: 'Re: North Pier invoice — Mina Okonkwo'
+  frame_ids: [fc66dd8b-d491-5a3a-bd43-3a62a9977a54, a098f66e-9cc2-5cb4-bfd2-3c3db4456538, c89bc01b-c2b1-5a88-9410-134f78e03a7f,
+    4c511dee-2121-58ba-941b-558ab3b5dcce, 17a6544d-7fc5-5db0-b472-55d57e3abcf6, 4483b1cc-efb5-5a27-83dd-87deee44970a,
+    aafe7ce8-0465-5c9c-bb77-2aba75b929c9]
+- start: '2026-11-05T09:16:00Z'
+  end: '2026-11-05T09:38:00Z'
+  start_frame: ffde3941-2748-5a18-bd3a-960647839708
+  end_frame: 9ddcd1f6-4630-58ac-8da8-7b08b12452b1
+  fixture_index:
+  - 8
+  - 21
+  bundle_id: com.cedar.quill
+  window_title: North Pier invoice — Draft notes
+  frame_ids: [ffde3941-2748-5a18-bd3a-960647839708, badbbdcd-bc66-5028-a9e4-7527c1e3542f, 20877b38-963f-50bd-8a72-56c2c96daff2,
+    8f2c9127-15e2-54c5-9414-85ed2414fed3, 92ce715e-1a82-5594-9ba0-0f13d46a3c50, 980f06df-de44-54f4-8c69-c5c01e9cfd04,
+    9fc87fc2-8929-52d2-afa5-e1873d18157f, 9117e4f7-20af-5a7e-9af7-fcaf794cfd92, 2f9ed89e-7c02-55cb-9245-ab397ba66b46,
+    1a93cdc3-610f-541a-8094-18b9d3cf05d1, dbda947b-1c35-5d5f-87cf-d9c3d049b9a2, 1ae9259c-45b5-5ed4-bb88-b33ef9348622,
+    e93cf374-43d5-5a99-bdc1-9b069c5dd535, 9ddcd1f6-4630-58ac-8da8-7b08b12452b1]
+- start: '2026-11-05T09:46:00Z'
+  end: '2026-11-05T10:02:00Z'
+  start_frame: 3d458c24-4f00-5460-997a-3b22f59cdb68
+  end_frame: e3134e35-a830-5589-bb4b-36b437553886
+  fixture_index:
+  - 22
+  - 32
+  bundle_id: com.cedar.grid
+  window_title: North Pier hours — Grid
+  frame_ids: [3d458c24-4f00-5460-997a-3b22f59cdb68, d6b1500d-7774-5218-bbd0-6b76794ee212, 62b861bd-2121-5203-95bf-aed89004e19a,
+    87ec6993-d927-53dd-a757-e235cf311b51, 8bf755d8-60f4-5371-abaa-1b29d9807e06, 677406f0-890a-5fcd-a0c5-a14ac7b14c8d,
+    08f271ec-96f8-53c7-a1d9-f15534c61635, 733c0d46-8b44-5a7d-8b02-db3147f94d0f, 9424c91f-ace5-50b1-aad9-1692c5a5f557,
+    389c93e3-58cb-5f1d-ad3b-20543d6dc9ea, e3134e35-a830-5589-bb4b-36b437553886]
+- start: '2026-11-05T10:04:00Z'
+  end: '2026-11-05T10:10:00Z'
+  start_frame: 3874501c-17d0-5177-a86e-18a662f18675
+  end_frame: 171be150-f00b-5434-be6a-5cde6e5ac010
+  fixture_index:
+  - 33
+  - 38
+  bundle_id: com.cedar.relay
+  window_title: Relay — Jun Park
+  frame_ids: [3874501c-17d0-5177-a86e-18a662f18675, 2a156fc6-91eb-58ba-80a4-4f9c8ed54eb4, 4b1f21a1-1089-5b5e-8ed1-493dd06094a6,
+    c038a95e-099b-59e3-a0c9-9d2862c72e60, 86acdd85-8692-5ea8-9b2b-46d7f3e8d555, 171be150-f00b-5434-be6a-5cde6e5ac010]
+- start: '2026-11-05T10:12:00Z'
+  end: '2026-11-05T10:20:00Z'
+  start_frame: b924a527-e892-5575-a27e-fc638f424bb0
+  end_frame: e7fdcc3e-c5b6-56d9-87a6-09f146f7f0d0
+  fixture_index:
+  - 39
+  - 45
+  bundle_id: com.cedar.compass
+  window_title: North Pier — Invoice checklist
+  frame_ids: [b924a527-e892-5575-a27e-fc638f424bb0, d2095ea9-ce98-58aa-87d4-1a2a9e8b7895, 8e29448e-01b5-58f9-bc12-aa9c126981ab,
+    83805439-4482-5fda-b005-ce6e1f317a62, ff26117d-ce39-55e2-bec9-ac5413dd8424, b2ca2b54-31aa-53ed-9e0b-45c7f1bc207d,
+    e7fdcc3e-c5b6-56d9-87a6-09f146f7f0d0]
+meta:
+  name: day_sensitive_traps
+  date: '2026-11-05'
+  seed: 13
+  frame_count: 55
+  first_frame: fc66dd8b-d491-5a3a-bd43-3a62a9977a54
+  last_frame: e7fdcc3e-c5b6-56d9-87a6-09f146f7f0d0

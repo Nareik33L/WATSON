@@ -1,0 +1,249 @@
+{
+  "frame_id": "1ae9259c-45b5-5ed4-bb88-b33ef9348622",
+  "captured_at": "2026-11-05T09:34:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.quill",
+  "app_name": "Cedar Quill",
+  "window_title": "North Pier invoice \u2014 Draft notes",
+  "window_id": 5201,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Quill \u2014 North Pier invoice \u2014 Draft notes",
+        "bbox": [
+          66,
+          9,
+          352,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:34",
+        "bbox": [
+          1234,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North-Pier-invoice-notes.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Invoice draft",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Access traps",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North-Pier-invoice-notes.quill",
+        "bbox": [
+          276,
+          46,
+          459,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          469,
+          46,
+          510,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          520,
+          46,
+          591,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North Pier invoice notes",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft \u00b7 planted trap strings for redaction",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Invoice draft",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hours for Mina Okonkwo at North Pier Civic. Send the grid today.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Test card 4111111111111111 must become a placeholder before storage.",
+        "bbox": [
+          276,
+          247,
+          984,
+          268
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Access traps",
+        "bbox": [
+          276,
+          292,
+          984,
+          314
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Password: cedar-trap-pass-9f3 sits next to the label so redaction can see it.",
+        "bbox": [
+          276,
+          320,
+          984,
+          341
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Your verification code is 482913 on this same page.",
+        "bbox": [
+          276,
+          349,
+          984,
+          370
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "API token sk-abcdefghijklmnopqrstuvwxyz123456 is also planted.",
+        "bbox": [
+          276,
+          378,
+          984,
+          399
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Card 4111 1111 1111 1111 is a fixture trap",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Password: cedar-trap-pass-9f3",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Your verification code is 482913",
+        "bbox": [
+          1041,
+          139,
+          1280,
+          172
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "7d5c7d7d7d7d7d7d",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

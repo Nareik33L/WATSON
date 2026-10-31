@@ -1,0 +1,149 @@
+{
+  "frame_id": "5f5c5694-b794-5a4e-b823-c5d29f2aff9b",
+  "captured_at": "2026-11-04T09:10:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.room",
+  "app_name": "Lumen Room",
+  "window_title": "Lumen Room \u2014 Delivery standup",
+  "window_id": 4101,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Room \u2014 Lumen Room \u2014 Delivery standup",
+        "bbox": [
+          66,
+          9,
+          371,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:10",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery standup",
+        "bbox": [
+          14,
+          46,
+          118,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Live \u00b7 6 on the call",
+        "bbox": [
+          128,
+          46,
+          238,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          191,
+          230,
+          217,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Host",
+        "bbox": [
+          188,
+          251,
+          220,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          529,
+          230,
+          631,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery",
+        "bbox": [
+          551,
+          251,
+          609,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Samira Cole",
+        "bbox": [
+          913,
+          230,
+          999,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Design",
+        "bbox": [
+          931,
+          251,
+          981,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ned Quinn",
+        "bbox": [
+          166,
+          466,
+          242,
+          487
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor",
+        "bbox": [
+          179,
+          487,
+          229,
+          508
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Video tiles only. No transcript in V1.",
+        "bbox": [
+          24,
+          574,
+          1256,
+          595
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "00fefec0c0c00000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

@@ -1,0 +1,219 @@
+{
+  "frame_id": "82fe4f26-77e3-55b7-8a2b-168e6d0c7bb1",
+  "captured_at": "2026-11-04T11:28:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.quill",
+  "app_name": "Lumen Quill",
+  "window_title": "Acme Q4 Proposal \u2014 Draft",
+  "window_id": 4203,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Quill \u2014 Acme Q4 Proposal \u2014 Draft",
+        "bbox": [
+          66,
+          9,
+          324,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "11:28",
+        "bbox": [
+          1240,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-Q4-Proposal.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Demo",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-Q4-Proposal.quill",
+        "bbox": [
+          276,
+          46,
+          424,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          434,
+          46,
+          476,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          486,
+          46,
+          557,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme Q4 Proposal",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft \u00b7 demo prep notes pasted",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "How Lumen Delivery will run the Acme Q4 rollout for Priya Natarajan.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Demo",
+        "bbox": [
+          276,
+          263,
+          984,
+          285
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Live demo stays 14 Nov. Prep call done this morning with Tom Ashworth.",
+        "bbox": [
+          276,
+          291,
+          984,
+          312
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Slide order is still a draft. The proposal is not complete.",
+        "bbox": [
+          276,
+          320,
+          984,
+          341
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Demo still 14 Nov",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Slides not finished",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "7c7c7c7c7c7c7c7c",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

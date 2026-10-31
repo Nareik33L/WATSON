@@ -31,6 +31,8 @@ def test_defaults_use_application_support_path(
     assert config.spool_dir == config.data_dir / "spool"
     assert config.capture.interval_seconds == 45
     assert config.capture.dedup_threshold == 4
+    assert config.segmentation.similarity_threshold == 0.25
+    assert config.segmentation.close_after_seconds == 20 * 60
     assert config.exclusions.bundle_ids == DEFAULT_EXCLUDED_BUNDLE_IDS
     assert config.retention.window_title_days == 30
     assert config.retention.derived_days is None

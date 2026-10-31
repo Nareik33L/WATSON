@@ -1,0 +1,289 @@
+{
+  "frame_id": "733c0d46-8b44-5a7d-8b02-db3147f94d0f",
+  "captured_at": "2026-11-05T09:56:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.grid",
+  "app_name": "Cedar Grid",
+  "window_title": "North Pier hours \u2014 Grid",
+  "window_id": 5501,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Grid \u2014 North Pier hours \u2014 Grid",
+        "bbox": [
+          66,
+          9,
+          300,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:56",
+        "bbox": [
+          1235,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "SHEETS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hours",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Notes",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FILE",
+        "bbox": [
+          14,
+          137,
+          205,
+          153
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North-Pier-hours.grid",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North-Pier-hours.grid",
+        "bbox": [
+          234,
+          46,
+          367,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hours",
+        "bbox": [
+          377,
+          46,
+          424,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "=C2",
+        "bbox": [
+          434,
+          46,
+          460,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Day",
+        "bbox": [
+          233,
+          87,
+          400,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Role",
+        "bbox": [
+          400,
+          87,
+          652,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hours",
+        "bbox": [
+          652,
+          87,
+          830,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Notes",
+        "bbox": [
+          830,
+          87,
+          1268,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Mon",
+        "bbox": [
+          233,
+          116,
+          400,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Drafting",
+        "bbox": [
+          400,
+          116,
+          652,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "6",
+        "bbox": [
+          652,
+          116,
+          830,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North Pier Civic",
+        "bbox": [
+          830,
+          116,
+          1268,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tue",
+        "bbox": [
+          233,
+          150,
+          400,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Review",
+        "bbox": [
+          400,
+          150,
+          652,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "4",
+        "bbox": [
+          652,
+          150,
+          830,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "With Jun Park",
+        "bbox": [
+          830,
+          150,
+          1268,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Wed",
+        "bbox": [
+          233,
+          184,
+          400,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Invoice",
+        "bbox": [
+          400,
+          184,
+          652,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "2",
+        "bbox": [
+          652,
+          184,
+          830,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Send today",
+        "bbox": [
+          830,
+          184,
+          1268,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hours grid for Mina. No card numbers on this sheet.",
+        "bbox": [
+          232,
+          231,
+          1268,
+          252
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "5f007f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

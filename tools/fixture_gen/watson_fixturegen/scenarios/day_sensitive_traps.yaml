@@ -1,0 +1,227 @@
+# Sensitive-content-traps day — excluded banking and vault windows plus
+# planted card / secret / OTP strings in a work document that IS stored.
+# Fictional people, firms, and hosts only (*.example). Plan §11.1 / §11.3.
+
+meta:
+  name: day_sensitive_traps
+  date: "2026-11-05"
+  tz_offset: "+00:00"
+  seed: 13
+  display_id: 1
+  width: 1280
+  height: 800
+  description: Sensitive-content traps day
+
+cadence:
+  default_seconds: 45
+  stretch_seconds: 120
+  tighten_seconds: 30
+  stretch_after_stable: 3
+
+windows:
+  mail_mina:
+    template: mail
+    bundle_id: com.cedar.mail
+    app_name: Cedar Mail
+    window_title: "Re: North Pier invoice — Mina Okonkwo"
+    window_id: 5101
+  banking:
+    template: browser
+    bundle_id: com.cedar.compass
+    app_name: Cedar Compass
+    window_title: "Sign in — Harbor Credit"
+    window_id: 5401
+    url: https://secure.harborcredit.example/signin
+    excluded: true
+  secrets_doc:
+    template: document
+    bundle_id: com.cedar.quill
+    app_name: Cedar Quill
+    window_title: "North Pier invoice — Draft notes"
+    window_id: 5201
+  vault:
+    template: browser
+    bundle_id: com.apple.Passwords
+    app_name: Passwords
+    window_title: "Passwords — Personal vault"
+    window_id: 5701
+    url: https://vault.cedar.example/unlock
+    is_private_browsing: true
+    excluded: true
+  sheet:
+    template: spreadsheet
+    bundle_id: com.cedar.grid
+    app_name: Cedar Grid
+    window_title: "North Pier hours — Grid"
+    window_id: 5501
+  chat_jun:
+    template: chat
+    bundle_id: com.cedar.relay
+    app_name: Cedar Relay
+    window_title: "Relay — Jun Park"
+    window_id: 5301
+  intranet:
+    template: browser
+    bundle_id: com.cedar.compass
+    app_name: Cedar Compass
+    window_title: "North Pier — Invoice checklist"
+    window_id: 5402
+    url: https://intranet.cedar.example/north-pier/invoice
+
+timeline:
+  - window: mail_mina
+    start: "09:00:00"
+    end: "09:10:00"
+    states:
+      - at: "09:00:00"
+        content:
+          account: you@cedar.example
+          folder: Inbox
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: false
+          messages:
+            - sender: Mina Okonkwo
+              email: mina@northpier.example
+              subject: "Re: North Pier invoice"
+              time: "08:40"
+              preview: Can you send the hours grid today?
+              body:
+                - "Hello —"
+                - "Can you send the hours grid today? I need it before the Friday invoice run."
+                - "— Mina Okonkwo, North Pier Civic"
+
+  - window: banking
+    start: "09:10:00"
+    end: "09:16:00"
+    states:
+      - at: "09:10:00"
+        content:
+          kind: article
+          address: https://secure.harborcredit.example/signin
+          kicker: Harbor Credit · sign in
+          page_title: Sign in to Harbor Credit
+          badge: Private
+          tabs:
+            - title: Harbor Credit
+              active: true
+          paragraphs:
+            - "Fake banking tab. This window is excluded and must never be stored."
+            - "Account ending 4411. Do not keep this page."
+
+  - window: secrets_doc
+    start: "09:16:00"
+    end: "09:40:00"
+    states:
+      - at: "09:16:00"
+        content:
+          filename: North-Pier-invoice-notes.quill
+          title: North Pier invoice notes
+          subtitle: Draft · planted trap strings for redaction
+          status: Draft
+          owner: you
+          current_section: 0
+          notes:
+            - "Card 4111 1111 1111 1111 is a fixture trap"
+            - "Password: cedar-trap-pass-9f3"
+            - "Your verification code is 482913"
+          sections:
+            - heading: Invoice draft
+              paragraphs:
+                - "Hours for Mina Okonkwo at North Pier Civic. Send the grid today."
+                - "Test card 4111111111111111 must become a placeholder before storage."
+            - heading: Access traps
+              paragraphs:
+                - "Password: cedar-trap-pass-9f3 sits next to the label so redaction can see it."
+                - "Your verification code is 482913 on this same page."
+                - "API token sk-abcdefghijklmnopqrstuvwxyz123456 is also planted."
+
+  - window: vault
+    start: "09:40:00"
+    end: "09:46:00"
+    states:
+      - at: "09:40:00"
+        content:
+          kind: article
+          address: https://vault.cedar.example/unlock
+          kicker: Passwords · private
+          page_title: Unlock personal vault
+          badge: Private
+          tabs:
+            - title: Vault
+              active: true
+          paragraphs:
+            - "Personal vault unlock. This window is excluded and must never be stored."
+            - "No work project lives here."
+
+  - window: sheet
+    start: "09:46:00"
+    end: "10:04:00"
+    states:
+      - at: "09:46:00"
+        content:
+          filename: North-Pier-hours.grid
+          sheet: Hours
+          sheets: [Hours, Notes]
+          formula: "=C2"
+          selected: [0, 2]
+          note: "Hours grid for Mina. No card numbers on this sheet."
+          headers: [Day, Role, Hours, Notes]
+          rows:
+            - [Mon, Drafting, 6, North Pier Civic]
+            - [Tue, Review, 4, With Jun Park]
+            - [Wed, Invoice, 2, Send today]
+
+  - window: chat_jun
+    start: "10:04:00"
+    end: "10:12:00"
+    states:
+      - at: "10:04:00"
+        content:
+          workspace: Cedar Works
+          room: Jun Park
+          rooms: [Jun Park, Mina Okonkwo, Delivery desk]
+          topic: North Pier invoice
+          draft: ""
+          messages:
+            - author: You
+              time: "10:04"
+              text: Hours grid is in Cedar Grid. I will send it to Mina today.
+            - author: Jun Park
+              time: "10:07"
+              text: Good. Leave the send commitment open until it actually goes out.
+
+  - window: intranet
+    start: "10:12:00"
+    end: "10:22:00"
+    states:
+      - at: "10:12:00"
+        content:
+          kind: article
+          address: https://intranet.cedar.example/north-pier/invoice
+          kicker: Cedar Works · intranet
+          page_title: North Pier invoice checklist
+          badge: Draft
+          tabs:
+            - title: North Pier
+              active: true
+          paragraphs:
+            - "Checklist for the North Pier Civic invoice. Hours grid is the remaining item."
+            - "This page has no payment cards or one-time codes."
+
+truth:
+  projects:
+    - North Pier invoice
+  people:
+    - Mina Okonkwo (North Pier)
+    - Jun Park (Cedar Works)
+  decisions:
+    - text: Send the North Pier hours grid today
+      evidence_contains: "I will send it to Mina today"
+  commitments:
+    - text: Send the hours grid to Mina today
+      status: open
+  completed: []
+  not_completed:
+    - Hours grid not yet sent
+  noise: []

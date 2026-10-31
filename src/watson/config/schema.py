@@ -58,6 +58,13 @@ DEFAULT_WINDOW_TITLE_DAYS = 30
 DEFAULT_METADATA_DAYS = 365
 DEFAULT_TIER2_GRACE_DAYS = 7
 
+# D3 / §3.4: split when OCR-text similarity drops below this (word Jaccard).
+DEFAULT_SEGMENT_SIMILARITY = 0.25
+# §3.5 eligibility: a segment's state becomes closed after this dwell.
+DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS = 20 * 60
+# Cap on segments.merged_text (line-level union of redacted OCR).
+DEFAULT_MERGED_TEXT_MAX_CHARS = 32768
+
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -155,6 +162,29 @@ class ExclusionsConfig(_StrictModel):
         return tuple(item for item in DEFAULT_EXCLUDED_BUNDLE_IDS if item.casefold() in allowed)
 
 
+class SegmentationConfig(_StrictModel):
+    """Incremental activity segments (plan D3 / §3.4)."""
+
+    similarity_threshold: float = Field(
+        default=DEFAULT_SEGMENT_SIMILARITY,
+        ge=0.0,
+        le=1.0,
+        description="Minimum OCR-text word Jaccard to keep consecutive frames in one segment.",
+    )
+    close_after_seconds: int = Field(
+        default=DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+        ge=60,
+        le=86_400,
+        description="Mark a segment closed (eligible) once dwell reaches this many seconds.",
+    )
+    merged_text_max_chars: int = Field(
+        default=DEFAULT_MERGED_TEXT_MAX_CHARS,
+        ge=256,
+        le=200_000,
+        description="Maximum characters kept in the order-preserving line union.",
+    )
+
+
 class RetentionConfig(_StrictModel):
     """Retention placeholders (plan §5). Not enforced in this slice."""
 
@@ -182,3 +212,4 @@ class WatsonConfig(_StrictModel):
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     exclusions: ExclusionsConfig = Field(default_factory=ExclusionsConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
+    segmentation: SegmentationConfig = Field(default_factory=SegmentationConfig)

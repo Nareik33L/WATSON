@@ -1,0 +1,129 @@
+{
+  "frame_id": "63f6d5f0-ee7a-5584-b6e3-8ea8af8cce0d",
+  "captured_at": "2026-11-04T13:01:15Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.room",
+  "app_name": "Lumen Room",
+  "window_title": "Lumen Room \u2014 Priya Natarajan",
+  "window_id": 4104,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Room \u2014 Lumen Room \u2014 Priya Natarajan",
+        "bbox": [
+          66,
+          9,
+          361,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:01",
+        "bbox": [
+          1240,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya Natarajan",
+        "bbox": [
+          14,
+          46,
+          108,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Live \u00b7 3 on the call",
+        "bbox": [
+          118,
+          46,
+          228,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          191,
+          230,
+          217,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Host",
+        "bbox": [
+          188,
+          251,
+          220,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya Natarajan",
+        "bbox": [
+          526,
+          230,
+          634,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme",
+        "bbox": [
+          560,
+          251,
+          600,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          905,
+          230,
+          1007,
+          251
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery",
+        "bbox": [
+          927,
+          251,
+          985,
+          272
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Client call. Video tiles only.",
+        "bbox": [
+          24,
+          338,
+          1256,
+          359
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "00fefe8000000000",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

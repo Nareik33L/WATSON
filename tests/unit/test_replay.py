@@ -77,6 +77,7 @@ def test_replay_is_idempotent_and_sets_fixture_only_text(
         assert first.ingested == 2
         assert first.extracted == 2
         assert first.deletion_verified == 2
+        assert first.segments == 1
         assert list(spool.rglob("*.png")) == []
         assert list(spool.rglob("*.json")) == []
         for path in [*fixture.rglob("*.png"), *fixture.rglob("*.json")]:

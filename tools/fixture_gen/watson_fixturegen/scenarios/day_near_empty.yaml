@@ -1,0 +1,87 @@
+# Near-empty day — two short glances and long idle gaps.
+# Fictional people, firms, and hosts only (*.example). Plan §11.1.
+
+meta:
+  name: day_near_empty
+  date: "2026-11-06"
+  tz_offset: "+00:00"
+  seed: 17
+  display_id: 1
+  width: 1280
+  height: 800
+  description: Near-empty day
+
+cadence:
+  default_seconds: 45
+  stretch_seconds: 120
+  tighten_seconds: 30
+  stretch_after_stable: 3
+
+windows:
+  mail_desk:
+    template: mail
+    bundle_id: com.lumen.mail
+    app_name: Lumen Mail
+    window_title: "Inbox — Lumen Desk"
+    window_id: 6101
+  calendar:
+    template: browser
+    bundle_id: com.lumen.compass
+    app_name: Lumen Compass
+    window_title: "Pocket Calendar — Today"
+    window_id: 6401
+    url: https://calendar.pocket.example/today
+
+timeline:
+  - window: mail_desk
+    start: "09:30:00"
+    end: "09:38:00"
+    states:
+      - at: "09:30:00"
+        content:
+          account: you@lumen.example
+          folder: Inbox
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: false
+          messages:
+            - sender: Lumen Desk
+              email: desk@lumen.example
+              subject: Building closed this afternoon
+              time: "09:12"
+              preview: West stair painting finished early
+              body:
+                - "The west stair reopened. No delivery work is scheduled today."
+                - "This is a quiet day. Inbox glance only."
+
+  - window: calendar
+    start: "14:00:00"
+    end: "14:05:00"
+    states:
+      - at: "14:00:00"
+        content:
+          kind: calendar
+          address: https://calendar.pocket.example/today
+          kicker: Pocket Calendar · personal
+          page_title: Friday 6 Nov
+          badge: null
+          tabs:
+            - title: Pocket Calendar
+              active: true
+          events:
+            - time: "12:00"
+              title: Lunch
+              personal: true
+            - time: "17:00"
+              title: Library hold expires
+              personal: true
+
+truth:
+  projects: []
+  people: []
+  decisions: []
+  commitments: []
+  completed: []
+  not_completed: []
+  noise:
+    - Pocket Calendar glance 14:00–14:05

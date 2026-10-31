@@ -1,0 +1,169 @@
+{
+  "frame_id": "c038a95e-099b-59e3-a0c9-9d2862c72e60",
+  "captured_at": "2026-11-05T10:06:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.relay",
+  "app_name": "Cedar Relay",
+  "window_title": "Relay \u2014 Jun Park",
+  "window_id": 5301,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Relay \u2014 Relay \u2014 Jun Park",
+        "bbox": [
+          66,
+          9,
+          268,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:06",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "CEDAR WORKS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Mina Okonkwo",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery desk",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          234,
+          46,
+          288,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "North Pier invoice",
+        "bbox": [
+          298,
+          46,
+          407,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          89,
+          266,
+          108
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:04",
+        "bbox": [
+          278,
+          92,
+          309,
+          107
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Hours grid is in Cedar Grid. I will send it to Mina today.",
+        "bbox": [
+          238,
+          109,
+          1262,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          238,
+          143,
+          302,
+          162
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:07",
+        "bbox": [
+          314,
+          146,
+          344,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Good. Leave the send commitment open until it actually goes out.",
+        "bbox": [
+          238,
+          163,
+          1262,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Message Jun Park",
+        "bbox": [
+          234,
+          769,
+          1266,
+          790
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "007f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}
