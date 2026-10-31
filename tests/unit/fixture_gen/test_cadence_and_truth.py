@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
-from watson_fixturegen.cadence import expand_schedule, normalize_title
+from watson_fixturegen.cadence import (
+    expand_schedule,
+    fixture_namespace,
+    frame_id_for,
+    normalize_title,
+)
 from watson_fixturegen.paths import scenarios_dir
 from watson_fixturegen.scenario import load_scenario
 from watson_fixturegen.truth import build_truth, dump_truth, expected_segments, pick_sample
@@ -15,11 +21,15 @@ def test_focused_day_schedule_is_in_range() -> None:
     frames = expand_schedule(scenario)
     assert 120 <= len(frames) <= 200
     ids = [frame.frame_id for frame in frames]
-    assert ids == sorted(ids)
+    assert len(set(ids)) == len(ids)
+    assert [frame.index for frame in frames] == list(range(1, len(frames) + 1))
     stamps = [frame.captured_at for frame in frames]
     assert stamps == sorted(stamps)
     assert stamps[0].isoformat(timespec="seconds").startswith(scenario.date)
-    assert frames[0].frame_id == "f0001"
+    first = uuid.UUID(frames[0].frame_id)
+    assert first.version == 5
+    assert frames[0].frame_id == frame_id_for(scenario.name, scenario.seed, 1)
+    assert first == uuid.uuid5(fixture_namespace(scenario.name, scenario.seed), "1")
 
 
 def test_truth_and_sample_are_deterministic() -> None:
@@ -44,6 +54,7 @@ def test_expected_segments_follow_d3() -> None:
         covered.extend(segment["frame_ids"])
         assert segment["start_frame"] == segment["frame_ids"][0]
         assert segment["end_frame"] == segment["frame_ids"][-1]
+        assert segment["fixture_index"][0] <= segment["fixture_index"][1]
         titles = {
             normalize_title(frame.window.window_title)
             for frame in frames

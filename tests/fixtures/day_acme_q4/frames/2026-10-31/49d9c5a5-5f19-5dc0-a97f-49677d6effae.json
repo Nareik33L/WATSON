@@ -1,0 +1,239 @@
+{
+  "frame_id": "49d9c5a5-5f19-5dc0-a97f-49677d6effae",
+  "captured_at": "2026-10-31T13:08:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.relay",
+  "app_name": "Lumen Relay",
+  "window_title": "Relay \u2014 Tom Ashworth",
+  "window_id": 2301,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Relay \u2014 Relay \u2014 Tom Ashworth",
+        "bbox": [
+          66,
+          9,
+          308,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:08",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "LUMEN DELIVERY",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya Natarajan",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery desk",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          234,
+          46,
+          323,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme Q4",
+        "bbox": [
+          333,
+          46,
+          398,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          238,
+          89,
+          344,
+          108
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:00",
+        "bbox": [
+          356,
+          92,
+          387,
+          107
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Priya wrote this morning \u2014 she wants the demo moved to 14 Nov.",
+        "bbox": [
+          238,
+          109,
+          1262,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          143,
+          266,
+          162
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:02",
+        "bbox": [
+          278,
+          146,
+          308,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Agreed, 14 Nov works for the demo. I will update the draft.",
+        "bbox": [
+          238,
+          163,
+          1262,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom Ashworth",
+        "bbox": [
+          238,
+          197,
+          344,
+          216
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:05",
+        "bbox": [
+          356,
+          200,
+          386,
+          215
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Thanks \u2014 flag Q4 delivery risks in the appendix, and use the published three-tier rate card, not a custom quote.",
+        "bbox": [
+          238,
+          217,
+          1262,
+          238
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          251,
+          266,
+          270
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:07",
+        "bbox": [
+          278,
+          254,
+          308,
+          269
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Agreed on the three-tier rate card. I will send revised pricing to Priya by Friday and start the risks appendix.",
+        "bbox": [
+          238,
+          271,
+          1262,
+          292
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Message Tom Ashworth",
+        "bbox": [
+          234,
+          748,
+          1266,
+          769
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "I will send revised pricing today",
+        "bbox": [
+          234,
+          769,
+          1266,
+          790
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "3f3f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

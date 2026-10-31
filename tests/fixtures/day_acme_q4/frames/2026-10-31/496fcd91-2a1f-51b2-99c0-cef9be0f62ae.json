@@ -1,0 +1,249 @@
+{
+  "frame_id": "496fcd91-2a1f-51b2-99c0-cef9be0f62ae",
+  "captured_at": "2026-10-31T13:30:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.quill",
+  "app_name": "Lumen Quill",
+  "window_title": "Acme Q4 Proposal \u2014 Draft",
+  "window_id": 2201,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Quill \u2014 Acme Q4 Proposal \u2014 Draft",
+        "bbox": [
+          66,
+          9,
+          324,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "13:30",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-Q4-Proposal.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Proposed timeline",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pricing (stub)",
+        "bbox": [
+          0,
+          194,
+          219,
+          227
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-Q4-Proposal.quill",
+        "bbox": [
+          276,
+          46,
+          424,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          434,
+          46,
+          476,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          486,
+          46,
+          557,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme Q4 Proposal",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft \u00b7 demo moved to 14 Nov",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "This draft sets out how Lumen Delivery will run the Acme Q4 rollout for Priya Natarajan at Acme.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Proposed timeline",
+        "bbox": [
+          276,
+          263,
+          984,
+          285
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Decision: live demo moves to 14 Nov (agreed with Tom Ashworth after Priya's request).",
+        "bbox": [
+          276,
+          291,
+          984,
+          312
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Week of 21 Nov: statement of work and named delivery team.",
+        "bbox": [
+          276,
+          320,
+          984,
+          341
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pricing (stub)",
+        "bbox": [
+          276,
+          365,
+          984,
+          388
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Will follow the published three-tier rate card. Numbers still to paste from Lumen Grid.",
+        "bbox": [
+          276,
+          394,
+          984,
+          415
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tom agreed 14 Nov",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Switch pricing to published card",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "7c5c7c7c7c7c7c7c",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

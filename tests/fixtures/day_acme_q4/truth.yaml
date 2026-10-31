@@ -2,9 +2,11 @@ projects: [Acme Q4 Proposal, Internal Onboarding Guide]
 people: [Priya Natarajan (Acme), Tom Ashworth (Delivery)]
 decisions:
 - text: Agreed to move the Acme demo to 14 Nov
-  evidence_frames: [f0079, f0080, f0081, f0082, f0083, f0084, f0085, f0086]
+  evidence_frames: [70fd742b-e766-5b19-be14-458f17044e1d, dfbdb982-bf0c-5f22-a27a-ce7d931b1d06, f6bc1c6b-7e43-5578-8ef5-a5faf2c7e36e,
+    efc3c5fd-4120-5a39-bd74-775ad0516040, e4c6cf03-324b-5611-8912-93ae66581f4f, de1e9cd9-0f22-570c-9b3f-a3b309687db8,
+    49d9c5a5-5f19-5dc0-a97f-49677d6effae, ce192ede-f063-5d58-a574-a5078f9221a5]
 - text: Adopt the published three-tier rate card for Acme
-  evidence_frames: [f0084, f0085, f0086]
+  evidence_frames: [de1e9cd9-0f22-570c-9b3f-a3b309687db8, 49d9c5a5-5f19-5dc0-a97f-49677d6effae, ce192ede-f063-5d58-a574-a5078f9221a5]
 commitments:
 - text: Send revised pricing to Priya by Friday
   status: open
@@ -16,220 +18,276 @@ noise: ['Cedar Daily 10:40–10:46', 'Pocket Calendar glance 14:30–14:33']
 expected_segments:
 - start: '2026-10-31T09:00:00Z'
   end: '2026-10-31T09:06:00Z'
-  start_frame: f0001
-  end_frame: f0006
+  start_frame: 0effb2c0-e6e2-52a1-8e86-a1b3c1ddfd06
+  end_frame: fea59562-ab8a-5f37-b68e-dc2ca23bb79c
+  fixture_index:
+  - 1
+  - 6
   bundle_id: com.lumen.mail
   window_title: 'Re: Acme Q4 Proposal — Priya Natarajan'
-  frame_ids: [f0001, f0002, f0003, f0004, f0005, f0006]
+  frame_ids: [0effb2c0-e6e2-52a1-8e86-a1b3c1ddfd06, fab80558-8559-5b31-b595-20ffb69a3828, 7fd5f63d-599c-57c8-9f30-89d57deb3d5b,
+    46750ad6-9c81-5faa-96af-df464e0dc47d, 207b0bfd-844b-5436-bcdf-57178f70c0e8, fea59562-ab8a-5f37-b68e-dc2ca23bb79c]
 - start: '2026-10-31T09:08:00Z'
   end: '2026-10-31T10:38:00Z'
-  start_frame: f0007
-  end_frame: f0054
+  start_frame: f3b263a0-9c26-5845-aa9d-f2dd3cca4fce
+  end_frame: 98dbbb99-2dfe-5190-80b0-eb635699cb05
+  fixture_index:
+  - 7
+  - 54
   bundle_id: com.lumen.quill
   window_title: Acme Q4 Proposal — Draft
   frame_ids:
-  - f0007
-  - f0008
-  - f0009
-  - f0010
-  - f0011
-  - f0012
-  - f0013
-  - f0014
-  - f0015
-  - f0016
-  - f0017
-  - f0018
-  - f0019
-  - f0020
-  - f0021
-  - f0022
-  - f0023
-  - f0024
-  - f0025
-  - f0026
-  - f0027
-  - f0028
-  - f0029
-  - f0030
-  - f0031
-  - f0032
-  - f0033
-  - f0034
-  - f0035
-  - f0036
-  - f0037
-  - f0038
-  - f0039
-  - f0040
-  - f0041
-  - f0042
-  - f0043
-  - f0044
-  - f0045
-  - f0046
-  - f0047
-  - f0048
-  - f0049
-  - f0050
-  - f0051
-  - f0052
-  - f0053
-  - f0054
+  - f3b263a0-9c26-5845-aa9d-f2dd3cca4fce
+  - 8c2a3a28-8dc2-5760-b8e7-6a26f7a9ce54
+  - ee331520-dfef-55e1-b1e1-aa9c531e8464
+  - da169d66-321e-5f29-a6fd-74bb4f978da8
+  - 2bd5d211-4f26-5154-8271-29a6ee1be0be
+  - db584c60-869b-5b14-8854-8438a3341307
+  - fbf3d68a-4eb8-5771-b5e5-9bf0190585eb
+  - 8e66f03b-edc5-5d8f-8772-a5995ba84612
+  - 03841d30-2911-5a8c-b714-1a721061c9a1
+  - 96d01beb-145a-5755-b12f-ba544aa833ea
+  - 78a3659b-7b9a-57c1-9a3d-ad0ce2639f3a
+  - 16f8c16b-80ce-56d6-bd75-5f31592af8c3
+  - 771cd0d2-86f4-5d5e-ad11-7c36bd738b5f
+  - 507f83ee-14e3-5c63-b547-75f547283f20
+  - caa6234f-f456-5965-8ae6-bfeb9e4de49b
+  - 36e01ae7-0115-53ae-adf4-aaa9b90f5e35
+  - b21bd147-c4f5-5972-a44d-db8772014ee6
+  - 556d8f4f-b63e-5ac3-9b79-3874db37a19e
+  - 4976ce21-81a7-5fae-9967-590c90276fec
+  - f76b08f7-0ca0-5a3a-9423-ee1a16e8dd0b
+  - 019d2d28-1eb8-5541-86d4-ee55ccedb670
+  - 09288b48-c537-5666-b43c-801d759b9254
+  - 235aebce-2abd-5d5e-b1a2-d3492d32915e
+  - 89c3beb8-996b-5a3f-93b1-4632b2b07b36
+  - 35adbb7d-9846-54da-a6fa-837b2c766f8c
+  - 46583830-e1b6-5356-a4e1-bc2d75a85b29
+  - 55c9571e-7fe1-5662-b133-fc3a5a6c8bab
+  - 326244f2-a126-5775-bb71-100d0dc271f6
+  - 6e5ab41b-f2a5-5499-a306-52f6845b35e3
+  - f06b2d2b-bf24-569f-8e04-3ea787c16cf3
+  - cc24c626-a785-5440-a7bf-ef0c78bb08a3
+  - 1e7a58af-c818-5d73-8c96-60b8414de211
+  - ccc7c2b0-c799-5d66-b2d1-28b3466e4d4c
+  - 21808d73-3e3c-570a-8ac9-28131c70eae8
+  - 8de08b75-77e4-5dc2-aea7-c40b06b36b7a
+  - 4fd727a6-78c9-5ff0-a552-714bc451b7d8
+  - 875a49b8-2477-5e7e-aa25-960c1c15a82f
+  - 75f03616-2ecd-5d51-af75-f995ad662daa
+  - 511fe32b-8190-5a61-94fe-12f70e281052
+  - e20daf4b-7240-5c35-893f-53d8fd6a110c
+  - d36588b4-e09d-5c7b-94fb-57aae4801c3c
+  - 3a079d0b-ba0a-5392-ad87-0932c46f4e04
+  - d70aafcd-8d88-52af-a468-928f7f3dbe18
+  - 5fa9f0d4-a037-5c98-9b9c-f3a8ee54cd50
+  - 0401de70-acde-534d-a5b6-963173065f68
+  - a9f2e623-fee4-5fea-814f-d3e44a2214f0
+  - bcd0e17b-05b0-52f1-b5b7-93cc60c8134e
+  - 98dbbb99-2dfe-5190-80b0-eb635699cb05
 - start: '2026-10-31T10:40:00Z'
   end: '2026-10-31T10:44:00Z'
-  start_frame: f0055
-  end_frame: f0059
+  start_frame: a2d54a85-1156-52b4-83ee-74f249b080b7
+  end_frame: 879bc181-ff87-5b78-ba53-8f7e7205b604
+  fixture_index:
+  - 55
+  - 59
   bundle_id: com.lumen.compass
   window_title: Cedar Daily — Harbor ferry changes
-  frame_ids: [f0055, f0056, f0057, f0058, f0059]
+  frame_ids: [a2d54a85-1156-52b4-83ee-74f249b080b7, 90f02fe6-e443-56c2-8539-d0cd2d3ed6d3, 8e3bce08-fda0-5af9-b22b-0497f2b5a261,
+    c66500a4-765a-5694-92ca-e66c7686a479, 879bc181-ff87-5b78-ba53-8f7e7205b604]
 - start: '2026-10-31T10:46:00Z'
   end: '2026-10-31T11:18:00Z'
-  start_frame: f0060
-  end_frame: f0078
+  start_frame: 9487bc7a-68a7-58c8-a316-bdcff05c2ea6
+  end_frame: fd4bd9c6-6062-5349-ac04-d3f02c9ad212
+  fixture_index:
+  - 60
+  - 78
   bundle_id: com.lumen.quill
   window_title: Acme Q4 Proposal — Draft
   frame_ids:
-  - f0060
-  - f0061
-  - f0062
-  - f0063
-  - f0064
-  - f0065
-  - f0066
-  - f0067
-  - f0068
-  - f0069
-  - f0070
-  - f0071
-  - f0072
-  - f0073
-  - f0074
-  - f0075
-  - f0076
-  - f0077
-  - f0078
+  - 9487bc7a-68a7-58c8-a316-bdcff05c2ea6
+  - 0f44c8ff-984a-5637-8240-fde7b4dd7c3c
+  - aaaf382e-f93b-57c0-b80d-48010e075a63
+  - 8a82f314-6eba-5f04-8bdf-e9ed9f2d6fa4
+  - 87cdf463-cc44-520f-bc72-63362f147ed6
+  - 11411863-6ce4-5ed4-968f-1eefb1e7a78b
+  - 0e44df0b-9530-5879-956b-053ce11de664
+  - 81ce15dc-3c4b-5c46-a7fb-1b1bc91d7a06
+  - a1b49588-a81a-56de-a5c0-af5613675aa2
+  - ab2508cf-ac8b-5610-8394-b5b9e1e0f573
+  - 92412e9f-a6cf-5bcd-b3b2-9325921b3004
+  - 891604b8-ccd5-5745-a963-027dd6e536e9
+  - c1f49c18-ccb0-5b7c-8b55-b41e052a78b8
+  - d47cffa9-6419-5458-a8f8-219cf29d715e
+  - 52001908-be8e-5447-b3ad-2c82576bf99a
+  - 5703456b-ee9e-5fa3-a02d-83a9e0b5a13c
+  - 3ef5ff9e-3b3b-52cf-87b2-f85bb26860bc
+  - 31fa7fb5-cde7-5165-9b25-9d8a2039dc18
+  - fd4bd9c6-6062-5349-ac04-d3f02c9ad212
 - start: '2026-10-31T13:00:00Z'
   end: '2026-10-31T13:10:00Z'
-  start_frame: f0079
-  end_frame: f0086
+  start_frame: 70fd742b-e766-5b19-be14-458f17044e1d
+  end_frame: ce192ede-f063-5d58-a574-a5078f9221a5
+  fixture_index:
+  - 79
+  - 86
   bundle_id: com.lumen.relay
   window_title: Relay — Tom Ashworth
-  frame_ids: [f0079, f0080, f0081, f0082, f0083, f0084, f0085, f0086]
+  frame_ids: [70fd742b-e766-5b19-be14-458f17044e1d, dfbdb982-bf0c-5f22-a27a-ce7d931b1d06, f6bc1c6b-7e43-5578-8ef5-a5faf2c7e36e,
+    efc3c5fd-4120-5a39-bd74-775ad0516040, e4c6cf03-324b-5611-8912-93ae66581f4f, de1e9cd9-0f22-570c-9b3f-a3b309687db8,
+    49d9c5a5-5f19-5dc0-a97f-49677d6effae, ce192ede-f063-5d58-a574-a5078f9221a5]
 - start: '2026-10-31T13:12:00Z'
   end: '2026-10-31T14:18:00Z'
-  start_frame: f0087
-  end_frame: f0122
+  start_frame: c90970f8-e4e3-5ac2-8e5c-b14537f4ee00
+  end_frame: 72fcac74-48ea-5b35-a843-cb05e4b46cad
+  fixture_index:
+  - 87
+  - 122
   bundle_id: com.lumen.quill
   window_title: Acme Q4 Proposal — Draft
   frame_ids:
-  - f0087
-  - f0088
-  - f0089
-  - f0090
-  - f0091
-  - f0092
-  - f0093
-  - f0094
-  - f0095
-  - f0096
-  - f0097
-  - f0098
-  - f0099
-  - f0100
-  - f0101
-  - f0102
-  - f0103
-  - f0104
-  - f0105
-  - f0106
-  - f0107
-  - f0108
-  - f0109
-  - f0110
-  - f0111
-  - f0112
-  - f0113
-  - f0114
-  - f0115
-  - f0116
-  - f0117
-  - f0118
-  - f0119
-  - f0120
-  - f0121
-  - f0122
+  - c90970f8-e4e3-5ac2-8e5c-b14537f4ee00
+  - 18007726-7384-54ea-97c1-16dce1139112
+  - 4bf2348d-cf43-5232-8f77-d6e8781599e3
+  - 69155b90-9954-50f0-aab8-931ae82524e7
+  - 3d092840-dbca-549f-bf85-159f1ff644a4
+  - 20b2ebb3-2a98-5867-84e8-df58a1d03114
+  - a396c7e4-9126-5200-8a66-94e9d1189c5f
+  - 92ce32e3-9a8e-581e-bada-2b1481711277
+  - a0b546f9-4813-5141-b3c8-d19e957019fd
+  - b90ef499-7654-5938-a655-ca3eaacb9d38
+  - 1560a121-5b72-5166-b63a-665d6d20bcc2
+  - 496fcd91-2a1f-51b2-99c0-cef9be0f62ae
+  - 31cbfa77-0288-587e-b8ef-08c45d9cfb78
+  - 54afa7d1-4c0b-5d8b-98ff-80c23ea0033f
+  - ee5a96ee-0213-5137-9250-3e6e9b5f1910
+  - 7b26686d-36de-5d22-8b81-307f9a8c3946
+  - 417f47db-201d-5add-a1e4-97dd0e6c922a
+  - 457a7b97-9dcd-524f-98ab-67aca0e6626f
+  - 235a5f66-7142-5c5a-92db-cb6a4d019315
+  - 3cb71b08-ca33-5b46-b145-57858f42b605
+  - b61266cf-f1cf-5c36-868a-78394f393e38
+  - 52c2d8bb-7b55-52ae-9903-d7db5ea37143
+  - f0177f90-a93a-50e3-a21c-aba6754c27fa
+  - 57be6436-2255-5c99-809b-fee656b0c750
+  - f3f68d2e-f8bf-5cce-b80a-2cc1e3875406
+  - 847deabf-f5c4-5199-b540-7f146a1de448
+  - 5e55eb0b-a490-591c-a45e-8e96d90da34b
+  - a3d3f2cc-78af-517e-be1f-bda9f91fb549
+  - 14bc8586-a21e-58c4-a4e1-9f2354b68547
+  - dd388fc4-9aea-5270-8f54-cba386e8fe0f
+  - 662132d8-dcab-5ab0-9e99-83c87f363d0a
+  - 3fec47e6-74e4-5272-8d4d-4b0408e3b930
+  - ff4df0f7-9a88-5277-a8c1-8fecfc6bd8f6
+  - 1eeb4b76-3802-5ee5-b8d8-49494faa722e
+  - f7fe3075-2092-57d8-909f-75828b15def7
+  - 72fcac74-48ea-5b35-a843-cb05e4b46cad
 - start: '2026-10-31T14:30:00Z'
   end: '2026-10-31T14:32:00Z'
-  start_frame: f0123
-  end_frame: f0126
+  start_frame: 30bd671a-68df-5c56-9406-e07d4a7f0c7c
+  end_frame: 73344c6b-35cb-5f22-a8dc-ef9e6c343178
+  fixture_index:
+  - 123
+  - 126
   bundle_id: com.lumen.compass
   window_title: Pocket Calendar — Today
-  frame_ids: [f0123, f0124, f0125, f0126]
+  frame_ids: [30bd671a-68df-5c56-9406-e07d4a7f0c7c, 14f1c9aa-5b6e-5046-a350-24fdade94b3b, c20b915c-2b60-545f-9fae-03a678a2b0aa,
+    73344c6b-35cb-5f22-a8dc-ef9e6c343178]
 - start: '2026-10-31T14:34:00Z'
   end: '2026-10-31T15:04:00Z'
-  start_frame: f0127
-  end_frame: f0144
+  start_frame: 257e6ec3-5f2f-5339-951c-42f1f962c899
+  end_frame: 54e24e69-c4ae-52f4-820b-bcf01a6ad233
+  fixture_index:
+  - 127
+  - 144
   bundle_id: com.lumen.grid
   window_title: Acme rate card — Grid
   frame_ids:
-  - f0127
-  - f0128
-  - f0129
-  - f0130
-  - f0131
-  - f0132
-  - f0133
-  - f0134
-  - f0135
-  - f0136
-  - f0137
-  - f0138
-  - f0139
-  - f0140
-  - f0141
-  - f0142
-  - f0143
-  - f0144
+  - 257e6ec3-5f2f-5339-951c-42f1f962c899
+  - 0537b2ff-10e6-56a7-8081-89660c3b36da
+  - 7afa6cfb-b535-55fc-9ad4-f9ca4fbcdb9a
+  - ba94ca89-f8b1-58ec-bc9f-f62b820346d1
+  - 48dc0e25-25e4-5d17-bdbc-3c2762c1c1f8
+  - 9df0e8c8-f2af-54a4-99e5-3f30cb56d053
+  - 6947f82e-a185-5f4e-bcdd-e0266e004995
+  - 5a1734c3-bff7-57be-9a83-ef1abe80d3be
+  - ff0fff35-9f87-5243-b308-c088afb366ea
+  - 0f7c30e4-c688-52ca-93de-f8e0d0a45e3f
+  - f3fde47a-92db-5d17-9a1f-e8a8f6c4335a
+  - 0817291a-dcec-56c0-b0e6-973ef555a18f
+  - 6d1b6560-4856-5266-ab96-6a2360538dd4
+  - f9554dda-6a79-51e9-97e2-27c993c41fae
+  - 556a5b11-bdd8-583d-a6dd-e49b9adf57e7
+  - ceec9434-c6d2-5764-bb52-b5c208f1fcef
+  - 024c04a5-c606-5c90-8c63-7f01bf0593a6
+  - 54e24e69-c4ae-52f4-820b-bcf01a6ad233
 - start: '2026-10-31T15:06:00Z'
   end: '2026-10-31T15:20:00Z'
-  start_frame: f0145
-  end_frame: f0154
+  start_frame: 4286f4e0-26b6-57a8-9adf-d4a120b13094
+  end_frame: 6e319154-d57e-5127-b2d4-b0791e7c35b6
+  fixture_index:
+  - 145
+  - 154
   bundle_id: com.lumen.compass
   window_title: Onboarding Guide — Section 3
-  frame_ids: [f0145, f0146, f0147, f0148, f0149, f0150, f0151, f0152, f0153, f0154]
+  frame_ids: [4286f4e0-26b6-57a8-9adf-d4a120b13094, 8c6dedf8-9f8b-5cfa-a472-78bf09c61832, dd1f27ce-3248-5fd3-a1d3-f8f0ce45668b,
+    6ea5c9d2-ef05-5bf4-ba84-8667504faa62, c8c3b11e-0917-5fcb-84cf-99234b057bba, c488b996-1150-5eb0-8d9b-7f41c35ca6a5,
+    52701386-5560-5157-91d5-1ee7898899db, 44631804-2170-5cfb-91c2-d35c3610c0d5, 6e2ea643-a67e-5c2e-b153-532e1ec156d3,
+    6e319154-d57e-5127-b2d4-b0791e7c35b6]
 - start: '2026-10-31T15:22:00Z'
   end: '2026-10-31T15:34:00Z'
-  start_frame: f0155
-  end_frame: f0163
+  start_frame: 1c9145b9-d596-5d39-947b-285cc525db41
+  end_frame: 51822aa2-3938-5eef-99f0-3ef471f4e115
+  fixture_index:
+  - 155
+  - 163
   bundle_id: com.lumen.mail
   window_title: Compose — Revised pricing for Acme
-  frame_ids: [f0155, f0156, f0157, f0158, f0159, f0160, f0161, f0162, f0163]
+  frame_ids: [1c9145b9-d596-5d39-947b-285cc525db41, dccd6942-0ffb-579d-8bde-d589050d95b1, 6364d30d-c85c-58e6-8777-c1b39c1f2fb9,
+    d5283a93-a198-59a7-bd12-c40e0a6ce0dd, 250b9dae-7b15-538e-8c28-ecfdbcaf0caa, 6bd762f0-38e3-54fc-8338-014ee64822f2,
+    8daffb57-6636-5277-9649-94631a812814, 2ef1d03e-ec67-56bf-9126-da9e395e735c, 51822aa2-3938-5eef-99f0-3ef471f4e115]
 - start: '2026-10-31T15:36:00Z'
   end: '2026-10-31T15:46:00Z'
-  start_frame: f0164
-  end_frame: f0171
+  start_frame: c0de6194-092e-5b88-b373-42a1b0cd0edf
+  end_frame: 3fabb3c3-7500-5ab1-9726-1d5342f9af6c
+  fixture_index:
+  - 164
+  - 171
   bundle_id: com.lumen.relay
   window_title: Relay — Tom Ashworth
-  frame_ids: [f0164, f0165, f0166, f0167, f0168, f0169, f0170, f0171]
+  frame_ids: [c0de6194-092e-5b88-b373-42a1b0cd0edf, 3cc69a98-45aa-56a1-abfc-6f95ea9fc853, ecc14fe8-a3ac-5e28-bdf5-ac51bdc7f45b,
+    e16a8557-f782-5268-84f1-f39d549acf05, 0e259183-c311-5453-b56c-8acd270d6954, 77feea6f-f36c-5b69-b85b-253b75d48377,
+    4c2cb82a-e753-51e4-ad19-12dbbb1f57b5, 3fabb3c3-7500-5ab1-9726-1d5342f9af6c]
 - start: '2026-10-31T15:48:00Z'
   end: '2026-10-31T16:00:00Z'
-  start_frame: f0172
-  end_frame: f0180
+  start_frame: 17f673bb-b6ab-53e9-a7b9-09cae8649a10
+  end_frame: 4fe44505-bb4d-501f-9324-183e2a1927d4
+  fixture_index:
+  - 172
+  - 180
   bundle_id: com.lumen.anvil
   window_title: anvil — proposals/acme_q4.md
-  frame_ids: [f0172, f0173, f0174, f0175, f0176, f0177, f0178, f0179, f0180]
+  frame_ids: [17f673bb-b6ab-53e9-a7b9-09cae8649a10, a7e5438f-cf12-55e6-b671-7ca1592db392, 6a037be2-56b9-568b-9151-3968f7f8e64a,
+    c198fef1-0256-505e-93d2-144425f221a1, 857dba22-eb77-5182-9eca-0052cfb3033a, b8f9f497-3150-528d-ac1a-66c89b5622c9,
+    98d3cb13-46b6-5d4d-bbea-92c8ec61879c, e7d01fc8-3517-5e19-9354-3409f95368c3, 4fe44505-bb4d-501f-9324-183e2a1927d4]
 - start: '2026-10-31T16:02:00Z'
   end: '2026-10-31T16:16:00Z'
-  start_frame: f0181
-  end_frame: f0190
+  start_frame: 6d30d1f1-6499-54e2-826f-a7f45999e6f7
+  end_frame: bb3426cf-930a-5c2d-bbcb-c624be856588
+  fixture_index:
+  - 181
+  - 190
   bundle_id: com.lumen.quill
   window_title: Acme Q4 Proposal — Draft
-  frame_ids: [f0181, f0182, f0183, f0184, f0185, f0186, f0187, f0188, f0189, f0190]
+  frame_ids: [6d30d1f1-6499-54e2-826f-a7f45999e6f7, f22a6fed-787c-5359-bc46-2e56f498a875, 7cfb87a1-0f84-598a-b089-4ba4811d510b,
+    1a8791d3-a370-5349-905f-189dd0da861b, 6b4867f0-7c2e-5afa-b866-d59f37ce0a59, 84d0a2e1-c92d-5870-b94c-d8deb15d8966,
+    94764991-b5ce-5b3f-9a4f-c3ef0aff83e1, e28f0041-a805-5b0a-80f0-8e68f2c94229, 19de75a2-b8a5-5b2c-9a31-c60c19370212,
+    bb3426cf-930a-5c2d-bbcb-c624be856588]
 meta:
   name: day_acme_q4
   date: '2026-10-31'
   seed: 42
   frame_count: 190
-  first_frame: f0001
-  last_frame: f0190
+  first_frame: 0effb2c0-e6e2-52a1-8e86-a1b3c1ddfd06
+  last_frame: bb3426cf-930a-5c2d-bbcb-c624be856588

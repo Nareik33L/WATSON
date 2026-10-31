@@ -1,0 +1,289 @@
+{
+  "frame_id": "257e6ec3-5f2f-5339-951c-42f1f962c899",
+  "captured_at": "2026-10-31T14:34:00Z",
+  "display_id": 1,
+  "bundle_id": "com.lumen.grid",
+  "app_name": "Lumen Grid",
+  "window_title": "Acme rate card \u2014 Grid",
+  "window_id": 2501,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Lumen Grid \u2014 Acme rate card \u2014 Grid",
+        "bbox": [
+          66,
+          9,
+          298,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "14:34",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "SHEETS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Published tiers",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Scratch",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FILE",
+        "bbox": [
+          14,
+          137,
+          205,
+          153
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-rate-card.grid",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Acme-rate-card.grid",
+        "bbox": [
+          234,
+          46,
+          361,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Published tiers",
+        "bbox": [
+          371,
+          46,
+          463,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "=C2",
+        "bbox": [
+          473,
+          46,
+          499,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tier",
+        "bbox": [
+          233,
+          87,
+          386,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Scope",
+        "bbox": [
+          386,
+          87,
+          674,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Monthly",
+        "bbox": [
+          674,
+          87,
+          817,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Notes",
+        "bbox": [
+          817,
+          87,
+          1268,
+          116
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor",
+        "bbox": [
+          233,
+          116,
+          386,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Discovery only",
+        "bbox": [
+          386,
+          116,
+          674,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "12000",
+        "bbox": [
+          674,
+          116,
+          817,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Two-week start",
+        "bbox": [
+          817,
+          116,
+          1268,
+          150
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Current",
+        "bbox": [
+          233,
+          150,
+          386,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Delivery + demo",
+        "bbox": [
+          386,
+          150,
+          674,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "18500",
+        "bbox": [
+          674,
+          150,
+          817,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Default for Acme",
+        "bbox": [
+          817,
+          150,
+          1268,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Beacon",
+        "bbox": [
+          233,
+          184,
+          386,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Named team",
+        "bbox": [
+          386,
+          184,
+          674,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "24000",
+        "bbox": [
+          674,
+          184,
+          817,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "If they want a resident lead",
+        "bbox": [
+          817,
+          184,
+          1268,
+          218
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Paste these three tiers into the proposal. Do not invent a custom quote.",
+        "bbox": [
+          232,
+          231,
+          1268,
+          252
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "5f007f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

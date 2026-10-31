@@ -22,3 +22,8 @@ def average_hash_hex(image: Image.Image, *, size: int = HASH_SIZE) -> str:
         if pixel >= mean:
             bits |= 1 << (63 - index)
     return f"{bits:016x}"
+
+
+def hamming_distance(left: str, right: str) -> int:
+    """Bit count of XOR of two 16-char hex average hashes."""
+    return bin(int(left, 16) ^ int(right, 16)).count("1")

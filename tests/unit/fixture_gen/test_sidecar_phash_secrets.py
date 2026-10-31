@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from PIL import Image
 
+from watson_fixturegen.cadence import frame_id_for
 from watson_fixturegen.phash import average_hash_hex
 from watson_fixturegen.secrets import find_secret_hits
 from watson_fixturegen.sidecar import dump_sidecar, load_sidecar, make_sidecar, validate_sidecar
@@ -11,7 +12,7 @@ from watson_fixturegen.sidecar import dump_sidecar, load_sidecar, make_sidecar, 
 
 def _sidecar(**overrides: object) -> dict[str, object]:
     payload = make_sidecar(
-        frame_id="f0001",
+        frame_id=frame_id_for("day_acme_q4", 42, 1),
         captured_at=datetime(2026, 10, 31, 9, 0, tzinfo=UTC),
         display_id=1,
         bundle_id="com.lumen.mail",

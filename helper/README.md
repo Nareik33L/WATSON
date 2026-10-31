@@ -25,6 +25,8 @@ CI (`swift build` + unit tests + `--selftest`) runs only when this directory cha
 
 ## Sidecar schema (§3.1)
 
+The machine-readable **source of truth** is [`schemas/sidecar.schema.json`](../schemas/sidecar.schema.json) (JSON Schema draft 2020-12). The table below is a summary of that file.
+
 Each captured frame writes `<spool>/<yyyy-MM-dd>/<frame_id>.png` and `<frame_id>.json`. Files are `0600`; directories are `0700` and Time Machine-excluded.
 
 ```json

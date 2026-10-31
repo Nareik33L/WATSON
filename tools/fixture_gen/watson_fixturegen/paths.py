@@ -13,6 +13,10 @@ def templates_dir() -> Path:
     return package_dir() / "templates"
 
 
+def fonts_dir() -> Path:
+    return tools_root() / "fonts"
+
+
 def tools_root() -> Path:
     return package_dir().parent
 

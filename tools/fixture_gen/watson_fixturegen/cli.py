@@ -64,6 +64,8 @@ def _cmd_render(args: argparse.Namespace) -> int:
     print(f"sample50: {result.sample_path}")
     if not args.dry_run:
         print(f"frames: {result.frames_dir}")
+        if result.manifest_path is not None:
+            print(f"manifest: {result.manifest_path}")
     return 0
 
 

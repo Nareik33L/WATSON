@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Final, TypedDict
@@ -120,7 +121,7 @@ def validate_sidecar(payload: Mapping[str, Any]) -> None:
     if extra:
         raise ValueError(f"sidecar has unknown fields: {', '.join(extra)}")
 
-    _require_str(payload, "frame_id")
+    _require_uuid(payload, "frame_id")
     _require_str(payload, "captured_at")
     captured_at = str(payload["captured_at"])
     datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
@@ -134,9 +135,8 @@ def validate_sidecar(payload: Mapping[str, Any]) -> None:
     _require_int(payload, "window_id")
     if not isinstance(payload["is_private_browsing"], bool):
         raise ValueError("is_private_browsing must be a boolean")
-    url = payload["url"]
-    if url is not None and not isinstance(url, str):
-        raise ValueError("url must be a string or null")
+    if payload["url"] is not None:
+        raise ValueError("url must be null (helper M0-B; Accessibility is M5 / §14 #6)")
     _require_int(payload, "width")
     _require_int(payload, "height")
     if int(payload["width"]) <= 0 or int(payload["height"]) <= 0:
@@ -185,6 +185,18 @@ def _validate_ocr_line(line: object, index: int) -> None:
         raise ValueError(f"{prefix}.confidence must be a number")
     if not 0.0 <= float(confidence) <= 1.0:
         raise ValueError(f"{prefix}.confidence must be between 0 and 1")
+
+
+def _require_uuid(payload: Mapping[str, Any], key: str) -> None:
+    value = payload[key]
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a lowercase UUID")
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a lowercase UUID") from exc
+    if str(parsed) != value:
+        raise ValueError(f"{key} must be a canonical lowercase UUID")
 
 
 def _require_str(payload: Mapping[str, Any], key: str) -> None:

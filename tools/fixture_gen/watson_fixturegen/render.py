@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from PIL import Image
 
 from watson_fixturegen.cadence import ScheduledFrame, expand_schedule
 from watson_fixturegen.ocr import OCR_JS, normalize_ocr_lines
-from watson_fixturegen.paths import templates_dir
+from watson_fixturegen.paths import fonts_dir, templates_dir
 from watson_fixturegen.phash import average_hash_hex
 from watson_fixturegen.scenario import Scenario, load_scenario
 from watson_fixturegen.sidecar import dump_sidecar, make_sidecar
@@ -23,7 +27,11 @@ CHROMIUM_ARGS = (
     "--hide-scrollbars",
     "--font-render-hinting=none",
     "--disable-font-subpixel-positioning",
+    "--disable-lcd-text",
 )
+PALETTE_COLORS = 64
+FIXTURE_ORIGIN = "https://fixture.watson.local/"
+FONT_ROUTE = "https://fixture.watson.local/fonts/"
 
 
 @dataclass(frozen=True)
@@ -33,6 +41,7 @@ class RenderResult:
     truth_path: Path
     sample_path: Path
     frames_dir: Path
+    manifest_path: Path | None
 
 
 Progress = Callable[[int, int, str], None]
@@ -54,35 +63,78 @@ def render_scenario(
     truth = build_truth(scenario, frames)
     sample_ids = pick_sample([frame.frame_id for frame in frames], 50)
 
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "truth.yaml").write_text(
+        dump_truth({k: v for k, v in truth.items() if k != "_by_id"}),
+        encoding="utf-8",
+    )
+    write_sample_list(out_dir / "sample50.txt", sample_ids)
+
     if dry_run:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "truth.yaml").write_text(
-            dump_truth({k: v for k, v in truth.items() if k != "_by_id"}),
-            encoding="utf-8",
-        )
-        write_sample_list(out_dir / "sample50.txt", sample_ids)
         return RenderResult(
             out_dir=out_dir,
             frame_count=len(frames),
             truth_path=out_dir / "truth.yaml",
             sample_path=out_dir / "sample50.txt",
             frames_dir=frames_dir,
+            manifest_path=None,
         )
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    frames_root = out_dir / "frames"
+    if frames_root.exists():
+        shutil.rmtree(frames_root)
     frames_dir.mkdir(parents=True, exist_ok=True)
     _render_frames(scenario, frames, frames_dir, progress=progress)
-    truth_path = out_dir / "truth.yaml"
-    truth_path.write_text(dump_truth(truth), encoding="utf-8")
-    sample_path = out_dir / "sample50.txt"
-    write_sample_list(sample_path, sample_ids)
+    manifest_path = write_manifest(out_dir, scenario, frames, frames_dir)
     return RenderResult(
         out_dir=out_dir,
         frame_count=len(frames),
-        truth_path=truth_path,
-        sample_path=sample_path,
+        truth_path=out_dir / "truth.yaml",
+        sample_path=out_dir / "sample50.txt",
         frames_dir=frames_dir,
+        manifest_path=manifest_path,
     )
+
+
+def write_manifest(
+    out_dir: Path,
+    scenario: Scenario,
+    frames: list[ScheduledFrame],
+    frames_dir: Path,
+) -> Path:
+    entries: dict[str, dict[str, object]] = {}
+    for frame in frames:
+        png_path = frames_dir / f"{frame.frame_id}.png"
+        with Image.open(png_path) as image:
+            width, height = image.size
+        rel = f"frames/{scenario.date}/{frame.frame_id}.png"
+        entries[frame.frame_id] = {
+            "png": rel,
+            "sha256": hashlib.sha256(png_path.read_bytes()).hexdigest(),
+            "width": width,
+            "height": height,
+        }
+    payload = {
+        "name": scenario.name,
+        "date": scenario.date,
+        "seed": scenario.seed,
+        "frames": entries,
+    }
+    path = out_dir / "manifest.json"
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    return path
+
+
+def encode_fixture_png(image: Image.Image, path: Path) -> Image.Image:
+    """Write a palette PNG8 and return the RGB pixels that were saved."""
+    rgb = image.convert("RGB")
+    palette = rgb.quantize(
+        colors=PALETTE_COLORS,
+        method=Image.Quantize.MEDIANCUT,
+        dither=Image.Dither.NONE,
+    )
+    palette.save(path, format="PNG", optimize=True, compress_level=9)
+    return Image.open(path).convert("RGB")
 
 
 def _render_frames(
@@ -99,6 +151,7 @@ def _render_frames(
             "playwright is not installed. From the repo root: uv sync --group fixturegen"
         ) from exc
 
+    bundled = fonts_dir()
     env = Environment(
         loader=FileSystemLoader(str(templates_dir())),
         undefined=StrictUndefined,
@@ -113,15 +166,34 @@ def _render_frames(
             viewport={"width": scenario.width, "height": scenario.height},
             device_scale_factor=1,
             color_scheme="light",
+            reduced_motion="reduce",
+            has_touch=False,
+            is_mobile=False,
+            base_url=FIXTURE_ORIGIN,
         )
         page = context.new_page()
+        page.set_viewport_size({"width": scenario.width, "height": scenario.height})
         page.emulate_media(color_scheme="light", reduced_motion="reduce")
+        html_holder: list[str] = [""]
+        page.route(
+            f"{FIXTURE_ORIGIN}**",
+            lambda route: _fulfill_fixture_request(route, html_holder, bundled),
+        )
         try:
             for offset, frame in enumerate(frames, start=1):
-                html = _render_html(env, scenario, frame)
-                page.set_content(html, wait_until="domcontentloaded")
-                page.evaluate("() => document.fonts ? document.fonts.ready : true")
-                png_bytes = page.screenshot(type="png", full_page=False, animations="disabled")
+                html_holder[0] = _render_html(env, scenario, frame)
+                page.goto(FIXTURE_ORIGIN, wait_until="domcontentloaded")
+                page.evaluate(
+                    """() => document.fonts
+                        ? document.fonts.load('16px WatsonFixture').then(() => document.fonts.ready)
+                        : true"""
+                )
+                png_bytes = page.screenshot(
+                    type="png",
+                    full_page=False,
+                    animations="disabled",
+                    scale="device",
+                )
                 raw_lines = page.evaluate(OCR_JS)
                 lines = normalize_ocr_lines(raw_lines)
                 image = Image.open(BytesIO(png_bytes)).convert("RGB")
@@ -130,9 +202,9 @@ def _render_frames(
                         (scenario.width, scenario.height),
                         Image.Resampling.NEAREST,
                     )
-                digest = average_hash_hex(image)
                 png_path = frames_dir / f"{frame.frame_id}.png"
-                image.save(png_path, format="PNG", optimize=True, compress_level=9)
+                saved = encode_fixture_png(image, png_path)
+                digest = average_hash_hex(saved)
                 sidecar = make_sidecar(
                     frame_id=frame.frame_id,
                     captured_at=frame.captured_at,
@@ -142,7 +214,7 @@ def _render_frames(
                     window_title=frame.window.window_title,
                     window_id=frame.window.window_id,
                     is_private_browsing=frame.window.is_private_browsing,
-                    url=frame.window.url,
+                    url=None,
                     ocr_lines=lines,
                     phash=digest,
                     width=scenario.width,
@@ -157,6 +229,18 @@ def _render_frames(
         finally:
             context.close()
             browser.close()
+
+
+def _fulfill_fixture_request(route: Any, html_holder: list[str], bundled: Path) -> None:
+    url = str(route.request.url)
+    if url.startswith(FONT_ROUTE):
+        path = bundled / url.rsplit("/", 1)[-1]
+        if path.is_file():
+            route.fulfill(path=str(path), content_type="font/ttf")
+            return
+        route.abort()
+        return
+    route.fulfill(body=html_holder[0], content_type="text/html; charset=utf-8")
 
 
 def _render_html(env: Environment, scenario: Scenario, frame: ScheduledFrame) -> str:

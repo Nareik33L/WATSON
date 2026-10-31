@@ -6,7 +6,16 @@ This is plan §15.4 / D10. It does not call `src/watson` or the Swift helper. Re
 
 ## Sidecar contract
 
-Every frame is `frames/<yyyy-mm-dd>/<frame_id>.png` plus `<frame_id>.json`. The JSON matches the **Sidecar schema** in [`helper/README.md`](../../helper/README.md) exactly (field names, types, and nullability). Fixtures set `capture_mode` to `fixture` (an allowed value on that schema). OCR lines come from `[data-ocr]` DOM boxes (`confidence` 1.0, `bbox` as `[x_min, y_min, x_max, y_max]`). `phash` is a deterministic 64-bit average hash of the saved RGB PNG. `captured_at` is ISO-8601 UTC (`…Z`).
+Every frame is `frames/<yyyy-mm-dd>/<frame_id>.png` plus `<frame_id>.json`. The JSON matches [`schemas/sidecar.schema.json`](../../schemas/sidecar.schema.json) (draft 2020-12; also summarised in [`helper/README.md`](../../helper/README.md)).
+
+- `frame_id` is a deterministic UUIDv5: namespace = UUIDv5(`NAMESPACE_URL`, `watson.fixture:<name>:<seed>`), name = frame index (`1`, `2`, …). Those ids are what `truth.yaml` and `sample50.txt` reference. Human-readable `fixture_index` ranges live only on `expected_segments`, not in sidecars.
+- `url` is always `null` (helper M0-B; browser URLs wait for Accessibility, M5 / §14 #6). Scenario windows may still carry a URL for template chrome and truth matching.
+- `capture_mode` is `fixture`.
+- OCR lines come from `[data-ocr]` DOM boxes (`confidence` 1.0, `bbox` as `[x_min, y_min, x_max, y_max]`).
+- `phash` is a 64-bit average hash of the **saved** RGB PNG (after PNG8 quantisation).
+- `captured_at` is ISO-8601 UTC (`…Z`).
+
+`tests/fixtures/<name>/manifest.json` lists `sha256`, `width`, and `height` for every PNG. Default CI checks the manifest hashes, sidecar dimensions, recomputed phash, and that there are no orphan PNGs or sidecars.
 
 ## Install
 
@@ -26,7 +35,9 @@ uv run watson-fixturegen render \
   --out tests/fixtures/day_acme_q4
 ```
 
-Same scenario + seed (default `meta.seed`) yields byte-identical sidecars and `truth.yaml`. PNGs are stable across runs on the same Chromium build.
+Same scenario + seed (default `meta.seed`) yields byte-identical sidecar **text** fields, `truth.yaml`, and `sample50.txt`. OCR `bbox` values may move by ±2 px and `phash` Hamming distance may be ≤ 4 across machines.
+
+**Byte-identical PNGs** are required only on the pinned platform: **Playwright 1.55.0 Chromium on linux x86_64** (the CI image). Other OS / GPU / font-stack combinations are not a PNG golden. Templates load bundled Inter (SIL OFL 1.1) from `tools/fixture_gen/fonts`, fix the viewport to `meta.width` × `meta.height`, set `deviceScaleFactor` 1, and disable animations.
 
 `--dry-run` expands the §3.6 cadence (45 s default, 30 s after a window change, 120 s after three stable frames) and writes `truth.yaml` + `sample50.txt` without launching a browser.
 
@@ -53,7 +64,9 @@ Optional check (needs Chromium; skipped in default pytest):
 uv run pytest tests/eval/test_fixture_regen.py --run-fixture-regen
 ```
 
-That re-renders into a temp dir and diffs sidecars + `truth.yaml` against the committed copies.
+That re-renders into a temp dir and asserts exact equality for sidecar text fields, `truth.yaml`, and `sample50.txt`; bbox within ±2 px; and phash Hamming distance ≤ 4. PNG bytes are compared only when you additionally want a platform-local check — they are not part of the default regen assertion.
+
+Each committed day under `tests/fixtures/` must stay ≤ 10 MB. CI fails a day that exceeds 12 MB. No Git LFS.
 
 ## M0-A sample list
 

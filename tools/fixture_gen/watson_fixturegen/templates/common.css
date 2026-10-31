@@ -1,26 +1,43 @@
+@font-face {
+  font-family: "WatsonFixture";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("fonts/Inter-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "WatsonFixture";
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url("fonts/Inter-SemiBold.ttf") format("truetype");
+}
 html, body {
   margin: 0;
   padding: 0;
-  width: 1280px;
-  height: 800px;
+  width: {{ width }}px;
+  height: {{ height }}px;
   overflow: hidden;
   background: #d8dbe0;
   color: #1a1c1e;
-  font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", sans-serif;
+  font-family: "WatsonFixture", sans-serif;
   font-size: 15px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  scroll-behavior: auto;
+  caret-color: transparent;
 }
 * {
   box-sizing: border-box;
   animation: none !important;
   transition: none !important;
+  scroll-behavior: auto !important;
 }
 .shell {
   display: flex;
   flex-direction: column;
-  width: 1280px;
-  height: 800px;
+  width: {{ width }}px;
+  height: {{ height }}px;
 }
 .titlebar {
   height: 36px;

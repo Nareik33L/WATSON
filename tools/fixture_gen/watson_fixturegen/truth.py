@@ -125,6 +125,7 @@ def _segment_row(frames: Sequence[ScheduledFrame]) -> dict[str, Any]:
         "end": format_captured_at(last.captured_at),
         "start_frame": first.frame_id,
         "end_frame": last.frame_id,
+        "fixture_index": [first.index, last.index],
         "bundle_id": first.window.bundle_id,
         "window_title": first.window.window_title,
         "frame_ids": [frame.frame_id for frame in frames],

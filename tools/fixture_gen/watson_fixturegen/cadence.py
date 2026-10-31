@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -34,8 +35,14 @@ class ScheduledFrame:
         return "\n".join(parts)
 
 
-def frame_id_for(index: int) -> str:
-    return f"f{index:04d}"
+def fixture_namespace(name: str, seed: int) -> uuid.UUID:
+    """UUIDv5 namespace derived from the fixture name and seed."""
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"watson.fixture:{name}:{seed}")
+
+
+def frame_id_for(name: str, seed: int, index: int) -> str:
+    """Deterministic lowercase UUIDv5: namespace(name, seed), name=frame index."""
+    return str(uuid.uuid5(fixture_namespace(name, seed), str(index)))
 
 
 def expand_schedule(scenario: Scenario) -> list[ScheduledFrame]:
@@ -60,7 +67,7 @@ def expand_schedule(scenario: Scenario) -> list[ScheduledFrame]:
         frames.append(
             ScheduledFrame(
                 index=index,
-                frame_id=frame_id_for(index),
+                frame_id=frame_id_for(scenario.name, scenario.seed, index),
                 captured_at=moment,
                 window=block.window,
                 content=content,

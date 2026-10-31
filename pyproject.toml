@@ -35,6 +35,7 @@ fixturegen = [
     "types-pyyaml>=6.0",
 ]
 dev = [
+    "jsonschema>=4.23",
     "mypy>=1.13",
     "pytest>=8.0",
     "ruff>=0.8",
