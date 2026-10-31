@@ -27,9 +27,15 @@ def test_committed_sidecars_match_helper_schema() -> None:
         validate_sidecar(payload)
         assert payload["capture_mode"] == "fixture"
         assert payload["frame_id"] == path.stem
+        assert payload["captured_at"].endswith("Z")
+        assert payload["url"] is None or isinstance(payload["url"], str)
+        assert payload["display_id"] is None or isinstance(payload["display_id"], int)
+        for line in payload["ocr"]["lines"]:
+            x_min, y_min, x_max, y_max = line["bbox"]
+            assert x_max >= x_min and y_max >= y_min
         assert path.with_suffix(".png").is_file()
         assert payload["frame_id"] > previous_id
-        captured = datetime.fromisoformat(payload["captured_at"])
+        captured = datetime.fromisoformat(payload["captured_at"].replace("Z", "+00:00"))
         if previous_at is not None:
             assert captured > previous_at
         previous_id = payload["frame_id"]

@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 
 from PIL import Image
 
-from watson_fixturegen.phash import dhash_hex
+from watson_fixturegen.phash import average_hash_hex
 from watson_fixturegen.secrets import find_secret_hits
-from watson_fixturegen.sidecar import dump_sidecar, load_sidecar, make_sidecar
+from watson_fixturegen.sidecar import dump_sidecar, load_sidecar, make_sidecar, validate_sidecar
 
 
 def _sidecar(**overrides: object) -> dict[str, object]:
@@ -20,7 +20,7 @@ def _sidecar(**overrides: object) -> dict[str, object]:
         window_id=1,
         is_private_browsing=False,
         url=None,
-        ocr_lines=[{"text": "Hello Priya", "bbox": [8, 12, 80, 16], "confidence": 1.0}],
+        ocr_lines=[{"text": "Hello Priya", "bbox": [8, 12, 88, 28], "confidence": 1.0}],
         phash="0123456789abcdef",
         width=1280,
         height=800,
@@ -35,14 +35,20 @@ def test_sidecar_roundtrip_is_canonical() -> None:
     again = dump_sidecar(load_sidecar(text))
     assert text == again
     assert '"capture_mode": "fixture"' in text
+    assert '"captured_at": "2026-10-31T09:00:00Z"' in text
     assert text.startswith("{\n  \"frame_id\"")
 
 
-def test_dhash_is_deterministic() -> None:
+def test_schema_allows_null_display_id_and_selftest() -> None:
+    payload = _sidecar(display_id=None, capture_mode="selftest", window_title="")
+    validate_sidecar(payload)
+
+
+def test_average_hash_is_deterministic() -> None:
     image = Image.new("RGB", (64, 64), (240, 240, 244))
     image.paste((30, 80, 140), (8, 8, 40, 40))
-    first = dhash_hex(image)
-    second = dhash_hex(image.copy())
+    first = average_hash_hex(image)
+    second = average_hash_hex(image.copy())
     assert first == second
     assert len(first) == 16
     int(first, 16)

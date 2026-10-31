@@ -6,7 +6,7 @@ This is plan §15.4 / D10. It does not call `src/watson` or the Swift helper. Re
 
 ## Sidecar contract
 
-Every frame is `frames/<yyyy-mm-dd>/<frame_id>.png` plus `<frame_id>.json`. The JSON matches the **Sidecar schema** in [`helper/README.md`](../../helper/README.md) exactly. Fixtures set `capture_mode` to `fixture` (documented as an allowed value on that schema). OCR lines come from `[data-ocr]` DOM boxes (`confidence` 1.0). `phash` is a deterministic 64-bit dHash of the saved RGB PNG.
+Every frame is `frames/<yyyy-mm-dd>/<frame_id>.png` plus `<frame_id>.json`. The JSON matches the **Sidecar schema** in [`helper/README.md`](../../helper/README.md) exactly (field names, types, and nullability). Fixtures set `capture_mode` to `fixture` (an allowed value on that schema). OCR lines come from `[data-ocr]` DOM boxes (`confidence` 1.0, `bbox` as `[x_min, y_min, x_max, y_max]`). `phash` is a deterministic 64-bit average hash of the saved RGB PNG. `captured_at` is ISO-8601 UTC (`…Z`).
 
 ## Install
 

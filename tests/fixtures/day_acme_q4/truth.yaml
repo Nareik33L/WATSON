@@ -14,15 +14,15 @@ completed: [Onboarding Guide section 3 published]
 not_completed: [Acme proposal (still editing at day end)]
 noise: ['Cedar Daily 10:40–10:46', 'Pocket Calendar glance 14:30–14:33']
 expected_segments:
-- start: '2026-10-31T09:00:00+00:00'
-  end: '2026-10-31T09:06:00+00:00'
+- start: '2026-10-31T09:00:00Z'
+  end: '2026-10-31T09:06:00Z'
   start_frame: f0001
   end_frame: f0006
   bundle_id: com.lumen.mail
   window_title: 'Re: Acme Q4 Proposal — Priya Natarajan'
   frame_ids: [f0001, f0002, f0003, f0004, f0005, f0006]
-- start: '2026-10-31T09:08:00+00:00'
-  end: '2026-10-31T10:38:00+00:00'
+- start: '2026-10-31T09:08:00Z'
+  end: '2026-10-31T10:38:00Z'
   start_frame: f0007
   end_frame: f0054
   bundle_id: com.lumen.quill
@@ -76,15 +76,15 @@ expected_segments:
   - f0052
   - f0053
   - f0054
-- start: '2026-10-31T10:40:00+00:00'
-  end: '2026-10-31T10:44:00+00:00'
+- start: '2026-10-31T10:40:00Z'
+  end: '2026-10-31T10:44:00Z'
   start_frame: f0055
   end_frame: f0059
   bundle_id: com.lumen.compass
   window_title: Cedar Daily — Harbor ferry changes
   frame_ids: [f0055, f0056, f0057, f0058, f0059]
-- start: '2026-10-31T10:46:00+00:00'
-  end: '2026-10-31T11:18:00+00:00'
+- start: '2026-10-31T10:46:00Z'
+  end: '2026-10-31T11:18:00Z'
   start_frame: f0060
   end_frame: f0078
   bundle_id: com.lumen.quill
@@ -109,15 +109,15 @@ expected_segments:
   - f0076
   - f0077
   - f0078
-- start: '2026-10-31T13:00:00+00:00'
-  end: '2026-10-31T13:10:00+00:00'
+- start: '2026-10-31T13:00:00Z'
+  end: '2026-10-31T13:10:00Z'
   start_frame: f0079
   end_frame: f0086
   bundle_id: com.lumen.relay
   window_title: Relay — Tom Ashworth
   frame_ids: [f0079, f0080, f0081, f0082, f0083, f0084, f0085, f0086]
-- start: '2026-10-31T13:12:00+00:00'
-  end: '2026-10-31T14:18:00+00:00'
+- start: '2026-10-31T13:12:00Z'
+  end: '2026-10-31T14:18:00Z'
   start_frame: f0087
   end_frame: f0122
   bundle_id: com.lumen.quill
@@ -159,15 +159,15 @@ expected_segments:
   - f0120
   - f0121
   - f0122
-- start: '2026-10-31T14:30:00+00:00'
-  end: '2026-10-31T14:32:00+00:00'
+- start: '2026-10-31T14:30:00Z'
+  end: '2026-10-31T14:32:00Z'
   start_frame: f0123
   end_frame: f0126
   bundle_id: com.lumen.compass
   window_title: Pocket Calendar — Today
   frame_ids: [f0123, f0124, f0125, f0126]
-- start: '2026-10-31T14:34:00+00:00'
-  end: '2026-10-31T15:04:00+00:00'
+- start: '2026-10-31T14:34:00Z'
+  end: '2026-10-31T15:04:00Z'
   start_frame: f0127
   end_frame: f0144
   bundle_id: com.lumen.grid
@@ -191,36 +191,36 @@ expected_segments:
   - f0142
   - f0143
   - f0144
-- start: '2026-10-31T15:06:00+00:00'
-  end: '2026-10-31T15:20:00+00:00'
+- start: '2026-10-31T15:06:00Z'
+  end: '2026-10-31T15:20:00Z'
   start_frame: f0145
   end_frame: f0154
   bundle_id: com.lumen.compass
   window_title: Onboarding Guide — Section 3
   frame_ids: [f0145, f0146, f0147, f0148, f0149, f0150, f0151, f0152, f0153, f0154]
-- start: '2026-10-31T15:22:00+00:00'
-  end: '2026-10-31T15:34:00+00:00'
+- start: '2026-10-31T15:22:00Z'
+  end: '2026-10-31T15:34:00Z'
   start_frame: f0155
   end_frame: f0163
   bundle_id: com.lumen.mail
   window_title: Compose — Revised pricing for Acme
   frame_ids: [f0155, f0156, f0157, f0158, f0159, f0160, f0161, f0162, f0163]
-- start: '2026-10-31T15:36:00+00:00'
-  end: '2026-10-31T15:46:00+00:00'
+- start: '2026-10-31T15:36:00Z'
+  end: '2026-10-31T15:46:00Z'
   start_frame: f0164
   end_frame: f0171
   bundle_id: com.lumen.relay
   window_title: Relay — Tom Ashworth
   frame_ids: [f0164, f0165, f0166, f0167, f0168, f0169, f0170, f0171]
-- start: '2026-10-31T15:48:00+00:00'
-  end: '2026-10-31T16:00:00+00:00'
+- start: '2026-10-31T15:48:00Z'
+  end: '2026-10-31T16:00:00Z'
   start_frame: f0172
   end_frame: f0180
   bundle_id: com.lumen.anvil
   window_title: anvil — proposals/acme_q4.md
   frame_ids: [f0172, f0173, f0174, f0175, f0176, f0177, f0178, f0179, f0180]
-- start: '2026-10-31T16:02:00+00:00'
-  end: '2026-10-31T16:16:00+00:00'
+- start: '2026-10-31T16:02:00Z'
+  end: '2026-10-31T16:16:00Z'
   start_frame: f0181
   end_frame: f0190
   bundle_id: com.lumen.quill

@@ -13,7 +13,7 @@ from PIL import Image
 from watson_fixturegen.cadence import ScheduledFrame, expand_schedule
 from watson_fixturegen.ocr import OCR_JS, normalize_ocr_lines
 from watson_fixturegen.paths import templates_dir
-from watson_fixturegen.phash import dhash_hex
+from watson_fixturegen.phash import average_hash_hex
 from watson_fixturegen.scenario import Scenario, load_scenario
 from watson_fixturegen.sidecar import dump_sidecar, make_sidecar
 from watson_fixturegen.truth import build_truth, dump_truth, pick_sample, write_sample_list
@@ -130,7 +130,7 @@ def _render_frames(
                         (scenario.width, scenario.height),
                         Image.Resampling.NEAREST,
                     )
-                digest = dhash_hex(image)
+                digest = average_hash_hex(image)
                 png_path = frames_dir / f"{frame.frame_id}.png"
                 image.save(png_path, format="PNG", optimize=True, compress_level=9)
                 sidecar = make_sidecar(

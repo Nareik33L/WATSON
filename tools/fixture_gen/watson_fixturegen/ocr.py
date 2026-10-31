@@ -19,8 +19,8 @@ OCR_JS = """() => {
       bbox: [
         Math.round(r.x),
         Math.round(r.y),
-        Math.round(r.width),
-        Math.round(r.height),
+        Math.round(r.x + r.width),
+        Math.round(r.y + r.height),
       ],
       confidence: 1.0,
     });

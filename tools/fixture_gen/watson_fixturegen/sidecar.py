@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Final, TypedDict
 
 # Contract: helper/README.md "Sidecar schema" and plan §3.1.
@@ -25,7 +25,7 @@ SIDECAR_FIELD_ORDER: Final[tuple[str, ...]] = (
     "capture_mode",
 )
 
-CAPTURE_MODES: Final[frozenset[str]] = frozenset({"frontmost", "full_display", "fixture"})
+CAPTURE_MODES: Final[frozenset[str]] = frozenset({"frontmost", "selftest", "fixture"})
 PHASH_HEX_LEN: Final[int] = 16
 
 
@@ -42,7 +42,7 @@ class OcrBlock(TypedDict):
 class Sidecar(TypedDict):
     frame_id: str
     captured_at: str
-    display_id: int
+    display_id: int | None
     bundle_id: str
     app_name: str
     window_title: str
@@ -59,14 +59,14 @@ class Sidecar(TypedDict):
 def format_captured_at(moment: datetime) -> str:
     if moment.tzinfo is None:
         raise ValueError("captured_at must be timezone-aware")
-    return moment.isoformat(timespec="seconds")
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def make_sidecar(
     *,
     frame_id: str,
     captured_at: datetime,
-    display_id: int,
+    display_id: int | None,
     bundle_id: str,
     app_name: str,
     window_title: str,
@@ -122,11 +122,15 @@ def validate_sidecar(payload: Mapping[str, Any]) -> None:
 
     _require_str(payload, "frame_id")
     _require_str(payload, "captured_at")
-    datetime.fromisoformat(str(payload["captured_at"]))
-    _require_int(payload, "display_id")
+    captured_at = str(payload["captured_at"])
+    datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+    if not captured_at.endswith("Z"):
+        raise ValueError("captured_at must be ISO-8601 UTC ending in Z")
+    _require_optional_int(payload, "display_id")
     _require_str(payload, "bundle_id")
     _require_str(payload, "app_name")
-    _require_str(payload, "window_title")
+    if not isinstance(payload["window_title"], str):
+        raise ValueError("window_title must be a string")
     _require_int(payload, "window_id")
     if not isinstance(payload["is_private_browsing"], bool):
         raise ValueError("is_private_browsing must be a boolean")
@@ -170,12 +174,12 @@ def _validate_ocr_line(line: object, index: int) -> None:
         raise ValueError(f"{prefix}.text must be a non-empty string")
     bbox = line["bbox"]
     if not isinstance(bbox, list) or len(bbox) != 4:
-        raise ValueError(f"{prefix}.bbox must be [x, y, width, height]")
+        raise ValueError(f"{prefix}.bbox must be [x_min, y_min, x_max, y_max]")
     if not all(isinstance(value, int) and not isinstance(value, bool) for value in bbox):
         raise ValueError(f"{prefix}.bbox values must be integers")
-    _x, _y, width, height = bbox
-    if width < 0 or height < 0:
-        raise ValueError(f"{prefix}.bbox width/height must be >= 0")
+    x_min, y_min, x_max, y_max = bbox
+    if x_max < x_min or y_max < y_min:
+        raise ValueError(f"{prefix}.bbox must have x_max>=x_min and y_max>=y_min")
     confidence = line["confidence"]
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
         raise ValueError(f"{prefix}.confidence must be a number")
@@ -192,3 +196,11 @@ def _require_int(payload: Mapping[str, Any], key: str) -> None:
     value = payload[key]
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"{key} must be an integer")
+
+
+def _require_optional_int(payload: Mapping[str, Any], key: str) -> None:
+    value = payload[key]
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{key} must be an integer or null")
