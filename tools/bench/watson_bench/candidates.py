@@ -103,9 +103,7 @@ def _load_role_file(path: Path) -> list[Candidate]:
     return found
 
 
-def _parse_candidate(
-    path: Path, role: str, profile: str, index: int, row: object
-) -> Candidate:
+def _parse_candidate(path: Path, role: str, profile: str, index: int, row: object) -> Candidate:
     if not isinstance(row, dict):
         raise CandidateConfigError(f"{path}: {profile}[{index}] must be a mapping")
     missing = [name for name in REQUIRED_FIELDS if name not in row]

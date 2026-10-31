@@ -57,8 +57,7 @@ class FakeRuntime:
     def embed(self, candidate: Candidate, texts: list[str]) -> RuntimeCall:
         self._require(candidate)
         vectors = [
-            [float((index + 1) % 7), float(len(text)), 1.0]
-            for index, text in enumerate(texts)
+            [float((index + 1) % 7), float(len(text)), 1.0] for index, text in enumerate(texts)
         ]
         raw = f"{len(texts)} texts"
         return RuntimeCall(
