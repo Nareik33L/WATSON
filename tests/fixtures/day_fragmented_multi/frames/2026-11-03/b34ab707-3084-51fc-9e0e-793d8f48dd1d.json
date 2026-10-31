@@ -1,0 +1,189 @@
+{
+  "frame_id": "b34ab707-3084-51fc-9e0e-793d8f48dd1d",
+  "captured_at": "2026-11-03T15:53:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.anvil",
+  "app_name": "Cedar Anvil",
+  "window_title": "anvil \u2014 renewals/northwind.md",
+  "window_id": 3601,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Anvil \u2014 anvil \u2014 renewals/northwind.md",
+        "bbox": [
+          66,
+          9,
+          351,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:53",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "CEDAR-RENEWALS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "renewals/northwind.md",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "README.md",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "renewals/northwind.md",
+        "bbox": [
+          234,
+          46,
+          379,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "markdown",
+        "bbox": [
+          389,
+          46,
+          460,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "1",
+        "bbox": [
+          220,
+          88,
+          268,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "# Northwind Renewal notes",
+        "bbox": [
+          268,
+          88,
+          437,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "2",
+        "bbox": [
+          220,
+          106,
+          268,
+          124
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "3",
+        "bbox": [
+          220,
+          124,
+          268,
+          143
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Term: two years from 1 December (draft).",
+        "bbox": [
+          268,
+          124,
+          521,
+          143
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "4",
+        "bbox": [
+          220,
+          143,
+          268,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Letter still editing at day end.",
+        "bbox": [
+          268,
+          143,
+          445,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "5",
+        "bbox": [
+          220,
+          161,
+          268,
+          179
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "TODO: pricing paragraph.",
+        "bbox": [
+          268,
+          161,
+          426,
+          179
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "anvil: saved 15:48",
+        "bbox": [
+          232,
+          200,
+          1268,
+          217
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "207f007f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

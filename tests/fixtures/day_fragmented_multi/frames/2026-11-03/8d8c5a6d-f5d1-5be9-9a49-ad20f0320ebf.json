@@ -1,0 +1,209 @@
+{
+  "frame_id": "8d8c5a6d-f5d1-5be9-9a49-ad20f0320ebf",
+  "captured_at": "2026-11-03T15:09:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.quill",
+  "app_name": "Cedar Quill",
+  "window_title": "Northwind Renewal \u2014 Draft letter",
+  "window_id": 3201,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Quill \u2014 Northwind Renewal \u2014 Draft letter",
+        "bbox": [
+          66,
+          9,
+          360,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "15:09",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Northwind-Renewal.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Status",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Northwind-Renewal.quill",
+        "bbox": [
+          276,
+          46,
+          427,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          437,
+          46,
+          478,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          488,
+          46,
+          559,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Northwind Renewal",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft \u2014 still editing at day end",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Renewal letter for Mina Okonkwo. Two-year term starting 1 December.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Status",
+        "bbox": [
+          276,
+          263,
+          984,
+          285
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "The Northwind renewal letter is still editing at day end and is not complete.",
+        "bbox": [
+          276,
+          291,
+          984,
+          312
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "{'Day end': 'still a draft'}",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Do not send",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "7c7c7c7c7c7c7c7c",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

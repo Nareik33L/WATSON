@@ -1,0 +1,396 @@
+projects: [Northwind Renewal, Harbor Safety Audit, Cedar Onboarding]
+people: [Mina Okonkwo (Northwind), Ellis Voss (Harbor Line), Jun Park (Cedar Works)]
+decisions:
+- text: Agreed to move the Harbor walkthrough to Thursday
+  evidence_frames: [03c85724-d1dc-5dbf-8d4e-e7bd17e564c4, fe92c098-147e-5937-9cdf-02d587e31229, 07f9477a-2ad6-5072-b31d-fc1d2c7f4de5,
+    176e2069-8111-5390-a39a-44b0878f1000, 48c2fd67-7e54-5b6d-92cb-5b4aab623182, 5b8cc313-d289-584f-8c91-9ac5218dcd19,
+    93f3a023-3f61-5d6e-b290-11876f0db155, ac404203-499f-5c1c-8a0d-e4c1f9b3bf72, 2bb8f001-4447-5003-acbe-2b8c30f87eec,
+    05325ed9-2a12-5d8f-8867-56a5f44887f5, e9a806ce-7086-521d-86e5-00ab7d788574, 82bbaae0-124c-58d7-9d7e-907c7bc3e365,
+    9d05a36f-58ef-593f-b5c2-574be9ef48df, e981ce26-304e-50a3-9f0f-6a93d140658f]
+- text: Use a two-year term for the Northwind renewal
+  evidence_frames:
+  - 6d58f5b1-2c70-5091-93b1-0c9b5d2e14e4
+  - 54a9ed2e-d4bd-51b2-81f2-188a05eb38b3
+  - 45a43381-b36c-559a-9ac9-877521ecd7e7
+  - 5c409c7a-6641-5cb8-877e-2775dc29a9f1
+  - b67fbf29-dd2f-59ec-b89d-d5eeb592f7c1
+  - cf174797-20c0-514a-a138-62138e60e8a1
+  - ba64203e-cd11-54b8-bf64-de8fe73119db
+  - 1820c2fe-fcd7-5912-ba18-3be942f14f8c
+  - 65d31903-7da7-5e83-b424-60192a79f4a6
+  - d9d14420-804d-5bd7-8fb8-cb5b5983017a
+  - c20327f1-1689-5398-a6a9-00d43aeb61e5
+  - 54831c02-c9b6-590d-a787-76bb251017dc
+  - 0bde8492-bb4c-59a6-a0b4-c671d64abcf1
+  - 85b09d07-71ea-5b65-bf46-768aab67294b
+  - 5cc5d789-6a64-59a4-ba5b-d2687c0eba45
+  - d69148a3-399b-532d-b916-758e77bb31b3
+  - 92d316cc-dbbe-507c-beb6-c3c8b7493ec6
+  - 37143d81-2f0a-5bee-bbe8-edba71a491e4
+  - 9546cec2-bf26-5966-aaf6-0901278b0272
+  - e7b6731d-0a32-560e-bb06-95c59e2046cd
+  - dc55f3dd-650d-5a96-9438-193ee27b7ff3
+  - 877163c1-2d47-5bea-922e-fe91ece67195
+  - 230d5be3-99b7-50d6-bd17-e23124bdc749
+  - 7184014b-92c5-5be4-bd79-f5f92a6fabde
+  - d892d1e5-1ea0-5de9-835d-176cbf40c79e
+  - e5361149-3464-5c82-a062-4b0aabe50d15
+commitments:
+- text: Send the Harbor checklist to Ellis by Wednesday
+  status: open
+- text: Publish Cedar Onboarding page 2 before Friday standup
+  status: open
+completed: [Cedar Onboarding page 1 published]
+not_completed: [Northwind renewal letter (still editing at day end), Cedar Onboarding page 2 (still a
+    draft)]
+noise: ['Cedar Daily 09:24–09:27', 'Pocket Calendar glance 09:56–09:59']
+skipped:
+- reason: excluded_app
+  frame_id: d0bb10cd-20f9-54d8-997c-fa026c6ded67
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:24:00Z'
+- reason: excluded_app
+  frame_id: bba971d4-a6ce-5d2e-ae35-d480f6dfd109
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:24:30Z'
+- reason: excluded_app
+  frame_id: 9dc16f0a-de2d-51f9-be03-b2aed25a4ebe
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:25:15Z'
+- reason: excluded_app
+  frame_id: 6261dbe0-a7c0-5c5c-85ff-454023c19e85
+  bundle_id: com.apple.Passwords
+  captured_at: '2026-11-03T10:26:00Z'
+expected_segments:
+- start: '2026-11-03T09:00:00Z'
+  end: '2026-11-03T09:06:00Z'
+  start_frame: 3d478f13-f6a6-585b-8cf1-b29f50e712bb
+  end_frame: b7968c7b-a0be-5531-b15c-483475f7c230
+  fixture_index:
+  - 1
+  - 6
+  bundle_id: com.cedar.mail
+  window_title: 'Re: Northwind Renewal — Mina Okonkwo'
+  frame_ids: [3d478f13-f6a6-585b-8cf1-b29f50e712bb, a44c98c3-8659-5b89-983f-f9a31eebe0c3, 988290ba-1c4e-5f36-9d0a-873a321d1c5a,
+    b742d1b2-de79-5b86-826d-edff155b02fe, c2c26224-2877-568c-9ef5-c470ab86306d, b7968c7b-a0be-5531-b15c-483475f7c230]
+- start: '2026-11-03T09:08:00Z'
+  end: '2026-11-03T09:12:00Z'
+  start_frame: 71e31b2f-ff8c-584c-9316-f8a41a163d6e
+  end_frame: 46d5389c-0cfd-55d4-a714-7854ce4c4ad3
+  fixture_index:
+  - 7
+  - 11
+  bundle_id: com.cedar.quill
+  window_title: Harbor Safety Audit — Checklist
+  frame_ids: [71e31b2f-ff8c-584c-9316-f8a41a163d6e, 38ffe53e-47fc-55e8-98bd-b3de57fbf673, ec311345-fe25-54e5-9996-5e0e4c41fcdd,
+    afc4e299-0799-55b6-8aa9-a12543875022, 46d5389c-0cfd-55d4-a714-7854ce4c4ad3]
+- start: '2026-11-03T09:14:00Z'
+  end: '2026-11-03T09:16:00Z'
+  start_frame: ca54293b-106c-5cfa-b1ba-9ba8be323f1e
+  end_frame: 93926459-ad0b-568f-abf9-b9d111cb0ca3
+  fixture_index:
+  - 12
+  - 15
+  bundle_id: com.cedar.mail
+  window_title: 'Re: Northwind Renewal — Mina Okonkwo'
+  frame_ids: [ca54293b-106c-5cfa-b1ba-9ba8be323f1e, 905763ab-f803-5f07-87b3-9e5791a328d3, 099d4fed-3595-5c2b-bfd1-7ff010191886,
+    93926459-ad0b-568f-abf9-b9d111cb0ca3]
+- start: '2026-11-03T09:18:00Z'
+  end: '2026-11-03T09:22:00Z'
+  start_frame: d47f154f-f32a-5029-b99d-21eb3317225f
+  end_frame: 8c69046b-2a53-542a-96da-f6c9d1a1b9f6
+  fixture_index:
+  - 16
+  - 20
+  bundle_id: com.cedar.compass
+  window_title: Onboarding — Page 1 published
+  frame_ids: [d47f154f-f32a-5029-b99d-21eb3317225f, 837a1aac-e794-591f-9911-2e79f43540e7, 6776599d-e919-5f09-88c5-f248b0597986,
+    c01e8bc2-7ecd-5920-94e7-4e11a0bd75bb, 8c69046b-2a53-542a-96da-f6c9d1a1b9f6]
+- start: '2026-11-03T09:24:00Z'
+  end: '2026-11-03T09:26:00Z'
+  start_frame: 5a00f7f3-2237-5f65-9547-7971e4bdc4b8
+  end_frame: 54607c24-0335-5c2b-a77d-66927d3103f9
+  fixture_index:
+  - 21
+  - 24
+  bundle_id: com.cedar.compass
+  window_title: Cedar Daily — Tide tables
+  frame_ids: [5a00f7f3-2237-5f65-9547-7971e4bdc4b8, fcdb5507-760d-59f7-9955-02dfa1f54f5e, 4af4dfd9-1dc7-5015-9f55-65db8952ee22,
+    54607c24-0335-5c2b-a77d-66927d3103f9]
+- start: '2026-11-03T09:28:00Z'
+  end: '2026-11-03T09:38:00Z'
+  start_frame: 761c0e42-afc1-56fb-9079-3e33740015a4
+  end_frame: cdd4e1f2-8e6b-5801-aae5-4e44a7c6de71
+  fixture_index:
+  - 25
+  - 32
+  bundle_id: com.cedar.quill
+  window_title: Northwind Renewal — Draft letter
+  frame_ids: [761c0e42-afc1-56fb-9079-3e33740015a4, 0709072c-d8d1-58ad-8b49-83410773abc0, 535c485d-faa2-547b-964c-70bf29b64508,
+    17af349b-efbe-5ecf-ab5f-b7947b6ba0c7, b9cc62c5-8b37-5d90-8a56-3b10d0e4fd00, 98d5e6b3-1087-52ef-a6f2-b16c03f81b86,
+    ae43bf18-409b-542e-89fd-44b93bcf2cd0, cdd4e1f2-8e6b-5801-aae5-4e44a7c6de71]
+- start: '2026-11-03T09:40:00Z'
+  end: '2026-11-03T09:44:00Z'
+  start_frame: 03c85724-d1dc-5dbf-8d4e-e7bd17e564c4
+  end_frame: 48c2fd67-7e54-5b6d-92cb-5b4aab623182
+  fixture_index:
+  - 33
+  - 37
+  bundle_id: com.cedar.relay
+  window_title: Relay — Ellis Voss
+  frame_ids: [03c85724-d1dc-5dbf-8d4e-e7bd17e564c4, fe92c098-147e-5937-9cdf-02d587e31229, 07f9477a-2ad6-5072-b31d-fc1d2c7f4de5,
+    176e2069-8111-5390-a39a-44b0878f1000, 48c2fd67-7e54-5b6d-92cb-5b4aab623182]
+- start: '2026-11-03T09:46:00Z'
+  end: '2026-11-03T09:54:00Z'
+  start_frame: ea6124db-de11-5d78-bc7d-a725023948a2
+  end_frame: b641b5bc-f184-5eb1-b49b-942bcc2136b5
+  fixture_index:
+  - 38
+  - 44
+  bundle_id: com.cedar.anvil
+  window_title: anvil — onboarding/page2.md
+  frame_ids: [ea6124db-de11-5d78-bc7d-a725023948a2, 2a4773b0-6e3e-5f94-b85a-071a6e4f6efb, bb156d7a-84e7-5d37-813d-f909ca593b7b,
+    977bbe6e-6e46-5347-b901-a2ddf256a77b, bdda0cfc-fc18-516e-9e16-0a8d3947b4e6, 36cd82ec-8f6b-5317-8145-4f564d520a4a,
+    b641b5bc-f184-5eb1-b49b-942bcc2136b5]
+- start: '2026-11-03T09:56:00Z'
+  end: '2026-11-03T09:58:00Z'
+  start_frame: 07de62ba-8066-5b5a-9026-b2b1fe47078f
+  end_frame: a2391c21-3176-5287-b232-7e9f13725ff7
+  fixture_index:
+  - 45
+  - 48
+  bundle_id: com.cedar.compass
+  window_title: Pocket Calendar — Today
+  frame_ids: [07de62ba-8066-5b5a-9026-b2b1fe47078f, 0900a28b-dd8e-504f-9d86-08cb9bfc0178, 34f055ee-5627-5b2a-9461-990e3409ec13,
+    a2391c21-3176-5287-b232-7e9f13725ff7]
+- start: '2026-11-03T10:00:00Z'
+  end: '2026-11-03T10:10:00Z'
+  start_frame: 296ed5c7-d879-561a-b9d9-ffe3fc370755
+  end_frame: c580cc85-0c5c-5fe4-a526-4bb750460c03
+  fixture_index:
+  - 49
+  - 56
+  bundle_id: com.cedar.grid
+  window_title: Harbor findings — Grid
+  frame_ids: [296ed5c7-d879-561a-b9d9-ffe3fc370755, b461e73f-4d21-59a4-ad7d-2849af3825d3, 20e16dfa-0fe8-5171-942b-02d6776bae1d,
+    b88b3781-3f0d-5bf6-ae81-211faa4e565a, 4010a2fd-5100-5de3-9ba2-740db4e380df, 0d4177cc-b4e6-5a8b-87ea-9189fe664a48,
+    48c11a95-c334-5b7e-95da-449e2f154dca, c580cc85-0c5c-5fe4-a526-4bb750460c03]
+- start: '2026-11-03T10:12:00Z'
+  end: '2026-11-03T10:22:00Z'
+  start_frame: 6d58f5b1-2c70-5091-93b1-0c9b5d2e14e4
+  end_frame: 1820c2fe-fcd7-5912-ba18-3be942f14f8c
+  fixture_index:
+  - 57
+  - 64
+  bundle_id: com.cedar.quill
+  window_title: Northwind Renewal — Draft letter
+  frame_ids: [6d58f5b1-2c70-5091-93b1-0c9b5d2e14e4, 54a9ed2e-d4bd-51b2-81f2-188a05eb38b3, 45a43381-b36c-559a-9ac9-877521ecd7e7,
+    5c409c7a-6641-5cb8-877e-2775dc29a9f1, b67fbf29-dd2f-59ec-b89d-d5eeb592f7c1, cf174797-20c0-514a-a138-62138e60e8a1,
+    ba64203e-cd11-54b8-bf64-de8fe73119db, 1820c2fe-fcd7-5912-ba18-3be942f14f8c]
+- start: '2026-11-03T10:27:00Z'
+  end: '2026-11-03T10:41:00Z'
+  start_frame: a84d78ed-9338-52e1-be99-54b16b75cd45
+  end_frame: 26699f95-cf15-5bea-81f1-384364f326fd
+  fixture_index:
+  - 65
+  - 74
+  bundle_id: com.cedar.quill
+  window_title: Cedar Onboarding — Page 2
+  frame_ids: [a84d78ed-9338-52e1-be99-54b16b75cd45, 6322f13b-0a41-5fe8-90ba-c4e4958721ea, 6ec96337-99a8-52b4-8a2d-17f98d51f9d3,
+    8a79f3eb-1e1c-5b15-a6fc-9997e150ea1a, add0a9d0-f598-5c0a-9308-a28bfc9aae94, d4d2ff0b-54b8-5011-a2e8-962a122e80af,
+    585f7654-5528-5c49-af6b-5123661657ad, 2c47225c-109f-5a53-bfa6-91621008c1df, 31d37b0c-781c-581f-8caa-51776ef3de91,
+    26699f95-cf15-5bea-81f1-384364f326fd]
+- start: '2026-11-03T10:43:00Z'
+  end: '2026-11-03T10:49:00Z'
+  start_frame: c8acbc09-5833-5922-a2b2-1e005994c3eb
+  end_frame: 017e318b-688d-5e8f-834d-d2d1eab65a5e
+  fixture_index:
+  - 75
+  - 80
+  bundle_id: com.cedar.relay
+  window_title: Relay — Jun Park
+  frame_ids: [c8acbc09-5833-5922-a2b2-1e005994c3eb, 5c6413e1-7f5e-5255-9afb-d63cbb5662d7, 79f78518-ca3d-531c-86d4-f0abdb2714b6,
+    0f69c1bf-da5b-5a0b-96ee-ef9a95dc69c6, 3b062f03-ac65-5287-85a9-feae59951354, 017e318b-688d-5e8f-834d-d2d1eab65a5e]
+- start: '2026-11-03T10:51:00Z'
+  end: '2026-11-03T11:03:00Z'
+  start_frame: 5b8cc313-d289-584f-8c91-9ac5218dcd19
+  end_frame: e981ce26-304e-50a3-9f0f-6a93d140658f
+  fixture_index:
+  - 81
+  - 89
+  bundle_id: com.cedar.mail
+  window_title: 'Re: Harbor Safety Audit — Ellis Voss'
+  frame_ids: [5b8cc313-d289-584f-8c91-9ac5218dcd19, 93f3a023-3f61-5d6e-b290-11876f0db155, ac404203-499f-5c1c-8a0d-e4c1f9b3bf72,
+    2bb8f001-4447-5003-acbe-2b8c30f87eec, 05325ed9-2a12-5d8f-8867-56a5f44887f5, e9a806ce-7086-521d-86e5-00ab7d788574,
+    82bbaae0-124c-58d7-9d7e-907c7bc3e365, 9d05a36f-58ef-593f-b5c2-574be9ef48df, e981ce26-304e-50a3-9f0f-6a93d140658f]
+- start: '2026-11-03T11:05:00Z'
+  end: '2026-11-03T11:19:00Z'
+  start_frame: 9cf5ee73-31b7-50b0-b22d-e69fd954a935
+  end_frame: d01c10b0-ad0e-5f1c-ad83-f71325d55b13
+  fixture_index:
+  - 90
+  - 99
+  bundle_id: com.cedar.anvil
+  window_title: anvil — renewals/northwind.md
+  frame_ids: [9cf5ee73-31b7-50b0-b22d-e69fd954a935, 3c8a72ce-33c6-5756-b6e6-0b69f9c16803, 0c63b950-de04-5c68-b2fb-903adc678f2e,
+    c80778cd-e687-56f4-ab93-4a7fa33b38bb, db77bfd3-f30f-509b-b7e1-c60fe2164475, 67ff1d61-4c08-5024-8b97-ee788404a9ba,
+    247dc353-93c8-554c-b675-2546b859bbbc, 064b560b-63e1-578e-884d-e7e092e60717, 9920b0ec-f8ba-5d6e-aaca-5b585e49fddd,
+    d01c10b0-ad0e-5f1c-ad83-f71325d55b13]
+- start: '2026-11-03T11:21:00Z'
+  end: '2026-11-03T11:33:00Z'
+  start_frame: e459ab6d-d79b-52d9-83e3-16ebd2c90eaa
+  end_frame: 02dfd899-ef90-54a1-8bbf-f9240938ccda
+  fixture_index:
+  - 100
+  - 108
+  bundle_id: com.cedar.quill
+  window_title: Harbor Safety Audit — Checklist
+  frame_ids: [e459ab6d-d79b-52d9-83e3-16ebd2c90eaa, 44984140-754a-577d-b242-627a20ddcfa1, d35777dc-1e22-5fe8-b860-32f7ec77cce6,
+    0f72c899-9597-5972-8194-23d9611625e6, d931433b-fc81-54e8-b32b-377e38024d9c, ed7d8dac-ce00-5727-89be-6ae6c276d833,
+    6367a238-603b-578a-8ce7-3ef960984598, a06ad78f-eb42-5946-8697-fe0b59f9869d, 02dfd899-ef90-54a1-8bbf-f9240938ccda]
+- start: '2026-11-03T11:35:00Z'
+  end: '2026-11-03T11:49:00Z'
+  start_frame: 65d31903-7da7-5e83-b424-60192a79f4a6
+  end_frame: 37143d81-2f0a-5bee-bbe8-edba71a491e4
+  fixture_index:
+  - 109
+  - 118
+  bundle_id: com.cedar.quill
+  window_title: Northwind Renewal — Draft letter
+  frame_ids: [65d31903-7da7-5e83-b424-60192a79f4a6, d9d14420-804d-5bd7-8fb8-cb5b5983017a, c20327f1-1689-5398-a6a9-00d43aeb61e5,
+    54831c02-c9b6-590d-a787-76bb251017dc, 0bde8492-bb4c-59a6-a0b4-c671d64abcf1, 85b09d07-71ea-5b65-bf46-768aab67294b,
+    5cc5d789-6a64-59a4-ba5b-d2687c0eba45, d69148a3-399b-532d-b916-758e77bb31b3, 92d316cc-dbbe-507c-beb6-c3c8b7493ec6,
+    37143d81-2f0a-5bee-bbe8-edba71a491e4]
+- start: '2026-11-03T13:00:00Z'
+  end: '2026-11-03T13:14:00Z'
+  start_frame: e614f5b8-4d04-5bc5-ae48-3552d0dc61df
+  end_frame: 23333b6a-d66f-5245-9a2c-d570adbe76f7
+  fixture_index:
+  - 119
+  - 128
+  bundle_id: com.cedar.grid
+  window_title: Harbor findings — Grid
+  frame_ids: [e614f5b8-4d04-5bc5-ae48-3552d0dc61df, c9da529a-ffa6-5cf3-ac1d-ebd5ce4f0ab1, 11fa1f41-f60c-5519-b341-e9ae61c00da6,
+    de0e8e6c-1601-5a52-baaf-6c4c84329021, ea8df954-bf81-5d00-84e3-92653ac49fdd, 2d7d8f34-8c24-5efe-9e12-c75ff569c170,
+    fcf5d9c7-148c-5b34-be17-c022aea6918a, f1574553-aba9-5637-9b9e-0c07393b3cae, e2dcb6e5-d431-5ba5-8fce-7667149de596,
+    23333b6a-d66f-5245-9a2c-d570adbe76f7]
+- start: '2026-11-03T13:16:00Z'
+  end: '2026-11-03T13:20:00Z'
+  start_frame: 393cc3d3-9ade-56bd-a176-c25221686cb5
+  end_frame: 92b05479-a29e-58f2-ba3b-1de55cc1d80a
+  fixture_index:
+  - 129
+  - 133
+  bundle_id: com.cedar.relay
+  window_title: Relay — Ellis Voss
+  frame_ids: [393cc3d3-9ade-56bd-a176-c25221686cb5, 8d0f719b-5ebb-5f84-ba73-0a4c4cde18ce, 2c8994ab-cad5-5a80-8d5f-cff804cd9958,
+    416f269f-5fb8-5c05-9a26-8ffaed5ab7ea, 92b05479-a29e-58f2-ba3b-1de55cc1d80a]
+- start: '2026-11-03T13:22:00Z'
+  end: '2026-11-03T13:38:00Z'
+  start_frame: 1cae6bc5-e227-5c14-803c-da89858d640b
+  end_frame: d01f1beb-9dc3-5300-8b91-692ff9710928
+  fixture_index:
+  - 134
+  - 144
+  bundle_id: com.cedar.quill
+  window_title: Cedar Onboarding — Page 2
+  frame_ids: [1cae6bc5-e227-5c14-803c-da89858d640b, 85f86911-e79f-553a-aae0-9a60ed5aa801, 87e566b5-f83c-5176-baef-51b5f702b046,
+    28f92380-27c0-54e6-9eb6-16015f7af13a, 6a1e07c1-eaf3-5f55-98bb-d8c96102aee7, 874d333b-9a94-5acc-8d31-9af599bdb054,
+    bef59e6a-2418-5b83-b406-1a9865be7c88, cc09732d-c3f6-5829-9d99-b6b09efdeac5, d5c9e5ae-62ec-5435-b052-57164954c4a1,
+    7c84ef18-c266-53c0-a5e6-f1520373b754, d01f1beb-9dc3-5300-8b91-692ff9710928]
+- start: '2026-11-03T13:40:00Z'
+  end: '2026-11-03T13:58:00Z'
+  start_frame: f05bbda7-422e-5d0c-a523-c00d37deefd5
+  end_frame: 90624b54-a0e6-5ef6-9c41-cce8f02dc5e8
+  fixture_index:
+  - 145
+  - 156
+  bundle_id: com.cedar.anvil
+  window_title: anvil — onboarding/page2.md
+  frame_ids: [f05bbda7-422e-5d0c-a523-c00d37deefd5, 08cf1480-8de3-54ca-9e63-0df937a9aef5, c0030c68-1671-57c1-8371-0df0fad397e6,
+    764e4187-eb33-59a7-b547-e65d26dfe650, 74b9a38d-75fd-57a8-a524-e370eeabb3fa, fbc5ed01-922e-5ee4-90dd-fc2b3ec24004,
+    809d0087-fe21-5b42-b7e6-289fb7dabc78, 4ec8aa23-1050-5b37-8a19-ebfe701930a2, 4e0b3d82-6a79-5119-be9a-a16d142e8ad7,
+    1b0b7a45-dcdb-5fac-a738-44ee6bfbd0b6, 69f30b3b-d0ec-53ae-9802-4affef8f299d, 90624b54-a0e6-5ef6-9c41-cce8f02dc5e8]
+- start: '2026-11-03T14:25:00Z'
+  end: '2026-11-03T14:39:00Z'
+  start_frame: 3709f11e-6ed9-504f-a16e-efe035577bbd
+  end_frame: dd94c1c6-8e67-540c-b5dc-da9e4ff0f4d5
+  fixture_index:
+  - 157
+  - 166
+  bundle_id: com.cedar.quill
+  window_title: Harbor Safety Audit — Checklist
+  frame_ids: [3709f11e-6ed9-504f-a16e-efe035577bbd, 62ffa3fb-27bd-57a9-b2a1-422a9660de9a, c3f4c9b7-c6ce-5d5b-bc1e-794139493b83,
+    10e4ef88-1131-529f-96de-40f99da78350, bb9a993a-6d63-56a9-a7cd-df6bcddc8ebd, c463fac0-4e53-531d-b9cf-6eeb24223519,
+    69de81f8-389a-530a-9f9e-dfef390b90b1, 95a7ae61-c6dd-5ea9-89ca-a87a6e2b63d4, 15416af6-b19c-5b00-ab5d-121bf5cb7037,
+    dd94c1c6-8e67-540c-b5dc-da9e4ff0f4d5]
+- start: '2026-11-03T14:41:00Z'
+  end: '2026-11-03T14:51:00Z'
+  start_frame: 9546cec2-bf26-5966-aaf6-0901278b0272
+  end_frame: e5361149-3464-5c82-a062-4b0aabe50d15
+  fixture_index:
+  - 167
+  - 174
+  bundle_id: com.cedar.mail
+  window_title: 'Re: Northwind Renewal — Mina Okonkwo'
+  frame_ids: [9546cec2-bf26-5966-aaf6-0901278b0272, e7b6731d-0a32-560e-bb06-95c59e2046cd, dc55f3dd-650d-5a96-9438-193ee27b7ff3,
+    877163c1-2d47-5bea-922e-fe91ece67195, 230d5be3-99b7-50d6-bd17-e23124bdc749, 7184014b-92c5-5be4-bd79-f5f92a6fabde,
+    d892d1e5-1ea0-5de9-835d-176cbf40c79e, e5361149-3464-5c82-a062-4b0aabe50d15]
+- start: '2026-11-03T14:53:00Z'
+  end: '2026-11-03T15:03:00Z'
+  start_frame: 50c5bc90-a507-5735-b4d8-16179e455e67
+  end_frame: 6c923f31-ffb8-53f1-80d2-e536a6276c22
+  fixture_index:
+  - 175
+  - 182
+  bundle_id: com.cedar.relay
+  window_title: Relay — Jun Park
+  frame_ids: [50c5bc90-a507-5735-b4d8-16179e455e67, 39227c69-824f-5203-9044-a452c8ac3fb8, 4e616f5a-5e75-5dca-8c39-807bdbf71339,
+    d4b59a3d-0f63-587c-aec1-e383fdc4dc96, b0b4cd21-7d7f-5862-8115-5f21202d8cca, ea6dc2f7-77c8-5a7e-85ed-6baea3cfea80,
+    eefb1143-6839-5f37-8369-2e0bd6ddb8e2, 6c923f31-ffb8-53f1-80d2-e536a6276c22]
+- start: '2026-11-03T15:05:00Z'
+  end: '2026-11-03T15:23:00Z'
+  start_frame: 7316f361-b3ab-5935-adf8-755cea80922a
+  end_frame: cdc533bc-7412-5489-bd39-44380024e3fd
+  fixture_index:
+  - 183
+  - 194
+  bundle_id: com.cedar.quill
+  window_title: Northwind Renewal — Draft letter
+  frame_ids: [7316f361-b3ab-5935-adf8-755cea80922a, 0d73ac4b-8216-510a-ba80-2c6fdbf7026e, 7305db15-93f1-53dd-adc6-91353e0fe360,
+    24130841-a68b-5471-a0d6-fd13c1d11c2f, 8d8c5a6d-f5d1-5be9-9a49-ad20f0320ebf, 05d50359-d908-5b58-aced-65cbc2b10e94,
+    9a18c9af-418e-51fd-b956-e80b0f51551b, f8308015-8801-5901-a26a-7dd5069479ab, a5c2f14d-3674-5793-b1c5-35f91df7335e,
+    7e598155-4f11-5099-bb7a-38122f84987c, 0059750c-c629-5bb1-aee9-faaaf121d73a, cdc533bc-7412-5489-bd39-44380024e3fd]
+- start: '2026-11-03T15:25:00Z'
+  end: '2026-11-03T15:39:00Z'
+  start_frame: 36bfac1e-db1a-505a-8652-372b1c1bddd0
+  end_frame: 9e0bcff9-3c05-527b-98b8-60080408f2c3
+  fixture_index:
+  - 195
+  - 204
+  bundle_id: com.cedar.grid
+  window_title: Harbor findings — Grid
+  frame_ids: [36bfac1e-db1a-505a-8652-372b1c1bddd0, 81acc2df-034a-5430-bffc-b3eda037bec4, eed5a611-9d04-5e68-8ed5-4133b09bd342,
+    2f5a8833-9c9c-526d-a3c2-b131edc3e563, 56926178-0588-5939-8577-e8513c64f4fd, aeb29b49-4987-599c-829c-3704acdbb214,
+    b33989f3-69e9-5910-945c-6a8bf4b0b928, 17e57b1e-90b0-500e-84f4-7cc695099f19, 713abca9-1095-567b-927a-339a92e98b79,
+    9e0bcff9-3c05-527b-98b8-60080408f2c3]
+- start: '2026-11-03T15:41:00Z'
+  end: '2026-11-03T15:59:00Z'
+  start_frame: d4e848a0-eef8-5a36-ab9e-42c8b5e59fcb
+  end_frame: 256b02c1-8cc0-5075-8809-d154a5860271
+  fixture_index:
+  - 205
+  - 216
+  bundle_id: com.cedar.anvil
+  window_title: anvil — renewals/northwind.md
+  frame_ids: [d4e848a0-eef8-5a36-ab9e-42c8b5e59fcb, 273da9f3-ecc6-5825-badb-def39d4fb299, dc5227ce-baa5-5e3d-b019-8053fe0382a2,
+    ebdc1c2e-4489-5a27-aca8-5e1162638eaf, 66677472-a6ee-52e6-baee-9c2c8552e34c, 7afca029-e9ce-5ef6-aeb4-c841f807d3ee,
+    a4b02ec5-ca78-5ad6-8b1e-59f185c26eeb, 2bbcd7d4-1de7-5dde-a2c8-63b30ebfd3cd, b34ab707-3084-51fc-9e0e-793d8f48dd1d,
+    98760d28-21b1-5d55-ab33-d60761ceab3d, 7f89de42-2bad-5728-a62c-e26635cbeac3, 256b02c1-8cc0-5075-8809-d154a5860271]
+meta:
+  name: day_fragmented_multi
+  date: '2026-11-03'
+  seed: 7
+  frame_count: 220
+  first_frame: 3d478f13-f6a6-585b-8cf1-b29f50e712bb
+  last_frame: 256b02c1-8cc0-5075-8809-d154a5860271

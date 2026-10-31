@@ -1,0 +1,219 @@
+{
+  "frame_id": "0f72c899-9597-5972-8194-23d9611625e6",
+  "captured_at": "2026-11-03T11:23:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.quill",
+  "app_name": "Cedar Quill",
+  "window_title": "Harbor Safety Audit \u2014 Checklist",
+  "window_id": 3202,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Quill \u2014 Harbor Safety Audit \u2014 Checklist",
+        "bbox": [
+          66,
+          9,
+          353,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "11:23",
+        "bbox": [
+          1240,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor-Safety-Audit.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Scope",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open items",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor-Safety-Audit.quill",
+        "bbox": [
+          276,
+          46,
+          430,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          440,
+          46,
+          481,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          491,
+          46,
+          562,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor Safety Audit",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Checklist \u00b7 Thursday walkthrough",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Scope",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor Line north berth audit for Ellis Voss.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Walkthrough is Thursday. Checklist due Wednesday.",
+        "bbox": [
+          276,
+          247,
+          984,
+          268
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open items",
+        "bbox": [
+          276,
+          292,
+          984,
+          314
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Life-ring mounts and the tide-gate latch remain open.",
+        "bbox": [
+          276,
+          320,
+          984,
+          341
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Thursday agreed",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Send checklist Wednesday",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "7c5c7c7c7c7c7c7c",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

@@ -1,0 +1,129 @@
+{
+  "frame_id": "d47f154f-f32a-5029-b99d-21eb3317225f",
+  "captured_at": "2026-11-03T09:18:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.compass",
+  "app_name": "Cedar Compass",
+  "window_title": "Onboarding \u2014 Page 1 published",
+  "window_id": 3403,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Compass \u2014 Onboarding \u2014 Page 1 published",
+        "bbox": [
+          66,
+          9,
+          381,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:18",
+        "bbox": [
+          1237,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Onboarding",
+        "bbox": [
+          8,
+          42,
+          115,
+          75
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor",
+        "bbox": [
+          119,
+          42,
+          193,
+          75
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://intranet.cedar.example/onboarding/page-1",
+        "bbox": [
+          32,
+          84,
+          385,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Works \u00b7 intranet",
+        "bbox": [
+          40,
+          137,
+          1240,
+          158
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Onboarding page 1 is published",
+        "bbox": [
+          40,
+          170,
+          1240,
+          204
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Published",
+        "bbox": [
+          40,
+          212,
+          1240,
+          231
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Page 1 of the Cedar Onboarding guide is live for new joiners.",
+        "bbox": [
+          40,
+          246,
+          1240,
+          267
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Page 2 (tools list) is still a draft in Cedar Quill.",
+        "bbox": [
+          40,
+          297,
+          1240,
+          318
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park asked for the tools list before Friday standup.",
+        "bbox": [
+          40,
+          348,
+          1240,
+          369
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "80ffffffffffffff",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

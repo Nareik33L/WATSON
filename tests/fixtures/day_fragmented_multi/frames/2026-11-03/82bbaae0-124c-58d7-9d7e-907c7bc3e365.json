@@ -1,0 +1,219 @@
+{
+  "frame_id": "82bbaae0-124c-58d7-9d7e-907c7bc3e365",
+  "captured_at": "2026-11-03T10:59:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.mail",
+  "app_name": "Cedar Mail",
+  "window_title": "Re: Harbor Safety Audit \u2014 Ellis Voss",
+  "window_id": 3102,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Mail \u2014 Re: Harbor Safety Audit \u2014 Ellis Voss",
+        "bbox": [
+          66,
+          9,
+          375,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:59",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "FOLDERS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Inbox",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Sent",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Drafts",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "ACCOUNT",
+        "bbox": [
+          14,
+          170,
+          205,
+          186
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "you@cedar.example",
+        "bbox": [
+          0,
+          194,
+          219,
+          227
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          232,
+          46,
+          507,
+          67
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor checklist \u2014 draft",
+        "bbox": [
+          232,
+          67,
+          507,
+          88
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:51 \u00b7 Thursday walkthrough, checklist by Wednesday",
+        "bbox": [
+          232,
+          88,
+          507,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor checklist \u2014 draft",
+        "bbox": [
+          540,
+          52,
+          1260,
+          77
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "From: You <you@cedar.example>",
+        "bbox": [
+          540,
+          85,
+          1260,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "To: you@cedar.example",
+        "bbox": [
+          540,
+          106,
+          1260,
+          127
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Time: 10:51",
+        "bbox": [
+          540,
+          127,
+          1260,
+          148
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          540,
+          162,
+          1260,
+          182
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis \u2014",
+        "bbox": [
+          540,
+          182,
+          1260,
+          203
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Agreed, Thursday for the Harbor walkthrough.",
+        "bbox": [
+          540,
+          211,
+          1260,
+          232
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "I will send the checklist by Wednesday as promised.",
+        "bbox": [
+          540,
+          240,
+          1260,
+          261
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Life-ring mounts and the tide-gate latch are still open in the findings grid.",
+        "bbox": [
+          540,
+          269,
+          1260,
+          290
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "1f7f737f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

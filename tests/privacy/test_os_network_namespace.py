@@ -1,8 +1,9 @@
 """OS-level no-network check (plan §6 / §11.3).
 
 Creates a loopback-only network namespace (sudo unshare --net + setpriv,
-or unshare -rn). WATSON_REQUIRE_NETNS=1 makes a missing namespace fail
-instead of skip so CI cannot silently drop this test.
+or unshare --user --map-user/--map-group --net). WATSON_REQUIRE_NETNS=1
+makes a missing namespace fail instead of skip so CI cannot silently drop
+this test.
 """
 
 from __future__ import annotations
@@ -28,6 +29,13 @@ def test_replay_and_db_status_under_netns(tmp_path: Path) -> None:
     probe = run_in_netns([sys.executable, "-m", "watson.privacy.netns", "--probe"])
     assert probe.returncode == 0, probe.stderr
     assert "netns-ok" in probe.stdout
+    assert "uid=0" not in probe.stdout.split()
+    uid_line = next(line for line in probe.stdout.splitlines() if line.startswith("uid="))
+    assert int(uid_line.split("=", 1)[1]) != 0
+
+    who = run_in_netns([sys.executable, "-c", "import os; print(os.geteuid())"])
+    assert who.returncode == 0, who.stderr
+    assert who.stdout.strip() != "0"
 
     fixture = write_mini_fixture(tmp_path, frames=1)
     data_dir = tmp_path / "data"

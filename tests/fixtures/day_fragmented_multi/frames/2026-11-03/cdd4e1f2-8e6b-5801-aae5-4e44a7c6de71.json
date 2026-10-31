@@ -1,0 +1,219 @@
+{
+  "frame_id": "cdd4e1f2-8e6b-5801-aae5-4e44a7c6de71",
+  "captured_at": "2026-11-03T09:38:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.quill",
+  "app_name": "Cedar Quill",
+  "window_title": "Northwind Renewal \u2014 Draft letter",
+  "window_id": 3201,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Quill \u2014 Northwind Renewal \u2014 Draft letter",
+        "bbox": [
+          66,
+          9,
+          360,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:38",
+        "bbox": [
+          1235,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "DOCUMENT",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Northwind-Renewal.quill",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "OUTLINE",
+        "bbox": [
+          14,
+          104,
+          205,
+          120
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          0,
+          128,
+          219,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open",
+        "bbox": [
+          0,
+          161,
+          219,
+          194
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Northwind-Renewal.quill",
+        "bbox": [
+          276,
+          46,
+          427,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft",
+        "bbox": [
+          437,
+          46,
+          478,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Owner: you",
+        "bbox": [
+          488,
+          46,
+          559,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Northwind Renewal",
+        "bbox": [
+          276,
+          94,
+          984,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft letter \u00b7 two-year term",
+        "bbox": [
+          276,
+          136,
+          984,
+          157
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Purpose",
+        "bbox": [
+          276,
+          189,
+          984,
+          212
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Draft renewal letter from Cedar Works to Mina Okonkwo at Northwind Civic.",
+        "bbox": [
+          276,
+          218,
+          984,
+          239
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Proposed term is two years, starting 1 December.",
+        "bbox": [
+          276,
+          247,
+          984,
+          268
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Open",
+        "bbox": [
+          276,
+          292,
+          984,
+          314
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Pricing paragraph is a placeholder. Do not send until Jun reviews.",
+        "bbox": [
+          276,
+          320,
+          984,
+          341
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "NOTES",
+        "bbox": [
+          1055,
+          50,
+          1266,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Mina asked for two-year term",
+        "bbox": [
+          1041,
+          73,
+          1280,
+          106
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Letter still a draft",
+        "bbox": [
+          1041,
+          106,
+          1280,
+          139
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "7c5c7c7c7c7c7c7c",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

@@ -1,0 +1,109 @@
+{
+  "frame_id": "fcdb5507-760d-59f7-9955-02dfa1f54f5e",
+  "captured_at": "2026-11-03T09:24:30Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.compass",
+  "app_name": "Cedar Compass",
+  "window_title": "Cedar Daily \u2014 Tide tables",
+  "window_id": 3401,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Compass \u2014 Cedar Daily \u2014 Tide tables",
+        "bbox": [
+          66,
+          9,
+          344,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "09:24",
+        "bbox": [
+          1235,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Daily",
+        "bbox": [
+          8,
+          42,
+          114,
+          75
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Intranet",
+        "bbox": [
+          118,
+          42,
+          197,
+          75
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "https://news.cedardaily.example/tide-tables",
+        "bbox": [
+          32,
+          84,
+          344,
+          105
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Daily \u00b7 civic",
+        "bbox": [
+          40,
+          137,
+          1240,
+          158
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Spring tide tables posted for the harbor",
+        "bbox": [
+          40,
+          170,
+          1240,
+          204
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Spring tides run high this week. First high water 06:20.",
+        "bbox": [
+          40,
+          227,
+          1240,
+          248
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "This is a civic bulletin, not a Cedar Works delivery item.",
+        "bbox": [
+          40,
+          278,
+          1240,
+          299
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "80ffffffffffffff",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

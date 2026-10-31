@@ -1,9 +1,11 @@
 """Enter a network namespace that has only loopback (plan §6 / §11.3).
 
-Ubuntu 24.04 CI blocks ``unshare -rn`` (AppArmor restricts unprivileged
-user namespaces, so writing ``/proc/self/uid_map`` fails). The reliable
-path is ``sudo unshare --net`` (no user ns) then ``setpriv`` back to the
-invoking uid/gid. ``unshare -rn`` remains a fallback when userns works.
+Ubuntu 24.04 CI blocks unprivileged user namespaces (AppArmor rejects
+writes to ``/proc/self/uid_map``). The reliable path is ``sudo unshare
+--net`` (no user ns) then ``setpriv`` back to the invoking uid/gid, which
+keeps the non-root uid assert honest. When userns works, the fallback is
+``unshare --user --map-user=<uid> --map-group=<gid> --net`` so the process
+is not root inside the namespace.
 """
 
 from __future__ import annotations
@@ -52,6 +54,8 @@ def interface_names() -> set[str]:
 
 def assert_namespace_isolated() -> None:
     """Raise if this process can see a non-loopback interface or reach off-box."""
+    if os.geteuid() == 0:
+        raise NetnsError("expected a non-root uid inside the network namespace")
     names = interface_names()
     if names != {"lo"}:
         raise NetnsError(f"expected only lo, got {sorted(names)}")
@@ -90,8 +94,19 @@ def wrap_in_netns(inner: Sequence[str]) -> list[str] | None:
             *argv,
         ]
 
-    if shutil.which("unshare") and _ok(["unshare", "-rn", "true"]):
-        return ["unshare", "-rn", "--", *argv]
+    # Prefer a user+net ns that keeps the real uid. `unshare -rn` maps the
+    # caller to root inside the ns, which trips the non-root uid assert.
+    if shutil.which("unshare"):
+        mapped = [
+            "unshare",
+            "--user",
+            f"--map-user={uid}",
+            f"--map-group={gid}",
+            "--net",
+            "--",
+        ]
+        if _ok([*mapped, "true"]):
+            return [*mapped, *argv]
     return None
 
 
@@ -133,6 +148,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 1
         print("netns-ok")
+        print(f"uid={os.geteuid()}")
         return 0
     if args[:1] == ["--assert-isolated"]:
         args = [sys.executable, "-m", "watson.privacy.netns", "--probe"]

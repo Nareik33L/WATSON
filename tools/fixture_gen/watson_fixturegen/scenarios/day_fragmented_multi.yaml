@@ -1,0 +1,672 @@
+# Fragmented multi-project day — Cedar Works switches across three jobs.
+# Frequent context switches, short interruptions, lunch gap, mid-day idle,
+# and a private/excluded vault window that must not be stored.
+# Fictional people, firms, and hosts only (*.example). Plan §11.1.
+
+meta:
+  name: day_fragmented_multi
+  date: "2026-11-03"
+  tz_offset: "+00:00"
+  seed: 7
+  display_id: 1
+  width: 1280
+  height: 800
+  description: Fragmented multi-project day
+
+cadence:
+  default_seconds: 45
+  stretch_seconds: 120
+  tighten_seconds: 30
+  stretch_after_stable: 3
+
+windows:
+  mail_mina:
+    template: mail
+    bundle_id: com.cedar.mail
+    app_name: Cedar Mail
+    window_title: "Re: Northwind Renewal — Mina Okonkwo"
+    window_id: 3101
+  mail_ellis:
+    template: mail
+    bundle_id: com.cedar.mail
+    app_name: Cedar Mail
+    window_title: "Re: Harbor Safety Audit — Ellis Voss"
+    window_id: 3102
+  northwind_doc:
+    template: document
+    bundle_id: com.cedar.quill
+    app_name: Cedar Quill
+    window_title: "Northwind Renewal — Draft letter"
+    window_id: 3201
+  harbor_doc:
+    template: document
+    bundle_id: com.cedar.quill
+    app_name: Cedar Quill
+    window_title: "Harbor Safety Audit — Checklist"
+    window_id: 3202
+  onboarding_doc:
+    template: document
+    bundle_id: com.cedar.quill
+    app_name: Cedar Quill
+    window_title: "Cedar Onboarding — Page 2"
+    window_id: 3203
+  chat_ellis:
+    template: chat
+    bundle_id: com.cedar.relay
+    app_name: Cedar Relay
+    window_title: "Relay — Ellis Voss"
+    window_id: 3301
+  chat_jun:
+    template: chat
+    bundle_id: com.cedar.relay
+    app_name: Cedar Relay
+    window_title: "Relay — Jun Park"
+    window_id: 3302
+  news:
+    template: browser
+    bundle_id: com.cedar.compass
+    app_name: Cedar Compass
+    window_title: "Cedar Daily — Tide tables"
+    window_id: 3401
+    url: https://news.cedardaily.example/tide-tables
+  calendar:
+    template: browser
+    bundle_id: com.cedar.compass
+    app_name: Cedar Compass
+    window_title: "Pocket Calendar — Today"
+    window_id: 3402
+    url: https://calendar.pocket.example/today
+  intranet:
+    template: browser
+    bundle_id: com.cedar.compass
+    app_name: Cedar Compass
+    window_title: "Onboarding — Page 1 published"
+    window_id: 3403
+    url: https://intranet.cedar.example/onboarding/page-1
+  harbor_sheet:
+    template: spreadsheet
+    bundle_id: com.cedar.grid
+    app_name: Cedar Grid
+    window_title: "Harbor findings — Grid"
+    window_id: 3501
+  ide_northwind:
+    template: ide
+    bundle_id: com.cedar.anvil
+    app_name: Cedar Anvil
+    window_title: "anvil — renewals/northwind.md"
+    window_id: 3601
+  ide_onboarding:
+    template: ide
+    bundle_id: com.cedar.anvil
+    app_name: Cedar Anvil
+    window_title: "anvil — onboarding/page2.md"
+    window_id: 3602
+  vault:
+    template: browser
+    bundle_id: com.apple.Passwords
+    app_name: Passwords
+    window_title: "Passwords — Personal vault"
+    window_id: 3701
+    url: https://vault.cedar.example/unlock
+    is_private_browsing: true
+    excluded: true
+
+timeline:
+  - window: mail_mina
+    start: "09:00:00"
+    end: "09:07:00"
+    states:
+      - at: "09:00:00"
+        content:
+          account: you@cedar.example
+          folder: Inbox
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: false
+          messages:
+            - sender: Mina Okonkwo
+              email: mina@northwind.example
+              subject: "Re: Northwind Renewal"
+              time: "08:44"
+              preview: Can we lock a two-year term this week?
+              body:
+                - "Hello —"
+                - "Can we lock a two-year term this week? Procurement wants the renewal letter before Friday."
+                - "I can sign Thursday if the draft is ready."
+                - "— Mina Okonkwo, Northwind Civic"
+            - sender: Jun Park
+              email: jun@cedar.example
+              subject: Onboarding page 1
+              time: "08:10"
+              preview: Page 1 is live on the intranet
+              body:
+                - "Page 1 of Cedar Onboarding is published. Page 2 still needs the tools list."
+
+  - window: harbor_doc
+    start: "09:07:00"
+    end: "09:14:00"
+    states:
+      - at: "09:07:00"
+        content: &harbor_v1
+          filename: Harbor-Safety-Audit.quill
+          title: Harbor Safety Audit
+          subtitle: Checklist for Harbor Line · owner you
+          status: Draft
+          owner: you
+          current_section: 0
+          notes:
+            - Ellis asked for a Thursday walkthrough
+            - Findings grid is incomplete
+          sections:
+            - heading: Scope
+              paragraphs:
+                - "This checklist covers the Harbor Line north berth audit for Ellis Voss."
+                - "Walkthrough date is still open. Ellis asked for Thursday."
+            - heading: Open items
+              paragraphs:
+                - "Life-ring mounts and the tide-gate latch are unconfirmed."
+
+  - window: mail_mina
+    start: "09:14:00"
+    end: "09:18:00"
+    states:
+      - at: "09:14:00"
+        content:
+          account: you@cedar.example
+          folder: Inbox
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: false
+          messages:
+            - sender: Mina Okonkwo
+              email: mina@northwind.example
+              subject: "Re: Northwind Renewal"
+              time: "08:44"
+              preview: Can we lock a two-year term this week?
+              body:
+                - "Hello —"
+                - "Can we lock a two-year term this week? Procurement wants the renewal letter before Friday."
+                - "I can sign Thursday if the draft is ready."
+                - "— Mina Okonkwo, Northwind Civic"
+
+  - window: intranet
+    start: "09:18:00"
+    end: "09:24:00"
+    states:
+      - at: "09:18:00"
+        content:
+          kind: article
+          address: https://intranet.cedar.example/onboarding/page-1
+          kicker: Cedar Works · intranet
+          page_title: Cedar Onboarding page 1 is published
+          badge: Published
+          tabs:
+            - title: Onboarding
+              active: true
+            - title: Harbor
+              active: false
+          paragraphs:
+            - "Page 1 of the Cedar Onboarding guide is live for new joiners."
+            - "Page 2 (tools list) is still a draft in Cedar Quill."
+            - "Jun Park asked for the tools list before Friday standup."
+
+  - window: news
+    start: "09:24:00"
+    end: "09:27:00"
+    states:
+      - at: "09:24:00"
+        content:
+          kind: article
+          address: https://news.cedardaily.example/tide-tables
+          kicker: Cedar Daily · civic
+          page_title: Spring tide tables posted for the harbor
+          badge: null
+          tabs:
+            - title: Cedar Daily
+              active: true
+            - title: Intranet
+              active: false
+          paragraphs:
+            - "Spring tides run high this week. First high water 06:20."
+            - "This is a civic bulletin, not a Cedar Works delivery item."
+
+  - window: northwind_doc
+    start: "09:27:00"
+    end: "09:40:00"
+    states:
+      - at: "09:27:00"
+        content: &northwind_v1
+          filename: Northwind-Renewal.quill
+          title: Northwind Renewal
+          subtitle: Draft letter · two-year term
+          status: Draft
+          owner: you
+          current_section: 0
+          notes:
+            - Mina asked for two-year term
+            - Letter still a draft
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "Draft renewal letter from Cedar Works to Mina Okonkwo at Northwind Civic."
+                - "Proposed term is two years, starting 1 December."
+            - heading: Open
+              paragraphs:
+                - "Pricing paragraph is a placeholder. Do not send until Jun reviews."
+
+  - window: chat_ellis
+    start: "09:40:00"
+    end: "09:46:00"
+    states:
+      - at: "09:40:00"
+        content:
+          workspace: Cedar Works
+          room: Ellis Voss
+          rooms: [Ellis Voss, Jun Park, Harbor desk]
+          topic: Harbor Safety Audit
+          draft: ""
+          messages:
+            - author: Ellis Voss
+              time: "09:40"
+              text: Can we move the Harbor walkthrough to Thursday? Friday the berth is closed.
+            - author: You
+              time: "09:42"
+              text: Thursday works. I will send the checklist by Wednesday.
+            - author: Ellis Voss
+              time: "09:44"
+              text: Agreed, Thursday for the Harbor walkthrough. Thanks.
+
+  - window: ide_onboarding
+    start: "09:46:00"
+    end: "09:56:00"
+    states:
+      - at: "09:46:00"
+        content: &onboard_ide
+          project: cedar-onboarding
+          filename: onboarding/page2.md
+          language: markdown
+          files:
+            - onboarding/page1.md
+            - onboarding/page2.md
+            - README.md
+          lines:
+            - "# Cedar Onboarding page 2"
+            - ""
+            - "Tools list still draft."
+            - "Jun wants this before Friday standup."
+          terminal:
+            - "anvil: opened onboarding/page2.md"
+
+  - window: calendar
+    start: "09:56:00"
+    end: "09:59:00"
+    states:
+      - at: "09:56:00"
+        content:
+          kind: calendar
+          address: https://calendar.pocket.example/today
+          kicker: Pocket Calendar · today
+          page_title: Tuesday 3 Nov
+          badge: null
+          tabs:
+            - title: Calendar
+              active: true
+          events:
+            - time: "12:00"
+              title: Lunch
+              personal: true
+            - time: "16:00"
+              title: School pickup
+              personal: true
+
+  - window: harbor_sheet
+    start: "09:59:00"
+    end: "10:12:00"
+    states:
+      - at: "09:59:00"
+        content: &harbor_grid
+          filename: Harbor-findings.grid
+          sheet: Findings
+          sheets: [Findings, Notes]
+          formula: =B2
+          selected: [0, 1]
+          headers: [Item, Status, Owner]
+          rows:
+            - [Life-ring mounts, Open, Ellis Voss]
+            - [Tide-gate latch, Open, You]
+            - [Walkthrough, Thursday, Ellis Voss]
+          note: Harbor Safety Audit findings. Walkthrough agreed for Thursday.
+
+  - window: northwind_doc
+    start: "10:12:00"
+    end: "10:24:00"
+    states:
+      - at: "10:12:00"
+        content: &northwind_v2
+          filename: Northwind-Renewal.quill
+          title: Northwind Renewal
+          subtitle: Draft letter · term locked in draft
+          status: Draft
+          owner: you
+          current_section: 1
+          notes:
+            - Two-year term written in
+            - Still do not send
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "Draft renewal letter from Cedar Works to Mina Okonkwo at Northwind Civic."
+                - "We will use a two-year term starting 1 December."
+            - heading: Next
+              paragraphs:
+                - "Jun still needs to review pricing. The letter remains a draft at midday."
+
+  - window: vault
+    start: "10:24:00"
+    end: "10:27:00"
+    states:
+      - at: "10:24:00"
+        content:
+          kind: article
+          address: https://vault.cedar.example/unlock
+          kicker: Passwords · private
+          page_title: Unlock personal vault
+          badge: Private
+          tabs:
+            - title: Vault
+              active: true
+          paragraphs:
+            - "Personal vault unlock. This window is excluded and must never be stored."
+            - "No work project lives here."
+
+  - window: onboarding_doc
+    start: "10:27:00"
+    end: "10:42:00"
+    states:
+      - at: "10:27:00"
+        content: &onboard_doc
+          filename: Cedar-Onboarding-Page2.quill
+          title: Cedar Onboarding page 2
+          subtitle: Tools list · draft
+          status: Draft
+          owner: you
+          current_section: 0
+          notes:
+            - Page 1 already published
+            - Page 2 still open
+          sections:
+            - heading: Tools
+              paragraphs:
+                - "Draft tools list for new joiners. Jun Park asked for this before Friday standup."
+                - "Cedar Mail, Cedar Quill, Cedar Relay, Cedar Anvil."
+            - heading: Still missing
+              paragraphs:
+                - "VPN steps and the guest badge flow are not written yet."
+
+  - window: chat_jun
+    start: "10:42:00"
+    end: "10:50:00"
+    states:
+      - at: "10:42:00"
+        content:
+          workspace: Cedar Works
+          room: Jun Park
+          rooms: [Ellis Voss, Jun Park, Harbor desk]
+          topic: Cedar Onboarding
+          draft: ""
+          messages:
+            - author: Jun Park
+              time: "10:42"
+              text: Page 1 looks good. Can page 2 land before Friday standup?
+            - author: You
+              time: "10:44"
+              text: Tools list is in draft. I will keep the commitment open.
+            - author: Jun Park
+              time: "10:47"
+              text: Fine. Do not mark page 2 complete until it is on the intranet.
+
+  - window: mail_ellis
+    start: "10:50:00"
+    end: "11:05:00"
+    states:
+      - at: "10:50:00"
+        content:
+          account: you@cedar.example
+          folder: Inbox
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: true
+          messages:
+            - sender: You
+              email: you@cedar.example
+              subject: Harbor checklist — draft
+              time: "10:51"
+              preview: Thursday walkthrough, checklist by Wednesday
+              body:
+                - "Ellis —"
+                - "Agreed, Thursday for the Harbor walkthrough."
+                - "I will send the checklist by Wednesday as promised."
+                - "Life-ring mounts and the tide-gate latch are still open in the findings grid."
+
+  - window: ide_northwind
+    start: "11:05:00"
+    end: "11:20:00"
+    states:
+      - at: "11:05:00"
+        content:
+          project: cedar-renewals
+          filename: renewals/northwind.md
+          language: markdown
+          files:
+            - renewals/northwind.md
+            - README.md
+          lines:
+            - "# Northwind Renewal notes"
+            - ""
+            - "Term: two years from 1 December (draft)."
+            - "Mina Okonkwo can sign Thursday if the letter is ready."
+            - "TODO: pricing paragraph. Do not send."
+          terminal:
+            - "anvil: opened renewals/northwind.md"
+
+  - window: harbor_doc
+    start: "11:20:00"
+    end: "11:35:00"
+    states:
+      - at: "11:20:00"
+        content: &harbor_v2
+          filename: Harbor-Safety-Audit.quill
+          title: Harbor Safety Audit
+          subtitle: Checklist · Thursday walkthrough
+          status: Draft
+          owner: you
+          current_section: 1
+          notes:
+            - Thursday agreed
+            - Send checklist Wednesday
+          sections:
+            - heading: Scope
+              paragraphs:
+                - "Harbor Line north berth audit for Ellis Voss."
+                - "Walkthrough is Thursday. Checklist due Wednesday."
+            - heading: Open items
+              paragraphs:
+                - "Life-ring mounts and the tide-gate latch remain open."
+
+  - window: northwind_doc
+    start: "11:35:00"
+    end: "11:50:00"
+    states:
+      - at: "11:35:00"
+        content: *northwind_v2
+
+  # Lunch gap 12:00–13:00 — no blocks.
+
+  - window: harbor_sheet
+    start: "13:00:00"
+    end: "13:15:00"
+    states:
+      - at: "13:00:00"
+        content: *harbor_grid
+
+  - window: chat_ellis
+    start: "13:15:00"
+    end: "13:22:00"
+    states:
+      - at: "13:15:00"
+        content:
+          workspace: Cedar Works
+          room: Ellis Voss
+          rooms: [Ellis Voss, Jun Park, Harbor desk]
+          topic: Harbor Safety Audit
+          draft: ""
+          messages:
+            - author: You
+              time: "13:15"
+              text: Findings grid updated after lunch. Thursday walkthrough still stands.
+            - author: Ellis Voss
+              time: "13:18"
+              text: Good. Still send the checklist Wednesday.
+
+  - window: onboarding_doc
+    start: "13:22:00"
+    end: "13:40:00"
+    states:
+      - at: "13:22:00"
+        content: *onboard_doc
+
+  - window: ide_onboarding
+    start: "13:40:00"
+    end: "14:00:00"
+    states:
+      - at: "13:40:00"
+        content: *onboard_ide
+
+  # Mid-day idle 14:00–14:25 — no blocks.
+
+  - window: harbor_doc
+    start: "14:25:00"
+    end: "14:40:00"
+    states:
+      - at: "14:25:00"
+        content: *harbor_v2
+
+  - window: mail_mina
+    start: "14:40:00"
+    end: "14:52:00"
+    states:
+      - at: "14:40:00"
+        content:
+          account: you@cedar.example
+          folder: Drafts
+          folders: [Inbox, Sent, Drafts]
+          selected: 0
+          draft: true
+          messages:
+            - sender: You
+              email: you@cedar.example
+              subject: Northwind renewal letter — draft
+              time: "14:41"
+              preview: Two-year term, still a draft
+              body:
+                - "Mina —"
+                - "Draft only. We will use a two-year term starting 1 December."
+                - "Pricing is not ready. The Northwind renewal letter is still a draft at day end."
+
+  - window: chat_jun
+    start: "14:52:00"
+    end: "15:05:00"
+    states:
+      - at: "14:52:00"
+        content:
+          workspace: Cedar Works
+          room: Jun Park
+          rooms: [Ellis Voss, Jun Park, Harbor desk]
+          topic: Cedar Onboarding
+          draft: ""
+          messages:
+            - author: You
+              time: "14:52"
+              text: Page 1 stays published. Page 2 is still draft — not complete.
+            - author: Jun Park
+              time: "14:56"
+              text: Leave the page 2 commitment open.
+
+  - window: northwind_doc
+    start: "15:05:00"
+    end: "15:25:00"
+    states:
+      - at: "15:05:00"
+        content:
+          filename: Northwind-Renewal.quill
+          title: Northwind Renewal
+          subtitle: Draft — still editing at day end
+          status: Draft
+          owner: you
+          current_section: 1
+          notes:
+            - Day end: still a draft
+            - Do not send
+          sections:
+            - heading: Purpose
+              paragraphs:
+                - "Renewal letter for Mina Okonkwo. Two-year term starting 1 December."
+            - heading: Status
+              paragraphs:
+                - "The Northwind renewal letter is still editing at day end and is not complete."
+
+  - window: harbor_sheet
+    start: "15:25:00"
+    end: "15:40:00"
+    states:
+      - at: "15:25:00"
+        content: *harbor_grid
+
+  - window: ide_northwind
+    start: "15:40:00"
+    end: "16:00:00"
+    states:
+      - at: "15:40:00"
+        content:
+          project: cedar-renewals
+          filename: renewals/northwind.md
+          language: markdown
+          files:
+            - renewals/northwind.md
+            - README.md
+          lines:
+            - "# Northwind Renewal notes"
+            - ""
+            - "Term: two years from 1 December (draft)."
+            - "Letter still editing at day end."
+            - "TODO: pricing paragraph."
+          terminal:
+            - "anvil: saved 15:48"
+
+truth:
+  projects:
+    - Northwind Renewal
+    - Harbor Safety Audit
+    - Cedar Onboarding
+  people:
+    - Mina Okonkwo (Northwind)
+    - Ellis Voss (Harbor Line)
+    - Jun Park (Cedar Works)
+  decisions:
+    - text: Agreed to move the Harbor walkthrough to Thursday
+      evidence_contains: "Agreed, Thursday for the Harbor walkthrough"
+    - text: Use a two-year term for the Northwind renewal
+      evidence_contains: "We will use a two-year term starting 1 December"
+  commitments:
+    - text: Send the Harbor checklist to Ellis by Wednesday
+      status: open
+    - text: Publish Cedar Onboarding page 2 before Friday standup
+      status: open
+  completed:
+    - Cedar Onboarding page 1 published
+  not_completed:
+    - Northwind renewal letter (still editing at day end)
+    - Cedar Onboarding page 2 (still a draft)
+  noise:
+    - Cedar Daily 09:24–09:27
+    - Pocket Calendar glance 09:56–09:59

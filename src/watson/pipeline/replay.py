@@ -22,6 +22,7 @@ from watson.capture.spool import (
     png_dimensions,
     sha256_file,
 )
+from watson.config.schema import ExclusionsConfig
 from watson.memory.db import iso_now
 from watson.pipeline.frames import (
     EXTRACT_JOB_KIND,
@@ -55,6 +56,7 @@ class ReplayResult:
     deleted: int
     deletion_verified: int
     skipped_existing: int
+    skipped_excluded: int
     finished_at: str
     instant: bool
     speed: float
@@ -118,6 +120,7 @@ def replay_fixture(
     instant: bool = False,
     speed: float = 1.0,
     spool_dir: Path | None = None,
+    exclusions: ExclusionsConfig | None = None,
 ) -> ReplayResult:
     """Validate, copy into a 0700/0600 spool, ingest, extract stub, delete PNGs."""
     if speed <= 0:
@@ -149,14 +152,25 @@ def replay_fixture(
             raise ReplayError(str(exc)) from exc
 
         working_day_id = ensure_working_day(conn, date)
+        rules = exclusions if exclusions is not None else _default_exclusions()
         ingested = 0
         skipped = 0
+        skipped_excluded = 0
         previous_at: datetime | None = None
         for pair in pairs:
             _pace(previous_at, pair.captured_at, instant=instant, speed=speed)
             previous_at = pair.captured_at
-            if ingest_pair(conn, pair, working_day_id=working_day_id):
+            outcome = ingest_pair(
+                conn,
+                pair,
+                working_day_id=working_day_id,
+                exclusions=rules,
+                fixture_dir=fixture,
+            )
+            if outcome == "ingested":
                 ingested += 1
+            elif outcome == "excluded":
+                skipped_excluded += 1
             else:
                 skipped += 1
 
@@ -204,6 +218,7 @@ def replay_fixture(
             deleted=deleted,
             deletion_verified=verified,
             skipped_existing=skipped,
+            skipped_excluded=skipped_excluded,
             finished_at=finished_at,
             instant=instant,
             speed=speed,
@@ -218,12 +233,19 @@ def replay_fixture(
                 "extracted": extracted,
                 "deleted": deleted,
                 "deletion_verified": verified,
+                "skipped_excluded": skipped_excluded,
             },
         )
         return result
     finally:
         if temp is not None:
             temp.cleanup()
+
+
+def _default_exclusions() -> ExclusionsConfig:
+    from watson.config import load_config
+
+    return load_config().exclusions
 
 
 def _pace(
@@ -269,6 +291,7 @@ def _store_last_replay(conn: sqlcipher.Connection, result: ReplayResult) -> None
         "extracted": result.extracted,
         "deleted": result.deleted,
         "deletion_verified": result.deletion_verified,
+        "skipped_excluded": result.skipped_excluded,
         "instant": result.instant,
         "speed": result.speed,
     }
@@ -291,6 +314,7 @@ def _store_last_replay(conn: sqlcipher.Connection, result: ReplayResult) -> None
             "extracted": result.extracted,
             "deleted": result.deleted,
             "deletion_verified": result.deletion_verified,
+            "skipped_excluded": result.skipped_excluded,
         },
         commit=False,
     )

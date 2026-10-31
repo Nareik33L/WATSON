@@ -1,0 +1,199 @@
+{
+  "frame_id": "3b062f03-ac65-5287-85a9-feae59951354",
+  "captured_at": "2026-11-03T10:47:00Z",
+  "display_id": 1,
+  "bundle_id": "com.cedar.relay",
+  "app_name": "Cedar Relay",
+  "window_title": "Relay \u2014 Jun Park",
+  "window_id": 3302,
+  "is_private_browsing": false,
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Cedar Relay \u2014 Relay \u2014 Jun Park",
+        "bbox": [
+          66,
+          9,
+          268,
+          27
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:47",
+        "bbox": [
+          1238,
+          10,
+          1268,
+          26
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "CEDAR WORKS",
+        "bbox": [
+          14,
+          48,
+          205,
+          63
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Ellis Voss",
+        "bbox": [
+          0,
+          71,
+          219,
+          104
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          0,
+          104,
+          219,
+          137
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Harbor desk",
+        "bbox": [
+          0,
+          137,
+          219,
+          170
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          234,
+          46,
+          288,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Cedar Onboarding",
+        "bbox": [
+          298,
+          46,
+          410,
+          65
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          238,
+          89,
+          302,
+          108
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:42",
+        "bbox": [
+          314,
+          92,
+          345,
+          107
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Page 1 looks good. Can page 2 land before Friday standup?",
+        "bbox": [
+          238,
+          109,
+          1262,
+          130
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "You",
+        "bbox": [
+          238,
+          143,
+          266,
+          162
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:44",
+        "bbox": [
+          278,
+          146,
+          309,
+          161
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Tools list is in draft. I will keep the commitment open.",
+        "bbox": [
+          238,
+          163,
+          1262,
+          184
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Jun Park",
+        "bbox": [
+          238,
+          197,
+          302,
+          216
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "10:47",
+        "bbox": [
+          314,
+          200,
+          344,
+          215
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Fine. Do not mark page 2 complete until it is on the intranet.",
+        "bbox": [
+          238,
+          217,
+          1262,
+          238
+        ],
+        "confidence": 1.0
+      },
+      {
+        "text": "Message Jun Park",
+        "bbox": [
+          234,
+          769,
+          1266,
+          790
+        ],
+        "confidence": 1.0
+      }
+    ]
+  },
+  "phash": "003f7f7f7f7f7f7f",
+  "width": 1280,
+  "height": 800,
+  "capture_mode": "fixture"
+}

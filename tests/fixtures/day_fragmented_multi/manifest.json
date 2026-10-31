@@ -1,0 +1,1327 @@
+{
+  "name": "day_fragmented_multi",
+  "date": "2026-11-03",
+  "seed": 7,
+  "frames": {
+    "3d478f13-f6a6-585b-8cf1-b29f50e712bb": {
+      "png": "frames/2026-11-03/3d478f13-f6a6-585b-8cf1-b29f50e712bb.png",
+      "sha256": "0c09ab5b24d4f9a2fb4607c77d5cc211c50debc2189c15c31644ac80b6857e32",
+      "width": 1280,
+      "height": 800
+    },
+    "a44c98c3-8659-5b89-983f-f9a31eebe0c3": {
+      "png": "frames/2026-11-03/a44c98c3-8659-5b89-983f-f9a31eebe0c3.png",
+      "sha256": "0c09ab5b24d4f9a2fb4607c77d5cc211c50debc2189c15c31644ac80b6857e32",
+      "width": 1280,
+      "height": 800
+    },
+    "988290ba-1c4e-5f36-9d0a-873a321d1c5a": {
+      "png": "frames/2026-11-03/988290ba-1c4e-5f36-9d0a-873a321d1c5a.png",
+      "sha256": "2ca5500d97294b13a6ae6bb490dd72a4f53d0f25ff811aa3411db82ef20f50e0",
+      "width": 1280,
+      "height": 800
+    },
+    "b742d1b2-de79-5b86-826d-edff155b02fe": {
+      "png": "frames/2026-11-03/b742d1b2-de79-5b86-826d-edff155b02fe.png",
+      "sha256": "88a4cf2f32bc54c561ff30edc6b9febd07a752013b3ce5d946e62ab376981ce0",
+      "width": 1280,
+      "height": 800
+    },
+    "c2c26224-2877-568c-9ef5-c470ab86306d": {
+      "png": "frames/2026-11-03/c2c26224-2877-568c-9ef5-c470ab86306d.png",
+      "sha256": "1f1560132d7cf21989a7199487ff569acec3b0d90414f9148b51ef372f0538b6",
+      "width": 1280,
+      "height": 800
+    },
+    "b7968c7b-a0be-5531-b15c-483475f7c230": {
+      "png": "frames/2026-11-03/b7968c7b-a0be-5531-b15c-483475f7c230.png",
+      "sha256": "1de0c0ff566af81625047cfd60980833e2f4b4bfecbf1b6b2b04b8e843230ae9",
+      "width": 1280,
+      "height": 800
+    },
+    "71e31b2f-ff8c-584c-9316-f8a41a163d6e": {
+      "png": "frames/2026-11-03/71e31b2f-ff8c-584c-9316-f8a41a163d6e.png",
+      "sha256": "a247c046280f2fd32b2c38c94eb88b614516aa79f36536b6e328010f94411a30",
+      "width": 1280,
+      "height": 800
+    },
+    "38ffe53e-47fc-55e8-98bd-b3de57fbf673": {
+      "png": "frames/2026-11-03/38ffe53e-47fc-55e8-98bd-b3de57fbf673.png",
+      "sha256": "a247c046280f2fd32b2c38c94eb88b614516aa79f36536b6e328010f94411a30",
+      "width": 1280,
+      "height": 800
+    },
+    "ec311345-fe25-54e5-9996-5e0e4c41fcdd": {
+      "png": "frames/2026-11-03/ec311345-fe25-54e5-9996-5e0e4c41fcdd.png",
+      "sha256": "9e5cc92bf5057d1a321069ba4c94029ae2d840565b7beda5330b89952909942b",
+      "width": 1280,
+      "height": 800
+    },
+    "afc4e299-0799-55b6-8aa9-a12543875022": {
+      "png": "frames/2026-11-03/afc4e299-0799-55b6-8aa9-a12543875022.png",
+      "sha256": "256ff5a93e459e566fced99b434ced9f73afe5ac86e8f9753f2df924aa0d9333",
+      "width": 1280,
+      "height": 800
+    },
+    "46d5389c-0cfd-55d4-a714-7854ce4c4ad3": {
+      "png": "frames/2026-11-03/46d5389c-0cfd-55d4-a714-7854ce4c4ad3.png",
+      "sha256": "2b0498d0d03519c2422ccf202a00ab863b3d4e5df29500c280e639f6bc6cfd58",
+      "width": 1280,
+      "height": 800
+    },
+    "ca54293b-106c-5cfa-b1ba-9ba8be323f1e": {
+      "png": "frames/2026-11-03/ca54293b-106c-5cfa-b1ba-9ba8be323f1e.png",
+      "sha256": "7aa46e548ad20691d577d98b5376e1c97b00a2fe6a68ab99518c9ddf85cbb1bf",
+      "width": 1280,
+      "height": 800
+    },
+    "905763ab-f803-5f07-87b3-9e5791a328d3": {
+      "png": "frames/2026-11-03/905763ab-f803-5f07-87b3-9e5791a328d3.png",
+      "sha256": "7aa46e548ad20691d577d98b5376e1c97b00a2fe6a68ab99518c9ddf85cbb1bf",
+      "width": 1280,
+      "height": 800
+    },
+    "099d4fed-3595-5c2b-bfd1-7ff010191886": {
+      "png": "frames/2026-11-03/099d4fed-3595-5c2b-bfd1-7ff010191886.png",
+      "sha256": "c60efcc2fe9539e8789afd032ab503db02a1dccab6ae5a919ca36370173aa239",
+      "width": 1280,
+      "height": 800
+    },
+    "93926459-ad0b-568f-abf9-b9d111cb0ca3": {
+      "png": "frames/2026-11-03/93926459-ad0b-568f-abf9-b9d111cb0ca3.png",
+      "sha256": "bb18ef794d723093a1cdea124410092c2f3ab471dd7677b77940a6e1b2098bda",
+      "width": 1280,
+      "height": 800
+    },
+    "d47f154f-f32a-5029-b99d-21eb3317225f": {
+      "png": "frames/2026-11-03/d47f154f-f32a-5029-b99d-21eb3317225f.png",
+      "sha256": "bd99df1b845b22d46053bba1d18ec9bfe896a2a95d4cf010c519b03a912b29fe",
+      "width": 1280,
+      "height": 800
+    },
+    "837a1aac-e794-591f-9911-2e79f43540e7": {
+      "png": "frames/2026-11-03/837a1aac-e794-591f-9911-2e79f43540e7.png",
+      "sha256": "bd99df1b845b22d46053bba1d18ec9bfe896a2a95d4cf010c519b03a912b29fe",
+      "width": 1280,
+      "height": 800
+    },
+    "6776599d-e919-5f09-88c5-f248b0597986": {
+      "png": "frames/2026-11-03/6776599d-e919-5f09-88c5-f248b0597986.png",
+      "sha256": "0b26b03053f59e2b17a6ea8e567ffc437c3cf50d4f8238e9d250486c584c6ed2",
+      "width": 1280,
+      "height": 800
+    },
+    "c01e8bc2-7ecd-5920-94e7-4e11a0bd75bb": {
+      "png": "frames/2026-11-03/c01e8bc2-7ecd-5920-94e7-4e11a0bd75bb.png",
+      "sha256": "743093882573d5f0b09d0256fd42b3b404d0d2bf16aa9775f604e4f3907de657",
+      "width": 1280,
+      "height": 800
+    },
+    "8c69046b-2a53-542a-96da-f6c9d1a1b9f6": {
+      "png": "frames/2026-11-03/8c69046b-2a53-542a-96da-f6c9d1a1b9f6.png",
+      "sha256": "21a7895470739c227610e1c2790407a28e9bc7c55ffe96f3b1c2f777e411ef1f",
+      "width": 1280,
+      "height": 800
+    },
+    "5a00f7f3-2237-5f65-9547-7971e4bdc4b8": {
+      "png": "frames/2026-11-03/5a00f7f3-2237-5f65-9547-7971e4bdc4b8.png",
+      "sha256": "b084d8a0e4ebbafe37624f6c859f619d8ceeef7cf64d55ace9c39ca198a6adfd",
+      "width": 1280,
+      "height": 800
+    },
+    "fcdb5507-760d-59f7-9955-02dfa1f54f5e": {
+      "png": "frames/2026-11-03/fcdb5507-760d-59f7-9955-02dfa1f54f5e.png",
+      "sha256": "b084d8a0e4ebbafe37624f6c859f619d8ceeef7cf64d55ace9c39ca198a6adfd",
+      "width": 1280,
+      "height": 800
+    },
+    "4af4dfd9-1dc7-5015-9f55-65db8952ee22": {
+      "png": "frames/2026-11-03/4af4dfd9-1dc7-5015-9f55-65db8952ee22.png",
+      "sha256": "e6b960291e6a0ec8ae7fdb9bbe25a0a382c514402c1b641450fe174ee116a006",
+      "width": 1280,
+      "height": 800
+    },
+    "54607c24-0335-5c2b-a77d-66927d3103f9": {
+      "png": "frames/2026-11-03/54607c24-0335-5c2b-a77d-66927d3103f9.png",
+      "sha256": "69b136e1b2bd1672952f278510a7dd886b4def6402574c0499920a3bc8a9987c",
+      "width": 1280,
+      "height": 800
+    },
+    "761c0e42-afc1-56fb-9079-3e33740015a4": {
+      "png": "frames/2026-11-03/761c0e42-afc1-56fb-9079-3e33740015a4.png",
+      "sha256": "b94295b4249d204b22b95cdd873eb49b1d55c9afbbae9042500e4798a23ed50e",
+      "width": 1280,
+      "height": 800
+    },
+    "0709072c-d8d1-58ad-8b49-83410773abc0": {
+      "png": "frames/2026-11-03/0709072c-d8d1-58ad-8b49-83410773abc0.png",
+      "sha256": "b94295b4249d204b22b95cdd873eb49b1d55c9afbbae9042500e4798a23ed50e",
+      "width": 1280,
+      "height": 800
+    },
+    "535c485d-faa2-547b-964c-70bf29b64508": {
+      "png": "frames/2026-11-03/535c485d-faa2-547b-964c-70bf29b64508.png",
+      "sha256": "2759ec4146748a09c070869d9d5e72780bfb4d41d88237e8da4e609f6d3b65ec",
+      "width": 1280,
+      "height": 800
+    },
+    "17af349b-efbe-5ecf-ab5f-b7947b6ba0c7": {
+      "png": "frames/2026-11-03/17af349b-efbe-5ecf-ab5f-b7947b6ba0c7.png",
+      "sha256": "c166eeb121046fc2b5550c506e0194200439ee3ec3b36a6f5352794596146f94",
+      "width": 1280,
+      "height": 800
+    },
+    "b9cc62c5-8b37-5d90-8a56-3b10d0e4fd00": {
+      "png": "frames/2026-11-03/b9cc62c5-8b37-5d90-8a56-3b10d0e4fd00.png",
+      "sha256": "a945e175f48112c2cb84e1e5227b2e1ab5ac5ec043b406a8a27c5322530efc5f",
+      "width": 1280,
+      "height": 800
+    },
+    "98d5e6b3-1087-52ef-a6f2-b16c03f81b86": {
+      "png": "frames/2026-11-03/98d5e6b3-1087-52ef-a6f2-b16c03f81b86.png",
+      "sha256": "26685ce467efb1c5c09f00e480808a55704e3377bd3b1d7c0cbd52363c5f175e",
+      "width": 1280,
+      "height": 800
+    },
+    "ae43bf18-409b-542e-89fd-44b93bcf2cd0": {
+      "png": "frames/2026-11-03/ae43bf18-409b-542e-89fd-44b93bcf2cd0.png",
+      "sha256": "7e65b0772bc1ae8e22461473c375c49a019c19210995bf97b71655804fc0d24c",
+      "width": 1280,
+      "height": 800
+    },
+    "cdd4e1f2-8e6b-5801-aae5-4e44a7c6de71": {
+      "png": "frames/2026-11-03/cdd4e1f2-8e6b-5801-aae5-4e44a7c6de71.png",
+      "sha256": "fe813e9b30e744be333e0ece160369afe609ead219cd6b4a7f8211203f2d4598",
+      "width": 1280,
+      "height": 800
+    },
+    "03c85724-d1dc-5dbf-8d4e-e7bd17e564c4": {
+      "png": "frames/2026-11-03/03c85724-d1dc-5dbf-8d4e-e7bd17e564c4.png",
+      "sha256": "4143371b76ad6672b0688f1f1fa953b0733159c4a76eeab38ac16e7315225c10",
+      "width": 1280,
+      "height": 800
+    },
+    "fe92c098-147e-5937-9cdf-02d587e31229": {
+      "png": "frames/2026-11-03/fe92c098-147e-5937-9cdf-02d587e31229.png",
+      "sha256": "4143371b76ad6672b0688f1f1fa953b0733159c4a76eeab38ac16e7315225c10",
+      "width": 1280,
+      "height": 800
+    },
+    "07f9477a-2ad6-5072-b31d-fc1d2c7f4de5": {
+      "png": "frames/2026-11-03/07f9477a-2ad6-5072-b31d-fc1d2c7f4de5.png",
+      "sha256": "f65a4e3db82b7a181599a1e33eb1b121dce9cc8667640d7916f0a8098d05e3ee",
+      "width": 1280,
+      "height": 800
+    },
+    "176e2069-8111-5390-a39a-44b0878f1000": {
+      "png": "frames/2026-11-03/176e2069-8111-5390-a39a-44b0878f1000.png",
+      "sha256": "dde6a94d3131b3e7e6bdab78dc614c07e1e1f26759e1eb3d06b8f306c404a1d8",
+      "width": 1280,
+      "height": 800
+    },
+    "48c2fd67-7e54-5b6d-92cb-5b4aab623182": {
+      "png": "frames/2026-11-03/48c2fd67-7e54-5b6d-92cb-5b4aab623182.png",
+      "sha256": "48a402cb7087ed523d70ad5ae06a56a58d7bd5171afd8cd56c51a8c09d885b99",
+      "width": 1280,
+      "height": 800
+    },
+    "ea6124db-de11-5d78-bc7d-a725023948a2": {
+      "png": "frames/2026-11-03/ea6124db-de11-5d78-bc7d-a725023948a2.png",
+      "sha256": "b4d2ffc0b004c822f538664fdece7f14de3e0e717a70d0a7855cd90c8cb7e25b",
+      "width": 1280,
+      "height": 800
+    },
+    "2a4773b0-6e3e-5f94-b85a-071a6e4f6efb": {
+      "png": "frames/2026-11-03/2a4773b0-6e3e-5f94-b85a-071a6e4f6efb.png",
+      "sha256": "b4d2ffc0b004c822f538664fdece7f14de3e0e717a70d0a7855cd90c8cb7e25b",
+      "width": 1280,
+      "height": 800
+    },
+    "bb156d7a-84e7-5d37-813d-f909ca593b7b": {
+      "png": "frames/2026-11-03/bb156d7a-84e7-5d37-813d-f909ca593b7b.png",
+      "sha256": "6913b71c08daf2c508ce40e6175d3b42d72d0984d8d6c2ffb628fdfd699baeea",
+      "width": 1280,
+      "height": 800
+    },
+    "977bbe6e-6e46-5347-b901-a2ddf256a77b": {
+      "png": "frames/2026-11-03/977bbe6e-6e46-5347-b901-a2ddf256a77b.png",
+      "sha256": "2568fe68c1de5da66e60c6c13cf7089b1061c49aa9957b277daa0920edac6083",
+      "width": 1280,
+      "height": 800
+    },
+    "bdda0cfc-fc18-516e-9e16-0a8d3947b4e6": {
+      "png": "frames/2026-11-03/bdda0cfc-fc18-516e-9e16-0a8d3947b4e6.png",
+      "sha256": "a0168b85e506d3e76f3854ab5cb44e777ecc1cee0ef05b0c7d415265881f5afa",
+      "width": 1280,
+      "height": 800
+    },
+    "36cd82ec-8f6b-5317-8145-4f564d520a4a": {
+      "png": "frames/2026-11-03/36cd82ec-8f6b-5317-8145-4f564d520a4a.png",
+      "sha256": "c26bf991314c12d5d5f115cab442c3c707731d67b9c635a1141a89eb063df889",
+      "width": 1280,
+      "height": 800
+    },
+    "b641b5bc-f184-5eb1-b49b-942bcc2136b5": {
+      "png": "frames/2026-11-03/b641b5bc-f184-5eb1-b49b-942bcc2136b5.png",
+      "sha256": "10ff854a6e3e7c0f1b6fe742ae85512097e7134d62c9c8a0fc47df5ceab879d9",
+      "width": 1280,
+      "height": 800
+    },
+    "07de62ba-8066-5b5a-9026-b2b1fe47078f": {
+      "png": "frames/2026-11-03/07de62ba-8066-5b5a-9026-b2b1fe47078f.png",
+      "sha256": "a3645e2ebcbb11b31e3628bb489de800daf42d1b30d4b06316309c485b0bd30e",
+      "width": 1280,
+      "height": 800
+    },
+    "0900a28b-dd8e-504f-9d86-08cb9bfc0178": {
+      "png": "frames/2026-11-03/0900a28b-dd8e-504f-9d86-08cb9bfc0178.png",
+      "sha256": "a3645e2ebcbb11b31e3628bb489de800daf42d1b30d4b06316309c485b0bd30e",
+      "width": 1280,
+      "height": 800
+    },
+    "34f055ee-5627-5b2a-9461-990e3409ec13": {
+      "png": "frames/2026-11-03/34f055ee-5627-5b2a-9461-990e3409ec13.png",
+      "sha256": "f16c365f7ac8f31322a3b4862adefd4e94438ea1e3635f20211856be0600bd92",
+      "width": 1280,
+      "height": 800
+    },
+    "a2391c21-3176-5287-b232-7e9f13725ff7": {
+      "png": "frames/2026-11-03/a2391c21-3176-5287-b232-7e9f13725ff7.png",
+      "sha256": "2209ef1dcd5c6dade0c99fb58494e4b92678552c6ca63d43742344a0ca2519eb",
+      "width": 1280,
+      "height": 800
+    },
+    "296ed5c7-d879-561a-b9d9-ffe3fc370755": {
+      "png": "frames/2026-11-03/296ed5c7-d879-561a-b9d9-ffe3fc370755.png",
+      "sha256": "7f185caad51bac6f9c00d63730dfeca70790b3ad9381e6a86b20ff54afd43de8",
+      "width": 1280,
+      "height": 800
+    },
+    "b461e73f-4d21-59a4-ad7d-2849af3825d3": {
+      "png": "frames/2026-11-03/b461e73f-4d21-59a4-ad7d-2849af3825d3.png",
+      "sha256": "7f185caad51bac6f9c00d63730dfeca70790b3ad9381e6a86b20ff54afd43de8",
+      "width": 1280,
+      "height": 800
+    },
+    "20e16dfa-0fe8-5171-942b-02d6776bae1d": {
+      "png": "frames/2026-11-03/20e16dfa-0fe8-5171-942b-02d6776bae1d.png",
+      "sha256": "8c33adf724f16cfbdcb628bd130e92b21faa2a02f9bd463e828a809c990d9f25",
+      "width": 1280,
+      "height": 800
+    },
+    "b88b3781-3f0d-5bf6-ae81-211faa4e565a": {
+      "png": "frames/2026-11-03/b88b3781-3f0d-5bf6-ae81-211faa4e565a.png",
+      "sha256": "c371ecbbba2b401ababe8dca8fd8eccaab03d0c0e3c09e9a0182a2d1759bcce8",
+      "width": 1280,
+      "height": 800
+    },
+    "4010a2fd-5100-5de3-9ba2-740db4e380df": {
+      "png": "frames/2026-11-03/4010a2fd-5100-5de3-9ba2-740db4e380df.png",
+      "sha256": "77ec5ad88e2e38a9b0f61ee21787c186d4c18356dbee50ab8a8afba6b5530991",
+      "width": 1280,
+      "height": 800
+    },
+    "0d4177cc-b4e6-5a8b-87ea-9189fe664a48": {
+      "png": "frames/2026-11-03/0d4177cc-b4e6-5a8b-87ea-9189fe664a48.png",
+      "sha256": "0cfcb2623a1aa5c68fa5407233bd345ed89324beb1144522ccc441d9c67c7d1c",
+      "width": 1280,
+      "height": 800
+    },
+    "48c11a95-c334-5b7e-95da-449e2f154dca": {
+      "png": "frames/2026-11-03/48c11a95-c334-5b7e-95da-449e2f154dca.png",
+      "sha256": "a300477068cd8b69a6940da6dd87f272a8ef0efa74c8662088d322a7cce420f8",
+      "width": 1280,
+      "height": 800
+    },
+    "c580cc85-0c5c-5fe4-a526-4bb750460c03": {
+      "png": "frames/2026-11-03/c580cc85-0c5c-5fe4-a526-4bb750460c03.png",
+      "sha256": "86d55e3fefb4b15df73b4c07b06597a21c2c851b0a177205b7ee9784fc211a36",
+      "width": 1280,
+      "height": 800
+    },
+    "6d58f5b1-2c70-5091-93b1-0c9b5d2e14e4": {
+      "png": "frames/2026-11-03/6d58f5b1-2c70-5091-93b1-0c9b5d2e14e4.png",
+      "sha256": "ac5fc6a5c58d75ed5bd16259d090e8e5a89d358e453be2b199fc739ce40428f0",
+      "width": 1280,
+      "height": 800
+    },
+    "54a9ed2e-d4bd-51b2-81f2-188a05eb38b3": {
+      "png": "frames/2026-11-03/54a9ed2e-d4bd-51b2-81f2-188a05eb38b3.png",
+      "sha256": "ac5fc6a5c58d75ed5bd16259d090e8e5a89d358e453be2b199fc739ce40428f0",
+      "width": 1280,
+      "height": 800
+    },
+    "45a43381-b36c-559a-9ac9-877521ecd7e7": {
+      "png": "frames/2026-11-03/45a43381-b36c-559a-9ac9-877521ecd7e7.png",
+      "sha256": "9b294ed9e53125f016578063d9c139f2b22eda3257fa09c58fe7a35dd15334d5",
+      "width": 1280,
+      "height": 800
+    },
+    "5c409c7a-6641-5cb8-877e-2775dc29a9f1": {
+      "png": "frames/2026-11-03/5c409c7a-6641-5cb8-877e-2775dc29a9f1.png",
+      "sha256": "d8fbd1aaed102c278b5568c9c715d8819d810aff9048b8587ca916a2bb5495c6",
+      "width": 1280,
+      "height": 800
+    },
+    "b67fbf29-dd2f-59ec-b89d-d5eeb592f7c1": {
+      "png": "frames/2026-11-03/b67fbf29-dd2f-59ec-b89d-d5eeb592f7c1.png",
+      "sha256": "5e8c43082bfef29cd9a06c2c1fc8ab592c6b0ad4b86dbefbc227024fbc0e1375",
+      "width": 1280,
+      "height": 800
+    },
+    "cf174797-20c0-514a-a138-62138e60e8a1": {
+      "png": "frames/2026-11-03/cf174797-20c0-514a-a138-62138e60e8a1.png",
+      "sha256": "c06909bd55352e41f4b792228203edb88e0807641028c1a8c857c695bfdee51b",
+      "width": 1280,
+      "height": 800
+    },
+    "ba64203e-cd11-54b8-bf64-de8fe73119db": {
+      "png": "frames/2026-11-03/ba64203e-cd11-54b8-bf64-de8fe73119db.png",
+      "sha256": "f82e3ef4e52b15bdc15e912f869638e3d8399d14f8c1056342ed41ddeec15e58",
+      "width": 1280,
+      "height": 800
+    },
+    "1820c2fe-fcd7-5912-ba18-3be942f14f8c": {
+      "png": "frames/2026-11-03/1820c2fe-fcd7-5912-ba18-3be942f14f8c.png",
+      "sha256": "d116afe56862b5e746abd542bef762e85c19877189f4e235bbd8f1c7e895c755",
+      "width": 1280,
+      "height": 800
+    },
+    "d0bb10cd-20f9-54d8-997c-fa026c6ded67": {
+      "png": "frames/2026-11-03/d0bb10cd-20f9-54d8-997c-fa026c6ded67.png",
+      "sha256": "b12060d7335149fcf0059d82496bf2d1600b31323f0105afdc8471632c085f10",
+      "width": 1280,
+      "height": 800
+    },
+    "bba971d4-a6ce-5d2e-ae35-d480f6dfd109": {
+      "png": "frames/2026-11-03/bba971d4-a6ce-5d2e-ae35-d480f6dfd109.png",
+      "sha256": "b12060d7335149fcf0059d82496bf2d1600b31323f0105afdc8471632c085f10",
+      "width": 1280,
+      "height": 800
+    },
+    "9dc16f0a-de2d-51f9-be03-b2aed25a4ebe": {
+      "png": "frames/2026-11-03/9dc16f0a-de2d-51f9-be03-b2aed25a4ebe.png",
+      "sha256": "a667ca0b007d683c83f6a89866708ef8c02e52c2e77465d0651ee52b9e427ec7",
+      "width": 1280,
+      "height": 800
+    },
+    "6261dbe0-a7c0-5c5c-85ff-454023c19e85": {
+      "png": "frames/2026-11-03/6261dbe0-a7c0-5c5c-85ff-454023c19e85.png",
+      "sha256": "6c65e056c5d14b33f3bfd3cf19ed7709362800ac8e5a618a86f6d6fa6afcc0a7",
+      "width": 1280,
+      "height": 800
+    },
+    "a84d78ed-9338-52e1-be99-54b16b75cd45": {
+      "png": "frames/2026-11-03/a84d78ed-9338-52e1-be99-54b16b75cd45.png",
+      "sha256": "6ef3b7d3afb3602d5a7ad63930612fd491dcc0195b4e1c0bacb452c57cefa723",
+      "width": 1280,
+      "height": 800
+    },
+    "6322f13b-0a41-5fe8-90ba-c4e4958721ea": {
+      "png": "frames/2026-11-03/6322f13b-0a41-5fe8-90ba-c4e4958721ea.png",
+      "sha256": "6ef3b7d3afb3602d5a7ad63930612fd491dcc0195b4e1c0bacb452c57cefa723",
+      "width": 1280,
+      "height": 800
+    },
+    "6ec96337-99a8-52b4-8a2d-17f98d51f9d3": {
+      "png": "frames/2026-11-03/6ec96337-99a8-52b4-8a2d-17f98d51f9d3.png",
+      "sha256": "57b45c71dcffa4b8ac011b3b7d80ecc11b4510c1bf18651a308007c0ef414537",
+      "width": 1280,
+      "height": 800
+    },
+    "8a79f3eb-1e1c-5b15-a6fc-9997e150ea1a": {
+      "png": "frames/2026-11-03/8a79f3eb-1e1c-5b15-a6fc-9997e150ea1a.png",
+      "sha256": "4b0a66f0ca470e74ed3513c4b0908faf853a6b9416195f08862597cbb08fbf22",
+      "width": 1280,
+      "height": 800
+    },
+    "add0a9d0-f598-5c0a-9308-a28bfc9aae94": {
+      "png": "frames/2026-11-03/add0a9d0-f598-5c0a-9308-a28bfc9aae94.png",
+      "sha256": "f622f20b34a05fbbebc22c9e1d8cc80d85a727430d189a26e46793e416b04bd4",
+      "width": 1280,
+      "height": 800
+    },
+    "d4d2ff0b-54b8-5011-a2e8-962a122e80af": {
+      "png": "frames/2026-11-03/d4d2ff0b-54b8-5011-a2e8-962a122e80af.png",
+      "sha256": "b79da5123d392f41dc2f9d08394616314ddb0f5569f50ad37e5c74288ea39071",
+      "width": 1280,
+      "height": 800
+    },
+    "585f7654-5528-5c49-af6b-5123661657ad": {
+      "png": "frames/2026-11-03/585f7654-5528-5c49-af6b-5123661657ad.png",
+      "sha256": "f1fe537c4d5853e1394d80e35917065f31ae15528de303bcb6a1978228a537aa",
+      "width": 1280,
+      "height": 800
+    },
+    "2c47225c-109f-5a53-bfa6-91621008c1df": {
+      "png": "frames/2026-11-03/2c47225c-109f-5a53-bfa6-91621008c1df.png",
+      "sha256": "1c8e711cda80ed38abafce968aabe19157175d485b36d45aed511ed1ea63553f",
+      "width": 1280,
+      "height": 800
+    },
+    "31d37b0c-781c-581f-8caa-51776ef3de91": {
+      "png": "frames/2026-11-03/31d37b0c-781c-581f-8caa-51776ef3de91.png",
+      "sha256": "1ee3d3e3bba716d5985cd50e8774d78249149f7e3ddf55c29459fc5da1d3dcbf",
+      "width": 1280,
+      "height": 800
+    },
+    "26699f95-cf15-5bea-81f1-384364f326fd": {
+      "png": "frames/2026-11-03/26699f95-cf15-5bea-81f1-384364f326fd.png",
+      "sha256": "a89c6eda365adc58786effc38d8da2426f01e1b33db5a641f65e30f82189a424",
+      "width": 1280,
+      "height": 800
+    },
+    "c8acbc09-5833-5922-a2b2-1e005994c3eb": {
+      "png": "frames/2026-11-03/c8acbc09-5833-5922-a2b2-1e005994c3eb.png",
+      "sha256": "22cb727625b655764fea5509baed766e0966a293f845b7aec77dc48d419a0234",
+      "width": 1280,
+      "height": 800
+    },
+    "5c6413e1-7f5e-5255-9afb-d63cbb5662d7": {
+      "png": "frames/2026-11-03/5c6413e1-7f5e-5255-9afb-d63cbb5662d7.png",
+      "sha256": "22cb727625b655764fea5509baed766e0966a293f845b7aec77dc48d419a0234",
+      "width": 1280,
+      "height": 800
+    },
+    "79f78518-ca3d-531c-86d4-f0abdb2714b6": {
+      "png": "frames/2026-11-03/79f78518-ca3d-531c-86d4-f0abdb2714b6.png",
+      "sha256": "264f26ca7a80949fba6bfedaa9e098548a1db0d3b0f77ad9ef8eae45bdabd4c3",
+      "width": 1280,
+      "height": 800
+    },
+    "0f69c1bf-da5b-5a0b-96ee-ef9a95dc69c6": {
+      "png": "frames/2026-11-03/0f69c1bf-da5b-5a0b-96ee-ef9a95dc69c6.png",
+      "sha256": "59e8ccc2416ac37e349c1d945ee58e84326dcc0f944f0bc4c1c79e31fd1d0648",
+      "width": 1280,
+      "height": 800
+    },
+    "3b062f03-ac65-5287-85a9-feae59951354": {
+      "png": "frames/2026-11-03/3b062f03-ac65-5287-85a9-feae59951354.png",
+      "sha256": "97c79749088ac62f9092487d793742643ecb29afd03f40ab199b5163c01f59c5",
+      "width": 1280,
+      "height": 800
+    },
+    "017e318b-688d-5e8f-834d-d2d1eab65a5e": {
+      "png": "frames/2026-11-03/017e318b-688d-5e8f-834d-d2d1eab65a5e.png",
+      "sha256": "1ccaff1279937b91c39b2d4cb2a2a04ee0c1199532cc545561f539beddc5a4d0",
+      "width": 1280,
+      "height": 800
+    },
+    "5b8cc313-d289-584f-8c91-9ac5218dcd19": {
+      "png": "frames/2026-11-03/5b8cc313-d289-584f-8c91-9ac5218dcd19.png",
+      "sha256": "decc0bafea55f5cbadf79dfcfcfde122cb2656ffe8540f02e7bd95389c0811f5",
+      "width": 1280,
+      "height": 800
+    },
+    "93f3a023-3f61-5d6e-b290-11876f0db155": {
+      "png": "frames/2026-11-03/93f3a023-3f61-5d6e-b290-11876f0db155.png",
+      "sha256": "decc0bafea55f5cbadf79dfcfcfde122cb2656ffe8540f02e7bd95389c0811f5",
+      "width": 1280,
+      "height": 800
+    },
+    "ac404203-499f-5c1c-8a0d-e4c1f9b3bf72": {
+      "png": "frames/2026-11-03/ac404203-499f-5c1c-8a0d-e4c1f9b3bf72.png",
+      "sha256": "9cd99163e97d115be6981edc1bac5ee6523710f1b2853cc2b591459b4e777258",
+      "width": 1280,
+      "height": 800
+    },
+    "2bb8f001-4447-5003-acbe-2b8c30f87eec": {
+      "png": "frames/2026-11-03/2bb8f001-4447-5003-acbe-2b8c30f87eec.png",
+      "sha256": "929aa318c2b5fdba187ddc59026c113e3c0743ec76e10437be6e4155b0ce0a4f",
+      "width": 1280,
+      "height": 800
+    },
+    "05325ed9-2a12-5d8f-8867-56a5f44887f5": {
+      "png": "frames/2026-11-03/05325ed9-2a12-5d8f-8867-56a5f44887f5.png",
+      "sha256": "a5073d2ebb517e8d4800264bc92f1dbb4bd4b59bfac704bbded2c31786c3309d",
+      "width": 1280,
+      "height": 800
+    },
+    "e9a806ce-7086-521d-86e5-00ab7d788574": {
+      "png": "frames/2026-11-03/e9a806ce-7086-521d-86e5-00ab7d788574.png",
+      "sha256": "8761821cdfd2ccfe8983be1eb983a6fcd35471354de020614cafa271bbb1258d",
+      "width": 1280,
+      "height": 800
+    },
+    "82bbaae0-124c-58d7-9d7e-907c7bc3e365": {
+      "png": "frames/2026-11-03/82bbaae0-124c-58d7-9d7e-907c7bc3e365.png",
+      "sha256": "4525ba641f267fadba672adf915800adf74003ecda9d3fcf705030019af997e1",
+      "width": 1280,
+      "height": 800
+    },
+    "9d05a36f-58ef-593f-b5c2-574be9ef48df": {
+      "png": "frames/2026-11-03/9d05a36f-58ef-593f-b5c2-574be9ef48df.png",
+      "sha256": "3cfda3b0472001b2a6a1f5bc7ac56a57f8be5d93b5226ec81d81e09206169578",
+      "width": 1280,
+      "height": 800
+    },
+    "e981ce26-304e-50a3-9f0f-6a93d140658f": {
+      "png": "frames/2026-11-03/e981ce26-304e-50a3-9f0f-6a93d140658f.png",
+      "sha256": "27291995b9749c15dc10201b829dc3dc4d58ca5ae338244ba17acfe106233b6c",
+      "width": 1280,
+      "height": 800
+    },
+    "9cf5ee73-31b7-50b0-b22d-e69fd954a935": {
+      "png": "frames/2026-11-03/9cf5ee73-31b7-50b0-b22d-e69fd954a935.png",
+      "sha256": "d38b95042a5f25273869293c4995413cdf9b9a19e0acf39f11683b3b999369dc",
+      "width": 1280,
+      "height": 800
+    },
+    "3c8a72ce-33c6-5756-b6e6-0b69f9c16803": {
+      "png": "frames/2026-11-03/3c8a72ce-33c6-5756-b6e6-0b69f9c16803.png",
+      "sha256": "d38b95042a5f25273869293c4995413cdf9b9a19e0acf39f11683b3b999369dc",
+      "width": 1280,
+      "height": 800
+    },
+    "0c63b950-de04-5c68-b2fb-903adc678f2e": {
+      "png": "frames/2026-11-03/0c63b950-de04-5c68-b2fb-903adc678f2e.png",
+      "sha256": "54a3c4e87cf6b8586b301c0a16f4b7bdfb3dc0ab0485296a14d529ce250d8de1",
+      "width": 1280,
+      "height": 800
+    },
+    "c80778cd-e687-56f4-ab93-4a7fa33b38bb": {
+      "png": "frames/2026-11-03/c80778cd-e687-56f4-ab93-4a7fa33b38bb.png",
+      "sha256": "1baaf1e80df80aaf0a42d74c42b2d0c21ed42952d8aa88aa821252fb4f8e11f7",
+      "width": 1280,
+      "height": 800
+    },
+    "db77bfd3-f30f-509b-b7e1-c60fe2164475": {
+      "png": "frames/2026-11-03/db77bfd3-f30f-509b-b7e1-c60fe2164475.png",
+      "sha256": "b36fc68886097522487ca13fd39e8bda0592e0f103fdbed9727b3cc22d340aa4",
+      "width": 1280,
+      "height": 800
+    },
+    "67ff1d61-4c08-5024-8b97-ee788404a9ba": {
+      "png": "frames/2026-11-03/67ff1d61-4c08-5024-8b97-ee788404a9ba.png",
+      "sha256": "143ce64c793d64de2626b4364d067df437aaa6da849eb91782b55eb3b1f954b3",
+      "width": 1280,
+      "height": 800
+    },
+    "247dc353-93c8-554c-b675-2546b859bbbc": {
+      "png": "frames/2026-11-03/247dc353-93c8-554c-b675-2546b859bbbc.png",
+      "sha256": "27ba458d7583876cdebe2aea63aa88ddb0613254ae9f12d3920a46989ac53fc7",
+      "width": 1280,
+      "height": 800
+    },
+    "064b560b-63e1-578e-884d-e7e092e60717": {
+      "png": "frames/2026-11-03/064b560b-63e1-578e-884d-e7e092e60717.png",
+      "sha256": "f50e332d68d2bb30a445f6c533eec7b81c2ea419381278d04741947d44a91eb7",
+      "width": 1280,
+      "height": 800
+    },
+    "9920b0ec-f8ba-5d6e-aaca-5b585e49fddd": {
+      "png": "frames/2026-11-03/9920b0ec-f8ba-5d6e-aaca-5b585e49fddd.png",
+      "sha256": "c5554b7bc662a2b05eb28e1d101b4593a70be98e90d458f816e9c3ec921b873e",
+      "width": 1280,
+      "height": 800
+    },
+    "d01c10b0-ad0e-5f1c-ad83-f71325d55b13": {
+      "png": "frames/2026-11-03/d01c10b0-ad0e-5f1c-ad83-f71325d55b13.png",
+      "sha256": "9d69bca1195655cb45f685254fe9c10be23c0adb9a2361e6f8518167633c07cc",
+      "width": 1280,
+      "height": 800
+    },
+    "e459ab6d-d79b-52d9-83e3-16ebd2c90eaa": {
+      "png": "frames/2026-11-03/e459ab6d-d79b-52d9-83e3-16ebd2c90eaa.png",
+      "sha256": "339b8d6243a7ed2b8193e6550e9bf0ce4fe0f12b9f3a3faff6896fc689de48c9",
+      "width": 1280,
+      "height": 800
+    },
+    "44984140-754a-577d-b242-627a20ddcfa1": {
+      "png": "frames/2026-11-03/44984140-754a-577d-b242-627a20ddcfa1.png",
+      "sha256": "339b8d6243a7ed2b8193e6550e9bf0ce4fe0f12b9f3a3faff6896fc689de48c9",
+      "width": 1280,
+      "height": 800
+    },
+    "d35777dc-1e22-5fe8-b860-32f7ec77cce6": {
+      "png": "frames/2026-11-03/d35777dc-1e22-5fe8-b860-32f7ec77cce6.png",
+      "sha256": "1293d0dbc85db79f768064dafe4b8cea458284bd5bf1953b8adb4945312f65ba",
+      "width": 1280,
+      "height": 800
+    },
+    "0f72c899-9597-5972-8194-23d9611625e6": {
+      "png": "frames/2026-11-03/0f72c899-9597-5972-8194-23d9611625e6.png",
+      "sha256": "9bb15249244ed378e283f531dc6588e1a89fc50a72a4282bba80c847c5a188fd",
+      "width": 1280,
+      "height": 800
+    },
+    "d931433b-fc81-54e8-b32b-377e38024d9c": {
+      "png": "frames/2026-11-03/d931433b-fc81-54e8-b32b-377e38024d9c.png",
+      "sha256": "29c66e71bc4de93ce03ceb009d2884878e3ecd7c72cb6e593c864bab7a1b0971",
+      "width": 1280,
+      "height": 800
+    },
+    "ed7d8dac-ce00-5727-89be-6ae6c276d833": {
+      "png": "frames/2026-11-03/ed7d8dac-ce00-5727-89be-6ae6c276d833.png",
+      "sha256": "e9a7fc40f47a3d53d8529c3d2752018fa651f3d8bda9ccd03e6ee22f304d3e16",
+      "width": 1280,
+      "height": 800
+    },
+    "6367a238-603b-578a-8ce7-3ef960984598": {
+      "png": "frames/2026-11-03/6367a238-603b-578a-8ce7-3ef960984598.png",
+      "sha256": "bb1cf071ae6fe4c7c3cab87011ba5d97fd78a7fe04e0dbc23b42071ea5dad616",
+      "width": 1280,
+      "height": 800
+    },
+    "a06ad78f-eb42-5946-8697-fe0b59f9869d": {
+      "png": "frames/2026-11-03/a06ad78f-eb42-5946-8697-fe0b59f9869d.png",
+      "sha256": "562631e4d39937d1d9ab12a56aa824e0c3647d0d0d0efeb7616225e7cd6ef3ae",
+      "width": 1280,
+      "height": 800
+    },
+    "02dfd899-ef90-54a1-8bbf-f9240938ccda": {
+      "png": "frames/2026-11-03/02dfd899-ef90-54a1-8bbf-f9240938ccda.png",
+      "sha256": "88641432940a6cb69eecfd6a420ee983934ffe1e08c4f0bc5c64093713e32550",
+      "width": 1280,
+      "height": 800
+    },
+    "65d31903-7da7-5e83-b424-60192a79f4a6": {
+      "png": "frames/2026-11-03/65d31903-7da7-5e83-b424-60192a79f4a6.png",
+      "sha256": "faac83a85d6ef6b6504be4175d15d382481cb473ad71b94b5bd998c687f5a119",
+      "width": 1280,
+      "height": 800
+    },
+    "d9d14420-804d-5bd7-8fb8-cb5b5983017a": {
+      "png": "frames/2026-11-03/d9d14420-804d-5bd7-8fb8-cb5b5983017a.png",
+      "sha256": "faac83a85d6ef6b6504be4175d15d382481cb473ad71b94b5bd998c687f5a119",
+      "width": 1280,
+      "height": 800
+    },
+    "c20327f1-1689-5398-a6a9-00d43aeb61e5": {
+      "png": "frames/2026-11-03/c20327f1-1689-5398-a6a9-00d43aeb61e5.png",
+      "sha256": "f57cd14974ecb364701a39ea1fc80162d0d18a34a0b432e762d6d26bc4ef32d6",
+      "width": 1280,
+      "height": 800
+    },
+    "54831c02-c9b6-590d-a787-76bb251017dc": {
+      "png": "frames/2026-11-03/54831c02-c9b6-590d-a787-76bb251017dc.png",
+      "sha256": "d666430404e26a70498c435b208a81cd074c2023ec4a3f9c7eacda7648ea21e4",
+      "width": 1280,
+      "height": 800
+    },
+    "0bde8492-bb4c-59a6-a0b4-c671d64abcf1": {
+      "png": "frames/2026-11-03/0bde8492-bb4c-59a6-a0b4-c671d64abcf1.png",
+      "sha256": "89d1344fe3d3015be30bf0fa96b53fe88bd7f6ea8ab5d7d0a16a92417219a30a",
+      "width": 1280,
+      "height": 800
+    },
+    "85b09d07-71ea-5b65-bf46-768aab67294b": {
+      "png": "frames/2026-11-03/85b09d07-71ea-5b65-bf46-768aab67294b.png",
+      "sha256": "be550b4ef663b21956c3038ad54c7ed6af56a21a4c44bb0bb5fc34ee969c1845",
+      "width": 1280,
+      "height": 800
+    },
+    "5cc5d789-6a64-59a4-ba5b-d2687c0eba45": {
+      "png": "frames/2026-11-03/5cc5d789-6a64-59a4-ba5b-d2687c0eba45.png",
+      "sha256": "781b4ecf6611fb8e220d80593e5914ffddab24856c93d76cf58b1602b275ff0b",
+      "width": 1280,
+      "height": 800
+    },
+    "d69148a3-399b-532d-b916-758e77bb31b3": {
+      "png": "frames/2026-11-03/d69148a3-399b-532d-b916-758e77bb31b3.png",
+      "sha256": "39cf86d99e2a83f0dcf6a2388c8b92b9e65e73d6dd3cc2182868def0088ef706",
+      "width": 1280,
+      "height": 800
+    },
+    "92d316cc-dbbe-507c-beb6-c3c8b7493ec6": {
+      "png": "frames/2026-11-03/92d316cc-dbbe-507c-beb6-c3c8b7493ec6.png",
+      "sha256": "75f94130f995566ab78bd3996c6d753a82476c30f1bbf540345b3a87742c8102",
+      "width": 1280,
+      "height": 800
+    },
+    "37143d81-2f0a-5bee-bbe8-edba71a491e4": {
+      "png": "frames/2026-11-03/37143d81-2f0a-5bee-bbe8-edba71a491e4.png",
+      "sha256": "8378ca399fee6fe96b69e3a312e1d03a5c9a47a40969c681f6b9836a7f13c90b",
+      "width": 1280,
+      "height": 800
+    },
+    "e614f5b8-4d04-5bc5-ae48-3552d0dc61df": {
+      "png": "frames/2026-11-03/e614f5b8-4d04-5bc5-ae48-3552d0dc61df.png",
+      "sha256": "cba16ad13bddb38bd213becc9c7f50b696d0e5590e42e49a55853be01e623c08",
+      "width": 1280,
+      "height": 800
+    },
+    "c9da529a-ffa6-5cf3-ac1d-ebd5ce4f0ab1": {
+      "png": "frames/2026-11-03/c9da529a-ffa6-5cf3-ac1d-ebd5ce4f0ab1.png",
+      "sha256": "cba16ad13bddb38bd213becc9c7f50b696d0e5590e42e49a55853be01e623c08",
+      "width": 1280,
+      "height": 800
+    },
+    "11fa1f41-f60c-5519-b341-e9ae61c00da6": {
+      "png": "frames/2026-11-03/11fa1f41-f60c-5519-b341-e9ae61c00da6.png",
+      "sha256": "38d3cc5bd3fd96a8aa1ef4efbccfc4273951358c6185453a7f813aedfe5ce06e",
+      "width": 1280,
+      "height": 800
+    },
+    "de0e8e6c-1601-5a52-baaf-6c4c84329021": {
+      "png": "frames/2026-11-03/de0e8e6c-1601-5a52-baaf-6c4c84329021.png",
+      "sha256": "3fde4126afd1304f04badc9b85924ef0b257885f3bc24beb622399ee0de85bc3",
+      "width": 1280,
+      "height": 800
+    },
+    "ea8df954-bf81-5d00-84e3-92653ac49fdd": {
+      "png": "frames/2026-11-03/ea8df954-bf81-5d00-84e3-92653ac49fdd.png",
+      "sha256": "cd1818b23f5904aa9c41bde9a2fbbf009dc42515c70b7d9400443fd8b8351622",
+      "width": 1280,
+      "height": 800
+    },
+    "2d7d8f34-8c24-5efe-9e12-c75ff569c170": {
+      "png": "frames/2026-11-03/2d7d8f34-8c24-5efe-9e12-c75ff569c170.png",
+      "sha256": "1bdd5f4f4166c7b4af2062a67e43aae18196576dd67e51859a7c7075a424ccf6",
+      "width": 1280,
+      "height": 800
+    },
+    "fcf5d9c7-148c-5b34-be17-c022aea6918a": {
+      "png": "frames/2026-11-03/fcf5d9c7-148c-5b34-be17-c022aea6918a.png",
+      "sha256": "3e81168ef8ba40cdd431f4a9cff6c756845b9e54a4d946477809fd97a3962de3",
+      "width": 1280,
+      "height": 800
+    },
+    "f1574553-aba9-5637-9b9e-0c07393b3cae": {
+      "png": "frames/2026-11-03/f1574553-aba9-5637-9b9e-0c07393b3cae.png",
+      "sha256": "898081b68d1b2863489ba4b6c762adb3c5ca02fde5cc95fb08d0a1df890ad3ff",
+      "width": 1280,
+      "height": 800
+    },
+    "e2dcb6e5-d431-5ba5-8fce-7667149de596": {
+      "png": "frames/2026-11-03/e2dcb6e5-d431-5ba5-8fce-7667149de596.png",
+      "sha256": "ad3e223224fa2fb4dec88cc8230bd77312fcce002cc76ed714c3ff634fe6a855",
+      "width": 1280,
+      "height": 800
+    },
+    "23333b6a-d66f-5245-9a2c-d570adbe76f7": {
+      "png": "frames/2026-11-03/23333b6a-d66f-5245-9a2c-d570adbe76f7.png",
+      "sha256": "c5464b7fa69cc502c2a6c58609770caad85d350b0eb9b7404968097eecbf1cf3",
+      "width": 1280,
+      "height": 800
+    },
+    "393cc3d3-9ade-56bd-a176-c25221686cb5": {
+      "png": "frames/2026-11-03/393cc3d3-9ade-56bd-a176-c25221686cb5.png",
+      "sha256": "f0b2d8b8b9c49c21bc6bb60342a703c185aa0854d489060f93b0122a4fadf9a7",
+      "width": 1280,
+      "height": 800
+    },
+    "8d0f719b-5ebb-5f84-ba73-0a4c4cde18ce": {
+      "png": "frames/2026-11-03/8d0f719b-5ebb-5f84-ba73-0a4c4cde18ce.png",
+      "sha256": "f0b2d8b8b9c49c21bc6bb60342a703c185aa0854d489060f93b0122a4fadf9a7",
+      "width": 1280,
+      "height": 800
+    },
+    "2c8994ab-cad5-5a80-8d5f-cff804cd9958": {
+      "png": "frames/2026-11-03/2c8994ab-cad5-5a80-8d5f-cff804cd9958.png",
+      "sha256": "87dbf98ca33ca3a9fe183c8a0e16d6eb788c5aea821243ead56d5cf2f660ae93",
+      "width": 1280,
+      "height": 800
+    },
+    "416f269f-5fb8-5c05-9a26-8ffaed5ab7ea": {
+      "png": "frames/2026-11-03/416f269f-5fb8-5c05-9a26-8ffaed5ab7ea.png",
+      "sha256": "f96126fc7c50b7907f368b18c67d006a79b50a864dd7915d5bd272c523839ebb",
+      "width": 1280,
+      "height": 800
+    },
+    "92b05479-a29e-58f2-ba3b-1de55cc1d80a": {
+      "png": "frames/2026-11-03/92b05479-a29e-58f2-ba3b-1de55cc1d80a.png",
+      "sha256": "49786ad0318598ef0c43dd21747affe4ed5b9010df5d1d7c424d554d0121cfce",
+      "width": 1280,
+      "height": 800
+    },
+    "1cae6bc5-e227-5c14-803c-da89858d640b": {
+      "png": "frames/2026-11-03/1cae6bc5-e227-5c14-803c-da89858d640b.png",
+      "sha256": "86f13de55078c7fcf44964922a2bdc05ca7000166f97c69882ac20949a4b209c",
+      "width": 1280,
+      "height": 800
+    },
+    "85f86911-e79f-553a-aae0-9a60ed5aa801": {
+      "png": "frames/2026-11-03/85f86911-e79f-553a-aae0-9a60ed5aa801.png",
+      "sha256": "86f13de55078c7fcf44964922a2bdc05ca7000166f97c69882ac20949a4b209c",
+      "width": 1280,
+      "height": 800
+    },
+    "87e566b5-f83c-5176-baef-51b5f702b046": {
+      "png": "frames/2026-11-03/87e566b5-f83c-5176-baef-51b5f702b046.png",
+      "sha256": "51157fef8a220242c66445da86c81f81f6f50168c9d2f8a5cb619162f654d82e",
+      "width": 1280,
+      "height": 800
+    },
+    "28f92380-27c0-54e6-9eb6-16015f7af13a": {
+      "png": "frames/2026-11-03/28f92380-27c0-54e6-9eb6-16015f7af13a.png",
+      "sha256": "24df3ab57a44e6ab415b72a4438433492bbd4f4a42a1815c7313ad230dcbdb54",
+      "width": 1280,
+      "height": 800
+    },
+    "6a1e07c1-eaf3-5f55-98bb-d8c96102aee7": {
+      "png": "frames/2026-11-03/6a1e07c1-eaf3-5f55-98bb-d8c96102aee7.png",
+      "sha256": "577fd690a7180a4023692f121d05a6c3f69242dad78d80b9c96d9da5456af376",
+      "width": 1280,
+      "height": 800
+    },
+    "874d333b-9a94-5acc-8d31-9af599bdb054": {
+      "png": "frames/2026-11-03/874d333b-9a94-5acc-8d31-9af599bdb054.png",
+      "sha256": "95d17927788c03ea16da5f46cbe6467008696753ea13d012b2393fa5c399fcea",
+      "width": 1280,
+      "height": 800
+    },
+    "bef59e6a-2418-5b83-b406-1a9865be7c88": {
+      "png": "frames/2026-11-03/bef59e6a-2418-5b83-b406-1a9865be7c88.png",
+      "sha256": "8301c9d6612c341e6fc46dd1114221e4e0e3460739a3c56d28c36d53c5708ada",
+      "width": 1280,
+      "height": 800
+    },
+    "cc09732d-c3f6-5829-9d99-b6b09efdeac5": {
+      "png": "frames/2026-11-03/cc09732d-c3f6-5829-9d99-b6b09efdeac5.png",
+      "sha256": "dfebb1248911d7a63e7a30ac1c37c4fcc077c49e52f0c87c4a0ba4833edde0f9",
+      "width": 1280,
+      "height": 800
+    },
+    "d5c9e5ae-62ec-5435-b052-57164954c4a1": {
+      "png": "frames/2026-11-03/d5c9e5ae-62ec-5435-b052-57164954c4a1.png",
+      "sha256": "9d0aeac702e1428f7ad03a9844b8188a5ef064b5b184f747a6f08469c7adc84f",
+      "width": 1280,
+      "height": 800
+    },
+    "7c84ef18-c266-53c0-a5e6-f1520373b754": {
+      "png": "frames/2026-11-03/7c84ef18-c266-53c0-a5e6-f1520373b754.png",
+      "sha256": "70c9f84d8b56cfce2683decc1e346f4540658b9a9d5dc3e847e6718c3c535325",
+      "width": 1280,
+      "height": 800
+    },
+    "d01f1beb-9dc3-5300-8b91-692ff9710928": {
+      "png": "frames/2026-11-03/d01f1beb-9dc3-5300-8b91-692ff9710928.png",
+      "sha256": "8985cde3ebfd12dd9b93a4ab18e87241b02cfaa1035733211035c02109fbedfc",
+      "width": 1280,
+      "height": 800
+    },
+    "f05bbda7-422e-5d0c-a523-c00d37deefd5": {
+      "png": "frames/2026-11-03/f05bbda7-422e-5d0c-a523-c00d37deefd5.png",
+      "sha256": "b663b53557c99ea8daf73a589ffb36fdd669fc6bdc3d1f00ade26a7a4c02eac0",
+      "width": 1280,
+      "height": 800
+    },
+    "08cf1480-8de3-54ca-9e63-0df937a9aef5": {
+      "png": "frames/2026-11-03/08cf1480-8de3-54ca-9e63-0df937a9aef5.png",
+      "sha256": "b663b53557c99ea8daf73a589ffb36fdd669fc6bdc3d1f00ade26a7a4c02eac0",
+      "width": 1280,
+      "height": 800
+    },
+    "c0030c68-1671-57c1-8371-0df0fad397e6": {
+      "png": "frames/2026-11-03/c0030c68-1671-57c1-8371-0df0fad397e6.png",
+      "sha256": "122db71d2be7e0c9f4837c5a23ae16f6a50a737220adcb5909ddfb9fa301ef3f",
+      "width": 1280,
+      "height": 800
+    },
+    "764e4187-eb33-59a7-b547-e65d26dfe650": {
+      "png": "frames/2026-11-03/764e4187-eb33-59a7-b547-e65d26dfe650.png",
+      "sha256": "23d835ae593e9dec265284d139499f15bad35f4e6cda6b1301d3c013cacf7ed2",
+      "width": 1280,
+      "height": 800
+    },
+    "74b9a38d-75fd-57a8-a524-e370eeabb3fa": {
+      "png": "frames/2026-11-03/74b9a38d-75fd-57a8-a524-e370eeabb3fa.png",
+      "sha256": "a64dc8694f11854838405b2db6ad4b891190985594c17b9f0ebec43a845b4bf8",
+      "width": 1280,
+      "height": 800
+    },
+    "fbc5ed01-922e-5ee4-90dd-fc2b3ec24004": {
+      "png": "frames/2026-11-03/fbc5ed01-922e-5ee4-90dd-fc2b3ec24004.png",
+      "sha256": "e0017830b2cd7aa2df34778d182abd8099a2c2dfce92f04c5328d982fd558104",
+      "width": 1280,
+      "height": 800
+    },
+    "809d0087-fe21-5b42-b7e6-289fb7dabc78": {
+      "png": "frames/2026-11-03/809d0087-fe21-5b42-b7e6-289fb7dabc78.png",
+      "sha256": "268273267fd3cb7b058585ffa49ab6645ae018b418b2c4aa235647e931977449",
+      "width": 1280,
+      "height": 800
+    },
+    "4ec8aa23-1050-5b37-8a19-ebfe701930a2": {
+      "png": "frames/2026-11-03/4ec8aa23-1050-5b37-8a19-ebfe701930a2.png",
+      "sha256": "019c9759d2ce2750c98367247d78b937d255cc898999d24bbaee953ef8548386",
+      "width": 1280,
+      "height": 800
+    },
+    "4e0b3d82-6a79-5119-be9a-a16d142e8ad7": {
+      "png": "frames/2026-11-03/4e0b3d82-6a79-5119-be9a-a16d142e8ad7.png",
+      "sha256": "ff2ff0d211c538d33a48a855b6cc754aea42275ebf25f403931594372ea4e3e9",
+      "width": 1280,
+      "height": 800
+    },
+    "1b0b7a45-dcdb-5fac-a738-44ee6bfbd0b6": {
+      "png": "frames/2026-11-03/1b0b7a45-dcdb-5fac-a738-44ee6bfbd0b6.png",
+      "sha256": "8bd22b61b0220ec0cefb895f542920d373dc53af5e4a546c436188f0122e5056",
+      "width": 1280,
+      "height": 800
+    },
+    "69f30b3b-d0ec-53ae-9802-4affef8f299d": {
+      "png": "frames/2026-11-03/69f30b3b-d0ec-53ae-9802-4affef8f299d.png",
+      "sha256": "d6ec36744aeebeebf840052f37fda71e19a689f6eb2bbd8f8678c9bed7e2f0a4",
+      "width": 1280,
+      "height": 800
+    },
+    "90624b54-a0e6-5ef6-9c41-cce8f02dc5e8": {
+      "png": "frames/2026-11-03/90624b54-a0e6-5ef6-9c41-cce8f02dc5e8.png",
+      "sha256": "5fd06a4e89e699570a22aa542ec95f5878c99a0ba4e776beb98faf190b69315b",
+      "width": 1280,
+      "height": 800
+    },
+    "3709f11e-6ed9-504f-a16e-efe035577bbd": {
+      "png": "frames/2026-11-03/3709f11e-6ed9-504f-a16e-efe035577bbd.png",
+      "sha256": "85d2cc1f478ab7d749d5b60e77a59a9d7dca31ff9b0978c7e06b9961ae1391fa",
+      "width": 1280,
+      "height": 800
+    },
+    "62ffa3fb-27bd-57a9-b2a1-422a9660de9a": {
+      "png": "frames/2026-11-03/62ffa3fb-27bd-57a9-b2a1-422a9660de9a.png",
+      "sha256": "85d2cc1f478ab7d749d5b60e77a59a9d7dca31ff9b0978c7e06b9961ae1391fa",
+      "width": 1280,
+      "height": 800
+    },
+    "c3f4c9b7-c6ce-5d5b-bc1e-794139493b83": {
+      "png": "frames/2026-11-03/c3f4c9b7-c6ce-5d5b-bc1e-794139493b83.png",
+      "sha256": "ce32d1092dcfaa1755153162b9516535c39894306695fd930ada8dc3bcdac3c8",
+      "width": 1280,
+      "height": 800
+    },
+    "10e4ef88-1131-529f-96de-40f99da78350": {
+      "png": "frames/2026-11-03/10e4ef88-1131-529f-96de-40f99da78350.png",
+      "sha256": "bbd0af92dc3946f9f3f92c7be333b6abfd3fa89f772907be03cd9b38900c1b5f",
+      "width": 1280,
+      "height": 800
+    },
+    "bb9a993a-6d63-56a9-a7cd-df6bcddc8ebd": {
+      "png": "frames/2026-11-03/bb9a993a-6d63-56a9-a7cd-df6bcddc8ebd.png",
+      "sha256": "356f9120f2e958d190ed7bc77be563d32c3a2ba9020934085ee14f65b84fd765",
+      "width": 1280,
+      "height": 800
+    },
+    "c463fac0-4e53-531d-b9cf-6eeb24223519": {
+      "png": "frames/2026-11-03/c463fac0-4e53-531d-b9cf-6eeb24223519.png",
+      "sha256": "89ef20f74aa105f7659ac083ad0c4687fa88cc5412a89864dc8703efc55c990a",
+      "width": 1280,
+      "height": 800
+    },
+    "69de81f8-389a-530a-9f9e-dfef390b90b1": {
+      "png": "frames/2026-11-03/69de81f8-389a-530a-9f9e-dfef390b90b1.png",
+      "sha256": "1d4540a2240cc1a4425bdef50d3f7175cb7879d384d9812a998692e6baf7730c",
+      "width": 1280,
+      "height": 800
+    },
+    "95a7ae61-c6dd-5ea9-89ca-a87a6e2b63d4": {
+      "png": "frames/2026-11-03/95a7ae61-c6dd-5ea9-89ca-a87a6e2b63d4.png",
+      "sha256": "9e47ed86200d188f8e7b38381d2ef5e2bd2d4f4ea6d1f7d64b75e67a0d7b2955",
+      "width": 1280,
+      "height": 800
+    },
+    "15416af6-b19c-5b00-ab5d-121bf5cb7037": {
+      "png": "frames/2026-11-03/15416af6-b19c-5b00-ab5d-121bf5cb7037.png",
+      "sha256": "3e8aa6fc68824e1bfdac789b2758d8032c33cc56131e1af7a9a087eef58f6fd9",
+      "width": 1280,
+      "height": 800
+    },
+    "dd94c1c6-8e67-540c-b5dc-da9e4ff0f4d5": {
+      "png": "frames/2026-11-03/dd94c1c6-8e67-540c-b5dc-da9e4ff0f4d5.png",
+      "sha256": "e976c5e0328c62523c88a43ef5fc8d9ffc3c945640535616e71ba883fb1272f1",
+      "width": 1280,
+      "height": 800
+    },
+    "9546cec2-bf26-5966-aaf6-0901278b0272": {
+      "png": "frames/2026-11-03/9546cec2-bf26-5966-aaf6-0901278b0272.png",
+      "sha256": "ec52ee35e5a13137dbcee40f587c8b19c42ac3b65d23ff744fba26337d5200d3",
+      "width": 1280,
+      "height": 800
+    },
+    "e7b6731d-0a32-560e-bb06-95c59e2046cd": {
+      "png": "frames/2026-11-03/e7b6731d-0a32-560e-bb06-95c59e2046cd.png",
+      "sha256": "ec52ee35e5a13137dbcee40f587c8b19c42ac3b65d23ff744fba26337d5200d3",
+      "width": 1280,
+      "height": 800
+    },
+    "dc55f3dd-650d-5a96-9438-193ee27b7ff3": {
+      "png": "frames/2026-11-03/dc55f3dd-650d-5a96-9438-193ee27b7ff3.png",
+      "sha256": "d036930e6f71e7b4730880c619ede7e54dce1aa82454bfa47522cbc25148e89a",
+      "width": 1280,
+      "height": 800
+    },
+    "877163c1-2d47-5bea-922e-fe91ece67195": {
+      "png": "frames/2026-11-03/877163c1-2d47-5bea-922e-fe91ece67195.png",
+      "sha256": "16e770d4ed476c2d642b1411c852a7a0270b2ed3bed96938a3c4ae147c597635",
+      "width": 1280,
+      "height": 800
+    },
+    "230d5be3-99b7-50d6-bd17-e23124bdc749": {
+      "png": "frames/2026-11-03/230d5be3-99b7-50d6-bd17-e23124bdc749.png",
+      "sha256": "43c29a341afdc396d7fb9bb66b83cea0fd8c011aa8e9765480d69188ab51963c",
+      "width": 1280,
+      "height": 800
+    },
+    "7184014b-92c5-5be4-bd79-f5f92a6fabde": {
+      "png": "frames/2026-11-03/7184014b-92c5-5be4-bd79-f5f92a6fabde.png",
+      "sha256": "0d589651eb8785e0886fa82662f32ca6752cc47903818ead811194f0b44b87a8",
+      "width": 1280,
+      "height": 800
+    },
+    "d892d1e5-1ea0-5de9-835d-176cbf40c79e": {
+      "png": "frames/2026-11-03/d892d1e5-1ea0-5de9-835d-176cbf40c79e.png",
+      "sha256": "0b5bba6cc06269aaa9a8b2b110a649b0e8fb41d9ef7f3ded6362e38277179bc2",
+      "width": 1280,
+      "height": 800
+    },
+    "e5361149-3464-5c82-a062-4b0aabe50d15": {
+      "png": "frames/2026-11-03/e5361149-3464-5c82-a062-4b0aabe50d15.png",
+      "sha256": "13e23993b0434531c8204d07d32c6698c5570ccdca91e84d77d284f4309b8aec",
+      "width": 1280,
+      "height": 800
+    },
+    "50c5bc90-a507-5735-b4d8-16179e455e67": {
+      "png": "frames/2026-11-03/50c5bc90-a507-5735-b4d8-16179e455e67.png",
+      "sha256": "fc6fa588c20c4936989b694c01b4e51a8ebd56058e537ff8679f1668e3d876cc",
+      "width": 1280,
+      "height": 800
+    },
+    "39227c69-824f-5203-9044-a452c8ac3fb8": {
+      "png": "frames/2026-11-03/39227c69-824f-5203-9044-a452c8ac3fb8.png",
+      "sha256": "fc6fa588c20c4936989b694c01b4e51a8ebd56058e537ff8679f1668e3d876cc",
+      "width": 1280,
+      "height": 800
+    },
+    "4e616f5a-5e75-5dca-8c39-807bdbf71339": {
+      "png": "frames/2026-11-03/4e616f5a-5e75-5dca-8c39-807bdbf71339.png",
+      "sha256": "6e169b2cc11fd7ebb2aa974dc77ffb8f745d0c57d22478fba112d0ca23d13e4c",
+      "width": 1280,
+      "height": 800
+    },
+    "d4b59a3d-0f63-587c-aec1-e383fdc4dc96": {
+      "png": "frames/2026-11-03/d4b59a3d-0f63-587c-aec1-e383fdc4dc96.png",
+      "sha256": "6cab3d3ed97132453d1bb88e1a9459d2123ffd070f93a332325f27bef2ad0f80",
+      "width": 1280,
+      "height": 800
+    },
+    "b0b4cd21-7d7f-5862-8115-5f21202d8cca": {
+      "png": "frames/2026-11-03/b0b4cd21-7d7f-5862-8115-5f21202d8cca.png",
+      "sha256": "3479076446b8485f2f2055909cf66f48f5eb5df640ae93ff73844329b53b1333",
+      "width": 1280,
+      "height": 800
+    },
+    "ea6dc2f7-77c8-5a7e-85ed-6baea3cfea80": {
+      "png": "frames/2026-11-03/ea6dc2f7-77c8-5a7e-85ed-6baea3cfea80.png",
+      "sha256": "af41a39c656f78bc3615e3adc4cd3a31cc41a6f5209d2d79f57b95bc51bcde04",
+      "width": 1280,
+      "height": 800
+    },
+    "eefb1143-6839-5f37-8369-2e0bd6ddb8e2": {
+      "png": "frames/2026-11-03/eefb1143-6839-5f37-8369-2e0bd6ddb8e2.png",
+      "sha256": "1e99aaf712e8fa3e44efcf6962ec5a29a942b489675348b436658f3ef076e32a",
+      "width": 1280,
+      "height": 800
+    },
+    "6c923f31-ffb8-53f1-80d2-e536a6276c22": {
+      "png": "frames/2026-11-03/6c923f31-ffb8-53f1-80d2-e536a6276c22.png",
+      "sha256": "64e68dde078f8c0473af10c3e7a67d9b40ba0d1ffa6a9c7ac0d57ee8e9063d5b",
+      "width": 1280,
+      "height": 800
+    },
+    "7316f361-b3ab-5935-adf8-755cea80922a": {
+      "png": "frames/2026-11-03/7316f361-b3ab-5935-adf8-755cea80922a.png",
+      "sha256": "0aa7152df901783682c7413c24b16a2551890074e6432b7edb79176d0cc7009e",
+      "width": 1280,
+      "height": 800
+    },
+    "0d73ac4b-8216-510a-ba80-2c6fdbf7026e": {
+      "png": "frames/2026-11-03/0d73ac4b-8216-510a-ba80-2c6fdbf7026e.png",
+      "sha256": "0aa7152df901783682c7413c24b16a2551890074e6432b7edb79176d0cc7009e",
+      "width": 1280,
+      "height": 800
+    },
+    "7305db15-93f1-53dd-adc6-91353e0fe360": {
+      "png": "frames/2026-11-03/7305db15-93f1-53dd-adc6-91353e0fe360.png",
+      "sha256": "3f55a85b7c7c214ba36c24a11b29676074f66b27fa4fbbe7a81b0ba1d07070a3",
+      "width": 1280,
+      "height": 800
+    },
+    "24130841-a68b-5471-a0d6-fd13c1d11c2f": {
+      "png": "frames/2026-11-03/24130841-a68b-5471-a0d6-fd13c1d11c2f.png",
+      "sha256": "548962f9710be975f027e1a24b374ad45e3661c34d1e08a25b8a23665fdc2c11",
+      "width": 1280,
+      "height": 800
+    },
+    "8d8c5a6d-f5d1-5be9-9a49-ad20f0320ebf": {
+      "png": "frames/2026-11-03/8d8c5a6d-f5d1-5be9-9a49-ad20f0320ebf.png",
+      "sha256": "d9f9f2146d0bdaebe4e3d6a663b3ffe1d0c9f3fa1b1c9f6e3c8b7fd523940301",
+      "width": 1280,
+      "height": 800
+    },
+    "05d50359-d908-5b58-aced-65cbc2b10e94": {
+      "png": "frames/2026-11-03/05d50359-d908-5b58-aced-65cbc2b10e94.png",
+      "sha256": "329134bf29083c9ac50e2a351ac233a441b0fa02efba6dbbf42869f2541907ed",
+      "width": 1280,
+      "height": 800
+    },
+    "9a18c9af-418e-51fd-b956-e80b0f51551b": {
+      "png": "frames/2026-11-03/9a18c9af-418e-51fd-b956-e80b0f51551b.png",
+      "sha256": "e3cb11553b859105aba34914a2aa92833b83d4d15bf7f8c3133625c212648762",
+      "width": 1280,
+      "height": 800
+    },
+    "f8308015-8801-5901-a26a-7dd5069479ab": {
+      "png": "frames/2026-11-03/f8308015-8801-5901-a26a-7dd5069479ab.png",
+      "sha256": "b337b013a1dc4147eb2b29b9cebb4ef39458326e1e733a45808c6d372e52c449",
+      "width": 1280,
+      "height": 800
+    },
+    "a5c2f14d-3674-5793-b1c5-35f91df7335e": {
+      "png": "frames/2026-11-03/a5c2f14d-3674-5793-b1c5-35f91df7335e.png",
+      "sha256": "af5344a15d2cf31d70bf70375db933d45662211f1518a597a0e0138282f09a49",
+      "width": 1280,
+      "height": 800
+    },
+    "7e598155-4f11-5099-bb7a-38122f84987c": {
+      "png": "frames/2026-11-03/7e598155-4f11-5099-bb7a-38122f84987c.png",
+      "sha256": "9b57433df7f79ccad970a2dbf274cc6d88444d3ee711ef3440bdfea2cf43111f",
+      "width": 1280,
+      "height": 800
+    },
+    "0059750c-c629-5bb1-aee9-faaaf121d73a": {
+      "png": "frames/2026-11-03/0059750c-c629-5bb1-aee9-faaaf121d73a.png",
+      "sha256": "1169b2591f8682564d98cf6e69fbe6389530c5b7d3aa3d54d19a9a955baf8ad3",
+      "width": 1280,
+      "height": 800
+    },
+    "cdc533bc-7412-5489-bd39-44380024e3fd": {
+      "png": "frames/2026-11-03/cdc533bc-7412-5489-bd39-44380024e3fd.png",
+      "sha256": "a4c0f4c5d62a349caa04846e89a81a1c136b822cd5f490779fe2429c5790460a",
+      "width": 1280,
+      "height": 800
+    },
+    "36bfac1e-db1a-505a-8652-372b1c1bddd0": {
+      "png": "frames/2026-11-03/36bfac1e-db1a-505a-8652-372b1c1bddd0.png",
+      "sha256": "904266a9ef08875b33b2f77f6313b796498129b98aa86452dc44bf100593e384",
+      "width": 1280,
+      "height": 800
+    },
+    "81acc2df-034a-5430-bffc-b3eda037bec4": {
+      "png": "frames/2026-11-03/81acc2df-034a-5430-bffc-b3eda037bec4.png",
+      "sha256": "904266a9ef08875b33b2f77f6313b796498129b98aa86452dc44bf100593e384",
+      "width": 1280,
+      "height": 800
+    },
+    "eed5a611-9d04-5e68-8ed5-4133b09bd342": {
+      "png": "frames/2026-11-03/eed5a611-9d04-5e68-8ed5-4133b09bd342.png",
+      "sha256": "0d5ff1701072ee09a0f2c813c81cb603a19513d47494c2321bb816c3c1fcbff9",
+      "width": 1280,
+      "height": 800
+    },
+    "2f5a8833-9c9c-526d-a3c2-b131edc3e563": {
+      "png": "frames/2026-11-03/2f5a8833-9c9c-526d-a3c2-b131edc3e563.png",
+      "sha256": "5f0fa848a38982e44a9cf5f2f6958f5420c5b7a42c48f6317b78fe28584d2ba9",
+      "width": 1280,
+      "height": 800
+    },
+    "56926178-0588-5939-8577-e8513c64f4fd": {
+      "png": "frames/2026-11-03/56926178-0588-5939-8577-e8513c64f4fd.png",
+      "sha256": "3c61edc7cfb4195ccd9ca179cf1a1f0f36235ec0352952be40205d9ecd95f436",
+      "width": 1280,
+      "height": 800
+    },
+    "aeb29b49-4987-599c-829c-3704acdbb214": {
+      "png": "frames/2026-11-03/aeb29b49-4987-599c-829c-3704acdbb214.png",
+      "sha256": "3815142738314e67d86e2e97251edc11f6fb558e6c43ec46693d2e7bc30d3b63",
+      "width": 1280,
+      "height": 800
+    },
+    "b33989f3-69e9-5910-945c-6a8bf4b0b928": {
+      "png": "frames/2026-11-03/b33989f3-69e9-5910-945c-6a8bf4b0b928.png",
+      "sha256": "dcd7b66b06ebaab06b433dae5846927851afc82d8e3f311aeaee2735a4993fcf",
+      "width": 1280,
+      "height": 800
+    },
+    "17e57b1e-90b0-500e-84f4-7cc695099f19": {
+      "png": "frames/2026-11-03/17e57b1e-90b0-500e-84f4-7cc695099f19.png",
+      "sha256": "0a172bf565af567de8a84a1aef7520892640f5d01c5f6ea657b898d48c34dd00",
+      "width": 1280,
+      "height": 800
+    },
+    "713abca9-1095-567b-927a-339a92e98b79": {
+      "png": "frames/2026-11-03/713abca9-1095-567b-927a-339a92e98b79.png",
+      "sha256": "55c6470d0634e2403a2b6834a75a271638ae150646a09f3ea4a7e1562dcbfc95",
+      "width": 1280,
+      "height": 800
+    },
+    "9e0bcff9-3c05-527b-98b8-60080408f2c3": {
+      "png": "frames/2026-11-03/9e0bcff9-3c05-527b-98b8-60080408f2c3.png",
+      "sha256": "e6da128aa325d6059dd4b88373fe5b21487a89eb52438b01fa9a8b53852ec5ed",
+      "width": 1280,
+      "height": 800
+    },
+    "d4e848a0-eef8-5a36-ab9e-42c8b5e59fcb": {
+      "png": "frames/2026-11-03/d4e848a0-eef8-5a36-ab9e-42c8b5e59fcb.png",
+      "sha256": "2ee7df318e4b2f0028401e59c3ff80ca6ec7841f5dd7a83c19dd85cbc2ef8041",
+      "width": 1280,
+      "height": 800
+    },
+    "273da9f3-ecc6-5825-badb-def39d4fb299": {
+      "png": "frames/2026-11-03/273da9f3-ecc6-5825-badb-def39d4fb299.png",
+      "sha256": "2ee7df318e4b2f0028401e59c3ff80ca6ec7841f5dd7a83c19dd85cbc2ef8041",
+      "width": 1280,
+      "height": 800
+    },
+    "dc5227ce-baa5-5e3d-b019-8053fe0382a2": {
+      "png": "frames/2026-11-03/dc5227ce-baa5-5e3d-b019-8053fe0382a2.png",
+      "sha256": "edaff2940553cce9bbec26ba28e13e2038260597d4f63a3bd36a9f19e2a9b4ec",
+      "width": 1280,
+      "height": 800
+    },
+    "ebdc1c2e-4489-5a27-aca8-5e1162638eaf": {
+      "png": "frames/2026-11-03/ebdc1c2e-4489-5a27-aca8-5e1162638eaf.png",
+      "sha256": "1f2034a8938acc6284147c3c0519086b30aedd0978cf1efd9e0ecb378573db28",
+      "width": 1280,
+      "height": 800
+    },
+    "66677472-a6ee-52e6-baee-9c2c8552e34c": {
+      "png": "frames/2026-11-03/66677472-a6ee-52e6-baee-9c2c8552e34c.png",
+      "sha256": "500a34918a70b2451c080eb3a6f2d7f1a9a8c3b4789adfba7d0f0efdd3beccf5",
+      "width": 1280,
+      "height": 800
+    },
+    "7afca029-e9ce-5ef6-aeb4-c841f807d3ee": {
+      "png": "frames/2026-11-03/7afca029-e9ce-5ef6-aeb4-c841f807d3ee.png",
+      "sha256": "e057ff8534a70f456a6eeffb0fabfa4a114bcdef2e3249eafa34875ef3be81f3",
+      "width": 1280,
+      "height": 800
+    },
+    "a4b02ec5-ca78-5ad6-8b1e-59f185c26eeb": {
+      "png": "frames/2026-11-03/a4b02ec5-ca78-5ad6-8b1e-59f185c26eeb.png",
+      "sha256": "9126489dde831e4416d773ca502451b1643cf7b79619b205b8a1255274cad0ce",
+      "width": 1280,
+      "height": 800
+    },
+    "2bbcd7d4-1de7-5dde-a2c8-63b30ebfd3cd": {
+      "png": "frames/2026-11-03/2bbcd7d4-1de7-5dde-a2c8-63b30ebfd3cd.png",
+      "sha256": "b60e1109c02ddc2175470380c53ea523b3f14d2e8dbc6b96c446d3e8ecfdc51d",
+      "width": 1280,
+      "height": 800
+    },
+    "b34ab707-3084-51fc-9e0e-793d8f48dd1d": {
+      "png": "frames/2026-11-03/b34ab707-3084-51fc-9e0e-793d8f48dd1d.png",
+      "sha256": "993fa14c46f858d1c67a7d2ac27338492f2b0a4b31231ccd53b6f92213ee03b7",
+      "width": 1280,
+      "height": 800
+    },
+    "98760d28-21b1-5d55-ab33-d60761ceab3d": {
+      "png": "frames/2026-11-03/98760d28-21b1-5d55-ab33-d60761ceab3d.png",
+      "sha256": "dd5c21d2ca39c5cb48d0677ebb1976f7292cf93068e3fe8585168aa2600304ab",
+      "width": 1280,
+      "height": 800
+    },
+    "7f89de42-2bad-5728-a62c-e26635cbeac3": {
+      "png": "frames/2026-11-03/7f89de42-2bad-5728-a62c-e26635cbeac3.png",
+      "sha256": "88bcaf0c425b4415fd3f61264b0c01afd499456e6270336b65466c35f970577d",
+      "width": 1280,
+      "height": 800
+    },
+    "256b02c1-8cc0-5075-8809-d154a5860271": {
+      "png": "frames/2026-11-03/256b02c1-8cc0-5075-8809-d154a5860271.png",
+      "sha256": "ad92366fc71e3630a29340e9922b0f5413378c64defc5bbb131e7035e6d043c9",
+      "width": 1280,
+      "height": 800
+    }
+  }
+}
