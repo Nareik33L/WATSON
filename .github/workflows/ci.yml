@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 # macOS jobs (Swift helper, ScreenCaptureKit, Vision OCR, TCC) arrive with M0-B.
 
 jobs:
