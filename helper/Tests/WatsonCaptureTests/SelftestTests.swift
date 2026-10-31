@@ -150,6 +150,21 @@ final class SelftestTests: XCTestCase {
             (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         }))
     }
+
+    private func frameFiles(under root: URL) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return enumerator.compactMap { item in
+            guard let url = item as? URL else { return nil }
+            let ext = url.pathExtension
+            return (ext == "png" || ext == "json") ? url : nil
+        }
+    }
 }
 
 final class EventBox: @unchecked Sendable {
