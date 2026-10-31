@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Compare two watson-capture binaries: same __TEXT,__info_plist bytes and
-# CFBundleIdentifier com.watson.capture. Used by CI across swiftc vs SwiftPM.
+# Compare two watson-capture binaries: same __TEXT,__info_plist bytes,
+# CFBundleIdentifier com.watson.capture, and codesign -dv Identifier.
 # Usage: helper/scripts/compare-embedded-identity.sh BIN_A BIN_B
 set -euo pipefail
 
@@ -11,11 +11,14 @@ fi
 
 A="$1"
 B="$2"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 for bin in "$A" "$B"; do
   if [[ ! -e "$bin" ]]; then
     echo "missing binary: $bin" >&2
     exit 1
   fi
+  "$ROOT/scripts/verify-embedded-plist.sh" "$bin"
 done
 
 plist_hex() {
@@ -25,26 +28,8 @@ plist_hex() {
   }' | sed 's/00*$//'
 }
 
-ident_from_plist() {
-  local tmp
-  tmp="$(mktemp -t watson-info-plist)"
-  # codesign -dv on an unsigned/linker-signed binary reports Identifier=
-  # from the filename (watson-capture), not CFBundleIdentifier. Read the
-  # embedded plist instead — that is the TCC identifier we ship.
-  if ! segedit "$1" -extract __TEXT __info_plist "$tmp" >/dev/null; then
-    echo "segedit failed on $1" >&2
-    rm -f "$tmp"
-    return 1
-  fi
-  # Section padding is trailing NULs; strip so the XML plist parses.
-  python3 -c '
-import sys
-path = sys.argv[1]
-data = open(path, "rb").read().rstrip(b"\x00")
-open(path, "wb").write(data)
-' "$tmp"
-  /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$tmp"
-  rm -f "$tmp"
+codesign_ident() {
+  codesign -dv "$1" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}'
 }
 
 echo "=== $A ==="
@@ -62,13 +47,13 @@ if [[ -z "$H1" || "$H1" != "$H2" ]]; then
   exit 1
 fi
 
-I1="$(ident_from_plist "$A")"
-I2="$(ident_from_plist "$B")"
-echo "a CFBundleIdentifier=$I1"
-echo "b CFBundleIdentifier=$I2"
+I1="$(codesign_ident "$A")"
+I2="$(codesign_ident "$B")"
+echo "a codesign Identifier=$I1"
+echo "b codesign Identifier=$I2"
 if [[ "$I1" != "com.watson.capture" || "$I1" != "$I2" ]]; then
-  echo "FAIL: identifier mismatch or not com.watson.capture" >&2
+  echo "FAIL: codesign Identifier mismatch or not com.watson.capture" >&2
   exit 1
 fi
 
-echo "PASS: identical Info.plist section and identifier=$I1"
+echo "PASS: identical Info.plist section and Identifier=$I1"

@@ -17,6 +17,7 @@ permissions:
 # macOS job and it starts only when helper/ (or this file) changes.
 # No ScreenCaptureKit: both build paths, unit tests, and --selftest only.
 # GitHub retired macos-14 images (brownout / 2026-11-02 sunset).
+# No WATSON Dev certificate — ad-hoc sign.
 
 jobs:
   helper:
@@ -60,6 +61,11 @@ jobs:
             exit 1
           fi
 
+      # Before custom builds / compare so a later check cannot skip XCTest.
+      - name: Test (protocol, sidecar, filters, selftest) via SwiftPM
+        working-directory: helper
+        run: swift test
+
       - name: Build (swiftc default)
         run: helper/scripts/build.sh --release --no-sign
 
@@ -75,6 +81,42 @@ jobs:
       - name: cleanup-spool.sh refuses dangerous paths and cleans a fake spool
         run: helper/scripts/test-cleanup-spool.sh
 
+      - name: Negative — verify fails without embedded Info.plist
+        run: |
+          set -euo pipefail
+          rm -rf helper/.build
+          set +e
+          helper/scripts/build.sh --release --no-sign --no-embed-plist
+          rc=$?
+          set -e
+          if [[ "$rc" -eq 0 ]]; then
+            echo "FAIL: build without Info.plist must fail verify-embedded-plist.sh" >&2
+            exit 1
+          fi
+          NOPLIST=""
+          for candidate in \
+            helper/.build/release/watson-capture \
+            helper/.build/arm64-apple-macosx/release/watson-capture
+          do
+            if [[ -e "$candidate" ]]; then
+              NOPLIST="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$NOPLIST" ]]; then
+            echo "FAIL: expected a binary so verify could reject it (build rc=$rc)" >&2
+            exit 1
+          fi
+          set +e
+          helper/scripts/verify-embedded-plist.sh "$NOPLIST"
+          vrc=$?
+          set -e
+          if [[ "$vrc" -eq 0 ]]; then
+            echo "FAIL: verify-embedded-plist.sh passed on a binary with no plist" >&2
+            exit 1
+          fi
+          echo "ok: verify rejected binary without Info.plist (build rc=$rc verify rc=$vrc)"
+
       - name: Build (SwiftPM --spm)
         run: |
           # Fresh .build so SwiftPM does not collide with the swiftc layout.
@@ -83,12 +125,19 @@ jobs:
           cp helper/.build/release/watson-capture /tmp/watson-capture-ci/watson-capture-spm
           chmod +x /tmp/watson-capture-ci/watson-capture-spm
 
-      - name: Compare Info.plist section and identifier
+      - name: Ad-hoc sign both binaries
+        run: |
+          helper/scripts/sign.sh \
+            --bin /tmp/watson-capture-ci/watson-capture-swiftc \
+            --identity - \
+            --identifier com.watson.capture
+          helper/scripts/sign.sh \
+            --bin /tmp/watson-capture-ci/watson-capture-spm \
+            --identity - \
+            --identifier com.watson.capture
+
+      - name: Compare Info.plist section and codesign Identifier
         run: >
           helper/scripts/compare-embedded-identity.sh
           /tmp/watson-capture-ci/watson-capture-swiftc
           /tmp/watson-capture-ci/watson-capture-spm
-
-      - name: Test (protocol, sidecar, filters, selftest) via SwiftPM
-        working-directory: helper
-        run: swift test

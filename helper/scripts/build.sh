@@ -2,7 +2,7 @@
 # Build watson-capture with swiftc by default (no Package.swift evaluation).
 # SwiftPM is --spm opt-in: CLT 16.2 cannot link PackageDescription
 # (undefined symbol PackageDescription.Package.__allocating_init).
-# Usage: helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign]
+# Usage: helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign] [--no-embed-plist]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,6 +10,7 @@ CONFIG="release"
 IDENTITY="${WATSON_CODESIGN_IDENTITY:-WATSON Dev}"
 SIGN=1
 USE_SPM=0
+EMBED_PLIST=1
 # Package.swift platforms: .macOS(.v14); swift-tools-version: 6.0
 MACOS_MIN="14.0"
 SWIFT_VERSION="6"
@@ -18,7 +19,7 @@ usage() {
   cat <<'EOF'
 Build watson-capture (macOS 14+, Command Line Tools).
 
-  helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign]
+  helper/scripts/build.sh [--debug|--release] [--spm] [--identity NAME] [--no-sign] [--no-embed-plist]
 
 Default is a plain swiftc build so CLT 16.2 (no Xcode) works. SwiftPM
 cannot load Package.swift on that toolchain (ManifestAPI:
@@ -42,6 +43,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --no-sign) SIGN=0; shift ;;
+    --no-embed-plist) EMBED_PLIST=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "unknown argument: $1" >&2
@@ -111,16 +113,14 @@ verify_binary() {
   fi
 
   echo "--- codesign -dv ---"
-  # Unsigned CI builds still print what they can; signed builds already passed
-  # codesign --verify in sign.sh.
+  # Unsigned / linker-signed builds still print what they can; signed builds
+  # already passed codesign --verify in sign.sh.
   codesign -dv --verbose=4 "$bin" 2>&1 || true
 
   echo "--- otool -s __TEXT __info_plist ---"
   otool -s __TEXT __info_plist "$bin"
-  if ! otool -s __TEXT __info_plist "$bin" | grep -Eq '[0-9a-f]{2}'; then
-    echo "FAIL: missing __TEXT,__info_plist on $bin" >&2
-    exit 1
-  fi
+  # Do not grep otool headers ("of" in "Contents of" is [0-9a-f]{2}).
+  "$ROOT/scripts/verify-embedded-plist.sh" "$bin"
 }
 
 build_spm() {
@@ -129,16 +129,16 @@ build_spm() {
     exit 1
   fi
   echo "swift: $(swift --version 2>&1 | head -n 1)"
-  echo "building ($CONFIG) with SwiftPM + embedded $ROOT/Info.plist"
+  if [[ "$EMBED_PLIST" -eq 1 ]]; then
+    echo "building ($CONFIG) with SwiftPM + embedded $ROOT/Info.plist"
+  else
+    echo "building ($CONFIG) with SwiftPM (no embedded Info.plist)"
+  fi
 
   (
     cd "$ROOT"
     # --disable-sandbox: the linker must read Info.plist via -sectcreate.
-    swift build -c "$CONFIG" --disable-sandbox \
-      -Xlinker -sectcreate \
-      -Xlinker __TEXT \
-      -Xlinker __info_plist \
-      -Xlinker "$ROOT/Info.plist"
+    swift build -c "$CONFIG" --disable-sandbox "${PLIST_LINK[@]}"
   )
 }
 
@@ -156,7 +156,11 @@ build_swiftc() {
   sdk="$(xcrun --sdk macosx --show-sdk-path)"
   echo "swiftc: $(swiftc --version 2>&1 | head -n 1)"
   echo "sdk: $sdk"
-  echo "building ($CONFIG) with swiftc -target $TARGET -swift-version $SWIFT_VERSION + embedded $ROOT/Info.plist"
+  if [[ "$EMBED_PLIST" -eq 1 ]]; then
+    echo "building ($CONFIG) with swiftc -target $TARGET -swift-version $SWIFT_VERSION + embedded $ROOT/Info.plist"
+  else
+    echo "building ($CONFIG) with swiftc -target $TARGET -swift-version $SWIFT_VERSION (no embedded Info.plist)"
+  fi
 
   local lib_sources=()
   local src
@@ -208,14 +212,21 @@ build_swiftc() {
     -o "$bin" \
     "$cli_main" \
     "$work/WatsonCapture.o" \
-    -Xlinker -sectcreate \
-    -Xlinker __TEXT \
-    -Xlinker __info_plist \
-    -Xlinker "$ROOT/Info.plist" \
+    "${PLIST_LINK[@]}" \
     "${FRAMEWORKS[@]}"
 
   chmod +x "$bin"
 }
+
+PLIST_LINK=()
+if [[ "$EMBED_PLIST" -eq 1 ]]; then
+  PLIST_LINK=(
+    -Xlinker -sectcreate
+    -Xlinker __TEXT
+    -Xlinker __info_plist
+    -Xlinker "$ROOT/Info.plist"
+  )
+fi
 
 if [[ "$USE_SPM" -eq 1 ]]; then
   build_spm

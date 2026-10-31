@@ -207,14 +207,16 @@ That embeds `helper/Info.plist` via
 
 codesigns with `--identifier com.watson.capture --timestamp=none` (offline-safe: no Apple timestamp server; no hardened runtime on this local identity), then checks `codesign -dv` and `otool -s __TEXT __info_plist`.
 
-Unsigned (CI-style) build:
+Unsigned (CI-style) build. CI then ad-hoc signs both binaries (`sign.sh --identity - --identifier com.watson.capture`); there is no WATSON Dev cert on the runner.
 
 ```bash
 helper/scripts/build.sh --release --no-sign
 helper/.build/release/watson-capture --selftest
-# unit tests stay on SwiftPM (CI / Xcode):
-#   helper/scripts/build.sh --spm --release --no-sign
+# unit tests stay on SwiftPM (CI / Xcode) and run before compare:
 #   cd helper && swift test
+#   helper/scripts/build.sh --spm --release --no-sign
+#   helper/scripts/sign.sh --bin helper/.build/release/watson-capture \
+#     --identity - --identifier com.watson.capture
 ```
 
 Confirm the signature:
