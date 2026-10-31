@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
+from watson.config.schema import ExclusionsConfig
 from watson.pipeline.frames import FRAME_STATES
 from watson.pipeline.jobs import JobState
 from watson.pipeline.replay import LAST_REPLAY_SETTING_ID
@@ -52,6 +53,7 @@ class StatusReport:
     deletion_verified_count: int = 0
     deletion_unverified_count: int = 0
     deletion_failed_count: int = 0
+    exclusion_overrides: tuple[str, ...] = ()
     audit_tail: tuple[AuditItem, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
@@ -64,6 +66,7 @@ class StatusReport:
             "deletion_verified_count": self.deletion_verified_count,
             "deletion_unverified_count": self.deletion_unverified_count,
             "deletion_failed_count": self.deletion_failed_count,
+            "exclusion_overrides": list(self.exclusion_overrides),
             "last_frames": [asdict(frame) for frame in self.last_frames],
             "last_replay": self.last_replay,
             "audit_tail": [
@@ -88,6 +91,11 @@ class StatusReport:
         out.append(f"deletion.verified: {self.deletion_verified_count}")
         out.append(f"deletion.unverified: {self.deletion_unverified_count}")
         out.append(f"deletion.failed: {self.deletion_failed_count}")
+        if not self.exclusion_overrides:
+            out.append("exclusions.override: none")
+        else:
+            for index, bundle_id in enumerate(self.exclusion_overrides):
+                out.append(f"exclusions.override.{index}: {bundle_id}")
         for state in JOB_STATES:
             out.append(f"jobs.{state}: {self.jobs_by_state.get(state, 0)}")
         if self.last_replay is None:
@@ -119,7 +127,11 @@ class StatusReport:
         return out
 
 
-def collect_status(conn: sqlcipher.Connection) -> StatusReport:
+def collect_status(
+    conn: sqlcipher.Connection,
+    *,
+    exclusions: ExclusionsConfig | None = None,
+) -> StatusReport:
     frames = {state: 0 for state in FRAME_STATES}
     for row in conn.execute("SELECT state, COUNT(*) AS n FROM frames GROUP BY state"):
         frames[str(row["state"])] = int(row["n"])
@@ -204,6 +216,9 @@ def collect_status(conn: sqlcipher.Connection) -> StatusReport:
         deletion_verified_count=verified,
         deletion_unverified_count=unverified,
         deletion_failed_count=failed,
+        exclusion_overrides=(
+            exclusions.overridden_default_bundle_ids() if exclusions is not None else ()
+        ),
         audit_tail=audit_tail,
     )
 

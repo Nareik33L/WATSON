@@ -75,7 +75,7 @@ def _clean_ids(value: object) -> tuple[str, ...]:
     if value is None:
         return ()
     if not isinstance(value, (list, tuple)):
-        raise TypeError("exclusion lists must be arrays of strings")
+        raise ValueError("exclusion lists must be arrays of strings")
     return tuple(item.strip() for item in (str(raw) for raw in value) if item.strip())
 
 
@@ -142,6 +142,11 @@ class ExclusionsConfig(_StrictModel):
         if "allowed_domains" in incoming:
             incoming["allowed_domains"] = _clean_ids(incoming.get("allowed_domains"))
         return incoming
+
+    def overridden_default_bundle_ids(self) -> tuple[str, ...]:
+        """Built-in defaults that ``allowed_bundle_ids`` has un-excluded."""
+        allowed = {item.casefold() for item in self.allowed_bundle_ids}
+        return tuple(item for item in DEFAULT_EXCLUDED_BUNDLE_IDS if item.casefold() in allowed)
 
 
 class RetentionConfig(_StrictModel):

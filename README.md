@@ -26,7 +26,7 @@ helper/scripts/build.sh
 
 ### CLI (this slice)
 
-`watson doctor` prints resolved config paths (`~/Library/Application Support/WATSON` or `WATSON_DATA_DIR`) and database status. It never prints secrets or the SQLCipher key.
+`watson doctor` prints resolved config paths (`~/Library/Application Support/WATSON` or `WATSON_DATA_DIR`) and database status. It never prints secrets or the SQLCipher key. `config.toml` exclusions are documented in [`docs/config.md`](docs/config.md): user lists merge with the built-in password-manager defaults; `allowed_bundle_ids` is a visible override (load warning + `watson status` / dashboard).
 
 `watson db upgrade` creates the runtime directories if needed and applies Alembic migrations to the encrypted database.
 
@@ -34,7 +34,7 @@ helper/scripts/build.sh
 
 `watson replay <fixture_dir> [--speed N|--instant]` validates `manifest.json` (sha256/dims) and each sidecar against `schemas/sidecar.schema.json`, copies the fixture into a 0700/0600 temp spool, and ingests frames through the same spool reader live capture will use. An `extract` job stub records sidecar OCR as fixture-only `frame_text`, then deletes the spool PNG **and sidecar** (Tier 0 OCR) and sets `deletion_verified=1`. Source fixture files are never deleted. Re-runs are idempotent on frame id.
 
-`watson status` prints capture state, queue depth, frame counts by state, deletion-verified counts, last frames (metadata only), last replay, and an audit tail. The dashboard status page renders the same numbers and never shows OCR text.
+`watson status` prints capture state, queue depth, frame counts by state, deletion-verified counts, last frames (metadata only), last replay, an audit tail, and any `allowed_bundle_ids` that un-exclude a built-in default. The dashboard status page renders the same numbers and never shows OCR text.
 
 `watson dashboard [--host 127.0.0.1] [--port 8000] [--open]` serves the status page on loopback only. Any bind host other than `127.0.0.1` is refused. The per-install secret (macOS Keychain; `WATSON_DASHBOARD_TOKEN` or a `0600` file off-darwin) only signs session cookies and never appears in a URL or log. `watson dashboard` mints a single-use 60 s launch code and opens `/auth?code=…`, which sets an `HttpOnly; SameSite=Strict` session cookie. Sessions expire and a restart rotates them. Host/Origin are checked against DNS rebinding; POST requires CSRF; CSP is strict and HTMX is vendored (no CDN).
 

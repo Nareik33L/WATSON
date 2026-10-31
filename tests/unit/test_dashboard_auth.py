@@ -193,8 +193,29 @@ def test_authed_status_matches_watson_status(
         assert payload["queue_depth"] == report.queue_depth
         assert "frame_text" not in payload
         assert "ocr" not in payload
+        assert payload["exclusion_overrides"] == []
     finally:
         conn.close()
+
+
+def test_dashboard_surfaces_exclusion_overrides(data_dir: Path, key_provider: object) -> None:
+    (data_dir / "config.toml").write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[exclusions]
+allowed_bundle_ids = ["com.apple.Passwords"]
+""",
+        encoding="utf-8",
+    )
+    client = _client()
+    _authed(client)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "Exclusion overrides" in page.text
+    assert "com.apple.Passwords" in page.text
+    payload = client.get("/api/status").json()
+    assert payload["exclusion_overrides"] == ["com.apple.Passwords"]
 
 
 def test_post_requires_csrf_and_origin(data_dir: Path, key_provider: object) -> None:
@@ -453,7 +474,7 @@ def test_sqlcipher_error_on_status_is_empty_not_500(
     conn = open_test_db(data_dir)
     conn.close()
 
-    def boom(_conn: object) -> object:
+    def boom(_conn: object, **_kwargs: object) -> object:
         raise sqlcipher.DatabaseError("malformed")
 
     monkeypatch.setattr(dashboard_app, "collect_status", boom)

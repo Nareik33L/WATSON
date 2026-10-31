@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
 
+from watson.cli import main
 from watson.config import ConfigError, load_config
 from watson.config.schema import (
     APPLICATION_SUPPORT_WATSON,
@@ -13,6 +15,7 @@ from watson.config.schema import (
     DEFAULT_EXCLUDED_BUNDLE_IDS,
     DEFAULT_WINDOW_TITLE_PATTERNS,
 )
+from watson.pipeline.status import StatusReport
 
 
 def test_defaults_use_application_support_path(
@@ -101,6 +104,62 @@ allowed_bundle_ids = ["com.apple.FaceTime"]
     assert "Vault unlock" in config.exclusions.window_title_patterns
     assert set(DEFAULT_WINDOW_TITLE_PATTERNS).issubset(config.exclusions.window_title_patterns)
     assert config.exclusions.allowed_bundle_ids == ("com.apple.FaceTime",)
+    assert config.exclusions.overridden_default_bundle_ids() == ("com.apple.FaceTime",)
+
+
+def test_allowed_bundle_ids_warn_and_surface_overridden_defaults(
+    data_dir: Path,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (data_dir / "config.toml").write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[exclusions]
+allowed_bundle_ids = ["com.apple.Passwords", "COM.APPLE.FACETIME", "com.example.harmless"]
+""",
+        encoding="utf-8",
+    )
+    with caplog.at_level(logging.WARNING, logger="watson.config"):
+        config = load_config()
+    overridden = config.exclusions.overridden_default_bundle_ids()
+    assert overridden == ("com.apple.FaceTime", "com.apple.Passwords")
+    assert "com.apple.Passwords" not in config.exclusions.bundle_ids
+    assert "com.apple.FaceTime" not in config.exclusions.bundle_ids
+    assert "com.1password.1password" in config.exclusions.bundle_ids
+    warnings = caplog.text
+    assert "com.apple.Passwords" in warnings
+    assert "com.apple.FaceTime" in warnings
+    assert "un-excludes built-in default" in warnings
+    assert "com.example.harmless" not in warnings
+
+    report = StatusReport({}, {}, None, exclusion_overrides=overridden)
+    lines = "\n".join(report.lines())
+    assert "exclusions.override.0: com.apple.FaceTime" in lines
+    assert "exclusions.override.1: com.apple.Passwords" in lines
+    assert "com.example.harmless" not in lines
+    payload = report.as_dict()
+    assert payload["exclusion_overrides"] == ["com.apple.FaceTime", "com.apple.Passwords"]
+
+    assert main(["status"]) == 0
+    status_out = capsys.readouterr().out
+    assert "exclusions.override.0: com.apple.FaceTime" in status_out
+    assert "exclusions.override.1: com.apple.Passwords" in status_out
+
+
+def test_non_array_exclusion_list_is_config_error(data_dir: Path) -> None:
+    (data_dir / "config.toml").write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[exclusions]
+bundle_ids = "com.example.secret"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"exclusions"):
+        load_config()
 
 
 def test_unknown_key_is_named(data_dir: Path) -> None:
