@@ -34,3 +34,12 @@ jobs:
 
       - name: Tests
         run: uv run pytest
+
+      - name: Fake-runtime bench smoke
+        run: >
+          uv run watson-bench run
+          --profile 8gb
+          --runtime fake
+          --frames tools/bench/samples/frames
+          --out /tmp/watson-bench-ci
+          --report /tmp/watson-bench-ci/report.md

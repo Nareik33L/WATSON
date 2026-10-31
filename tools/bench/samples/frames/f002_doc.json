@@ -1,0 +1,55 @@
+{
+  "frame_id": "f002_doc",
+  "captured_at": "2026-10-31T09:15:00+00:00",
+  "bundle_id": "com.example.docs",
+  "app_name": "Pages",
+  "window_title": "Internal Onboarding Guide \u2014 Section 3",
+  "url": null,
+  "ocr": {
+    "lines": [
+      {
+        "text": "Internal Onboarding Guide",
+        "bbox": [
+          12,
+          44,
+          300,
+          62
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Section 3: Access and tools",
+        "bbox": [
+          12,
+          66,
+          300,
+          84
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Status: published this morning",
+        "bbox": [
+          12,
+          88,
+          300,
+          106
+        ],
+        "confidence": 0.98
+      },
+      {
+        "text": "Still editing: Acme proposal appendix",
+        "bbox": [
+          12,
+          110,
+          300,
+          128
+        ],
+        "confidence": 0.98
+      }
+    ]
+  },
+  "width": 320,
+  "height": 180,
+  "capture_mode": "frontmost"
+}

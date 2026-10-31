@@ -1,0 +1,90 @@
+# CANDIDATES TO BE CONFIRMED at M0-A — not chosen defaults.
+# §7.1: in-process small embedding model (≤ 1B). Same families on both RAM profiles;
+# 16gb adds a slightly larger English embedder.
+role: embeddings
+
+profiles:
+  8gb:
+    description: "Tiny embedders that leave RAM for the LLM/VLM on the 8 GB M1."
+    candidates:
+      - id: ollama-nomic-embed-text
+        family: nomic-embed-text
+        model_id: nomic-embed-text
+        runtime: ollama
+        quantisation: fp16
+        context_window: 8192
+        min_ram_gb: 8
+        status: candidate
+        approx_download_gb: 0.27
+        notes: "Primary 8 GB embedding candidate. Use search_document: prefixes in production."
+
+      - id: mlx-minilm-l6-4bit
+        family: MiniLM
+        model_id: mlx-community/all-MiniLM-L6-v2-4bit
+        runtime: mlx
+        quantisation: 4bit
+        context_window: 256
+        min_ram_gb: 8
+        status: candidate
+        approx_download_gb: 0.03
+        notes: "Requires mlx-embeddings. Confirm load API against the installed extra."
+
+      - id: llamacpp-nomic-embed-q4
+        family: nomic-embed-text
+        model_id: nomic-ai/nomic-embed-text-v1.5-GGUF
+        runtime: llamacpp
+        quantisation: q4_K_M
+        context_window: 2048
+        min_ram_gb: 8
+        status: candidate
+        approx_download_gb: 0.08
+        filename: nomic-embed-text-v1.5.Q4_K_M.gguf
+        notes: "GGUF filename must be confirmed against the Hub repo at fetch time."
+
+  16gb:
+    description: "Same small embedders plus one larger English model."
+    candidates:
+      - id: ollama-nomic-embed-text-16
+        family: nomic-embed-text
+        model_id: nomic-embed-text
+        runtime: ollama
+        quantisation: fp16
+        context_window: 8192
+        min_ram_gb: 8
+        status: candidate
+        approx_download_gb: 0.27
+        notes: "Same weights as the 8 GB nomic candidate; listed so a 16 GB run is self-contained."
+
+      - id: ollama-mxbai-embed-large
+        family: mxbai-embed-large
+        model_id: mxbai-embed-large
+        runtime: ollama
+        quantisation: fp16
+        context_window: 512
+        min_ram_gb: 16
+        status: candidate
+        approx_download_gb: 0.67
+        notes: "Larger English embedder. Only worth it if nomic quality is insufficient."
+
+      - id: mlx-modernbert-embed-4bit
+        family: Nomic ModernBERT
+        model_id: mlx-community/nomicai-modernbert-embed-base-4bit
+        runtime: mlx
+        quantisation: 4bit
+        context_window: 8192
+        min_ram_gb: 8
+        status: candidate
+        approx_download_gb: 0.1
+        notes: "Requires mlx-embeddings. Confirm against the installed extra."
+
+      - id: llamacpp-nomic-embed-q4-16
+        family: nomic-embed-text
+        model_id: nomic-ai/nomic-embed-text-v1.5-GGUF
+        runtime: llamacpp
+        quantisation: q4_K_M
+        context_window: 2048
+        min_ram_gb: 8
+        status: candidate
+        approx_download_gb: 0.08
+        filename: nomic-embed-text-v1.5.Q4_K_M.gguf
+        notes: "Same GGUF as the 8 GB llamacpp embedder."
