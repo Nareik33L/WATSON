@@ -30,9 +30,13 @@ jobs:
         working-directory: helper
         run: |
           # Package.swift is swift-tools-version 6.0 (dev Mac is 6.0.3 / CLT).
-          # macos-15 images ship several Xcodes; pick a Swift 6 toolchain if present.
-          if ls -d /Applications/Xcode_16*.app >/dev/null 2>&1; then
-            newest="$(ls -d /Applications/Xcode_16*.app | sort | tail -n 1)"
+          # Prefer Xcode 16.2 (Swift 6.0.3). Do not pick bare Xcode_16.app
+          # (Swift 6.0.0): `ls | sort` ranks it after 16.2 and that compiler
+          # rejects NSRunningApplication as non-Sendable.
+          if [ -d /Applications/Xcode_16.2.app ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app
+          elif ls -d /Applications/Xcode_16.*.app >/dev/null 2>&1; then
+            newest="$(ls -d /Applications/Xcode_16.*.app | sort -V | tail -n 1)"
             sudo xcode-select -s "$newest"
           fi
           xcode-select -p
