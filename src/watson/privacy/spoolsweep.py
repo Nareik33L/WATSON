@@ -194,16 +194,18 @@ def _iter_pairs(root: Path) -> list[_FileGroup]:
 
 
 def _decide(conn: sqlcipher.Connection, group: _FileGroup, *, cutoff: float) -> str:
+    # No row / non-UUID / unpaired / leftover states are orphans only once
+    # the oldest file is at least spool_hard_limit_hours old (plan §5 Tier 0).
     stale = _group_is_stale(group, cutoff)
     if group.frame_id is None:
-        return "orphan"
+        return "orphan" if stale else "keep"
     row = conn.execute("SELECT state FROM frames WHERE id = ?", (group.frame_id,)).fetchone()
     if row is None:
-        return "orphan"
+        return "orphan" if stale else "keep"
     state = str(row["state"])
     if state in _LIVE_FRAME_STATES:
         return "stale" if stale else "keep"
-    return "orphan"
+    return "orphan" if stale else "keep"
 
 
 def _group_is_stale(group: _FileGroup, cutoff: float) -> bool:

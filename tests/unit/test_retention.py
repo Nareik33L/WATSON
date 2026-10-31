@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from alembic import command
 
 from tests.replay_support import TEST_KEY, open_test_db, write_mini_fixture
-from watson.memory.db import connect, iso_now
+from watson.memory.db import connect, iso_now, parse_iso
 from watson.memory.ids import new_id
 from watson.memory.migrate import alembic_config, upgrade_head
 from watson.pipeline.frames import ensure_working_day
@@ -98,6 +99,56 @@ def _insert_segment(
     )
     conn.commit()
     return segment_id
+
+
+@pytest.mark.parametrize("grace_days", [7, 3])
+def test_expires_at_is_captured_at_plus_tier2_grace_days(
+    data_dir: Path, key_provider: object, tmp_path: Path, grace_days: int
+) -> None:
+    (data_dir / "config.toml").write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[retention]
+tier2_grace_days = {grace_days}
+""",
+        encoding="utf-8",
+    )
+    fixture = write_mini_fixture(tmp_path, frames=2)
+    conn = open_test_db(data_dir)
+    try:
+        replay_fixture(fixture, conn, instant=True, spool_dir=data_dir / "spool")
+        text_rows = conn.execute(
+            """
+            SELECT f.captured_at, t.expires_at
+            FROM frames f
+            JOIN frame_text t ON t.frame_id = f.id
+            """
+        ).fetchall()
+        assert text_rows
+        for captured_at, expires_at in text_rows:
+            assert captured_at is not None
+            assert expires_at is not None
+            assert parse_iso(str(expires_at)) - parse_iso(str(captured_at)) == timedelta(
+                days=grace_days
+            )
+
+        segment_rows = conn.execute(
+            """
+            SELECT f.captured_at, s.expires_at
+            FROM segments s
+            JOIN frames f ON f.id = s.start_frame_id
+            """
+        ).fetchall()
+        assert segment_rows
+        for captured_at, expires_at in segment_rows:
+            assert captured_at is not None
+            assert expires_at is not None
+            assert parse_iso(str(expires_at)) - parse_iso(str(captured_at)) == timedelta(
+                days=grace_days
+            )
+    finally:
+        conn.close()
 
 
 def test_retention_just_inside_and_just_outside_window(

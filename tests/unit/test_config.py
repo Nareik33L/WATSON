@@ -168,6 +168,21 @@ bundle_ids = "com.example.secret"
         load_config()
 
 
+def test_spool_hard_limit_hours_rejects_above_24(data_dir: Path) -> None:
+    (data_dir / "config.toml").write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[retention]
+spool_hard_limit_hours = 25
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"retention\.spool_hard_limit_hours") as raised:
+        load_config()
+    assert "Invalid config" in str(raised.value)
+
+
 def test_unknown_key_is_named(data_dir: Path) -> None:
     (data_dir / "config.toml").write_text(
         """

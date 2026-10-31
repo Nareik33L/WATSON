@@ -202,8 +202,8 @@ class RetentionConfig(_StrictModel):
     spool_hard_limit_hours: int = Field(
         default=DEFAULT_SPOOL_HARD_LIMIT_HOURS,
         ge=1,
-        le=168,
-        description="Tier-0 hard limit: stale spool PNGs become deleted_unprocessed.",
+        le=24,
+        description="Tier-0 hard limit (plan §5: 24 h, no user extension).",
     )
     derived_days: int | None = Field(
         default=None,
