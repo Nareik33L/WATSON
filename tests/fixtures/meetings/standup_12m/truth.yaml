@@ -1,0 +1,48 @@
+name: standup_12m
+kind: dialogue
+title: Rivermark Labs — Keel weekly stand-up
+date: '2026-10-31'
+language: en
+participants: [Nora Voss, Samir Qureshi, Leah Okonkwo, Benji Calder]
+decisions:
+- text: Ship the Keel beta to the Harborline sandbox on Tuesday
+  evidence_contains: ship the Keel beta to the Harborline sandbox on Tuesday
+- text: Drop the unused billing toggle from the settings page
+  evidence_contains: drop the unused billing toggle
+- text: Empty receiving dock uses the quiet checklist
+  evidence_contains: Empty receiving dock uses the quiet checklist
+commitments:
+- text: Finish the export API including the checksum footer
+  owner: Samir Qureshi
+  deadline: Wednesday
+- text: Fix the date picker overflow
+  owner: Leah Okonkwo
+  deadline: Friday
+- text: Send the empty-state illustrations
+  owner: Benji Calder
+  deadline: Thursday
+- text: Write the customer note for Pebble and Pine
+  owner: Nora Voss
+  deadline: this afternoon
+project_updates:
+- text: Helen Cho left a note that the Harborline walkthrough should stay under twenty minutes
+- text: Harborline confirmed the Keel beta can go in their sandbox on Tuesday
+- text: JSON export path is merged and ran against Rivermark staging
+discussion_points:
+- text: Rewrite the cache layer before the sandbox walkthrough
+- text: Review the timezone conversion retry budget
+- text: Cedar Harbor Z bin sort treats mixed aisle tags as integers
+traps:
+- kind: suggestion-not-decision
+  text: We should probably rewrite the cache layer before the sandbox walkthrough
+  speaker: Leah Okonkwo
+- kind: retracted-deadline
+  text: Export by Monday, retracted to Wednesday because of the on-call swap
+  speaker: Samir Qureshi
+- kind: absent-person-mentioned
+  name: Helen Cho
+  text: Helen Cho is out this week and is not a participant
+duration_ms: 720000
+meta:
+  script: standup_12m.yaml
+  sample_rate: 16000

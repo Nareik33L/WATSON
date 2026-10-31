@@ -1,0 +1,453 @@
+{
+  "started_at": "20261031T184729Z",
+  "finished_at": "2026-10-31T18:51:51.866301+00:00",
+  "kind": "transcription",
+  "profile": "8gb",
+  "hardware": {
+    "chip": "Apple M1",
+    "ram_gb": 8.0,
+    "os_name": "macOS",
+    "os_version": "14.5",
+    "arch": "arm64",
+    "python_version": "3.12.16"
+  },
+  "engines": [
+    "pywhispercpp",
+    "mlx-whisper",
+    "faster-whisper"
+  ],
+  "sizes": [
+    "base",
+    "small"
+  ],
+  "fixtures_dir": "tests/fixtures/meetings",
+  "fixture_count": 7,
+  "results": [
+    {
+      "engine": "pywhispercpp",
+      "size": "base",
+      "skipped": false,
+      "skip_reason": null,
+      "error": null,
+      "load_time_s": 10.030151916027535,
+      "realtime_factor": 0.031626126347845875,
+      "wer": 0.0907051282051282,
+      "peak_rss_bytes": 547258368,
+      "audio_s": 754.4736875,
+      "wall_s": 23.861080167000182,
+      "n_fixtures": 7,
+      "hallucination": {
+        "silence_only": {
+          "hallucinated": true,
+          "n_nonempty_segments": 1,
+          "n_words": 1
+        },
+        "tone_only": {
+          "hallucinated": true,
+          "n_nonempty_segments": 1,
+          "n_words": 1
+        }
+      },
+      "fixtures": [
+        {
+          "name": "corrupt",
+          "kind": "corrupt",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        },
+        {
+          "name": "one_second",
+          "kind": "one_second",
+          "duration_s": 1.0,
+          "wall_s": 0.5122609999962151,
+          "realtime_factor": 0.5122609999962151,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "silence_only",
+          "kind": "silence",
+          "duration_s": 15.0,
+          "wall_s": 0.13246316695585847,
+          "realtime_factor": 0.008830877797057232,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "speech_short",
+          "kind": "dialogue",
+          "duration_s": 3.4740625,
+          "wall_s": 0.1632986250333488,
+          "realtime_factor": 0.047005091311209515,
+          "wer": 0.0,
+          "n_segments": 1,
+          "n_words": 8,
+          "synthetic": false
+        },
+        {
+          "name": "standup_12m",
+          "kind": "dialogue",
+          "duration_s": 719.999625,
+          "wall_s": 22.858128332998604,
+          "realtime_factor": 0.03174741699761108,
+          "wer": 0.1814102564102564,
+          "n_segments": 43,
+          "n_words": 1595,
+          "synthetic": false
+        },
+        {
+          "name": "tone_only",
+          "kind": "tone",
+          "duration_s": 15.0,
+          "wall_s": 0.19492904201615602,
+          "realtime_factor": 0.012995269467743735,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "unsupported",
+          "kind": "unsupported",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        }
+      ],
+      "worker_pid": 51205
+    },
+    {
+      "engine": "pywhispercpp",
+      "size": "small",
+      "skipped": false,
+      "skip_reason": null,
+      "error": null,
+      "load_time_s": 0.31274658400798216,
+      "realtime_factor": 0.058454401864083974,
+      "wer": 0.33974358974358976,
+      "peak_rss_bytes": 991182848,
+      "audio_s": 754.4736875,
+      "wall_s": 44.10230812500231,
+      "n_fixtures": 7,
+      "hallucination": {
+        "silence_only": {
+          "hallucinated": true,
+          "n_nonempty_segments": 1,
+          "n_words": 1
+        },
+        "tone_only": {
+          "hallucinated": true,
+          "n_nonempty_segments": 1,
+          "n_words": 1
+        }
+      },
+      "fixtures": [
+        {
+          "name": "corrupt",
+          "kind": "corrupt",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        },
+        {
+          "name": "one_second",
+          "kind": "one_second",
+          "duration_s": 1.0,
+          "wall_s": 0.6022099580150098,
+          "realtime_factor": 0.6022099580150098,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "silence_only",
+          "kind": "silence",
+          "duration_s": 15.0,
+          "wall_s": 0.383954958000686,
+          "realtime_factor": 0.025596997200045733,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "speech_short",
+          "kind": "dialogue",
+          "duration_s": 3.4740625,
+          "wall_s": 0.43658024998148903,
+          "realtime_factor": 0.12566850768559548,
+          "wer": 0.0,
+          "n_segments": 1,
+          "n_words": 8,
+          "synthetic": false
+        },
+        {
+          "name": "standup_12m",
+          "kind": "dialogue",
+          "duration_s": 719.999625,
+          "wall_s": 42.17534512496786,
+          "realtime_factor": 0.058576898737923454,
+          "wer": 0.6794871794871795,
+          "n_segments": 179,
+          "n_words": 2237,
+          "synthetic": false
+        },
+        {
+          "name": "tone_only",
+          "kind": "tone",
+          "duration_s": 15.0,
+          "wall_s": 0.504217834037263,
+          "realtime_factor": 0.03361452226915086,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "unsupported",
+          "kind": "unsupported",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        }
+      ],
+      "worker_pid": 51227
+    },
+    {
+      "engine": "mlx-whisper",
+      "size": "base",
+      "skipped": false,
+      "skip_reason": null,
+      "error": "'function' object has no attribute 'ModelHolder'",
+      "load_time_s": null,
+      "realtime_factor": null,
+      "wer": null,
+      "peak_rss_bytes": null,
+      "audio_s": null,
+      "wall_s": null,
+      "n_fixtures": 0,
+      "hallucination": {},
+      "fixtures": [],
+      "worker_pid": 51255
+    },
+    {
+      "engine": "mlx-whisper",
+      "size": "small",
+      "skipped": false,
+      "skip_reason": null,
+      "error": "'function' object has no attribute 'ModelHolder'",
+      "load_time_s": null,
+      "realtime_factor": null,
+      "wer": null,
+      "peak_rss_bytes": null,
+      "audio_s": null,
+      "wall_s": null,
+      "n_fixtures": 0,
+      "hallucination": {},
+      "fixtures": [],
+      "worker_pid": 51267
+    },
+    {
+      "engine": "faster-whisper",
+      "size": "base",
+      "skipped": false,
+      "skip_reason": null,
+      "error": null,
+      "load_time_s": 0.17933750001247972,
+      "realtime_factor": 0.06355679247340562,
+      "wer": 0.1076923076923077,
+      "peak_rss_bytes": 1387085824,
+      "audio_s": 754.4736875,
+      "wall_s": 47.95192758308258,
+      "n_fixtures": 7,
+      "hallucination": {
+        "silence_only": {
+          "hallucinated": true,
+          "n_nonempty_segments": 1,
+          "n_words": 1
+        },
+        "tone_only": {
+          "hallucinated": false,
+          "n_nonempty_segments": 0,
+          "n_words": 0
+        }
+      },
+      "fixtures": [
+        {
+          "name": "corrupt",
+          "kind": "corrupt",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        },
+        {
+          "name": "one_second",
+          "kind": "one_second",
+          "duration_s": 1.0,
+          "wall_s": 0.3705054169986397,
+          "realtime_factor": 0.3705054169986397,
+          "wer": null,
+          "n_segments": 0,
+          "n_words": 0,
+          "synthetic": false
+        },
+        {
+          "name": "silence_only",
+          "kind": "silence",
+          "duration_s": 15.0,
+          "wall_s": 0.3594428750220686,
+          "realtime_factor": 0.023962858334804573,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "speech_short",
+          "kind": "dialogue",
+          "duration_s": 3.4740625,
+          "wall_s": 0.3940246670390479,
+          "realtime_factor": 0.11341899204146383,
+          "wer": 0.125,
+          "n_segments": 1,
+          "n_words": 8,
+          "synthetic": false
+        },
+        {
+          "name": "standup_12m",
+          "kind": "dialogue",
+          "duration_s": 719.999625,
+          "wall_s": 46.451605916023254,
+          "realtime_factor": 0.06451615292997305,
+          "wer": 0.09038461538461538,
+          "n_segments": 40,
+          "n_words": 1550,
+          "synthetic": false
+        },
+        {
+          "name": "tone_only",
+          "kind": "tone",
+          "duration_s": 15.0,
+          "wall_s": 0.37634870799956843,
+          "realtime_factor": 0.025089913866637895,
+          "wer": null,
+          "n_segments": 0,
+          "n_words": 0,
+          "synthetic": false
+        },
+        {
+          "name": "unsupported",
+          "kind": "unsupported",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        }
+      ],
+      "worker_pid": 51268
+    },
+    {
+      "engine": "faster-whisper",
+      "size": "small",
+      "skipped": false,
+      "skip_reason": null,
+      "error": null,
+      "load_time_s": 0.4468717919662595,
+      "realtime_factor": 0.15040866932151534,
+      "wer": 0.02532051282051282,
+      "peak_rss_bytes": 1811742720,
+      "audio_s": 754.4736875,
+      "wall_s": 113.4793833749718,
+      "n_fixtures": 7,
+      "hallucination": {
+        "silence_only": {
+          "hallucinated": true,
+          "n_nonempty_segments": 1,
+          "n_words": 1
+        },
+        "tone_only": {
+          "hallucinated": false,
+          "n_nonempty_segments": 0,
+          "n_words": 0
+        }
+      },
+      "fixtures": [
+        {
+          "name": "corrupt",
+          "kind": "corrupt",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        },
+        {
+          "name": "one_second",
+          "kind": "one_second",
+          "duration_s": 1.0,
+          "wall_s": 0.9216955419979058,
+          "realtime_factor": 0.9216955419979058,
+          "wer": null,
+          "n_segments": 0,
+          "n_words": 0,
+          "synthetic": false
+        },
+        {
+          "name": "silence_only",
+          "kind": "silence",
+          "duration_s": 15.0,
+          "wall_s": 1.107949750032276,
+          "realtime_factor": 0.07386331666881839,
+          "wer": null,
+          "n_segments": 1,
+          "n_words": 1,
+          "synthetic": false
+        },
+        {
+          "name": "speech_short",
+          "kind": "dialogue",
+          "duration_s": 3.4740625,
+          "wall_s": 1.0890709160012193,
+          "realtime_factor": 0.31348627608202767,
+          "wer": 0.0,
+          "n_segments": 2,
+          "n_words": 8,
+          "synthetic": false
+        },
+        {
+          "name": "standup_12m",
+          "kind": "dialogue",
+          "duration_s": 719.999625,
+          "wall_s": 109.20833924994804,
+          "realtime_factor": 0.1516783279573903,
+          "wer": 0.05064102564102564,
+          "n_segments": 161,
+          "n_words": 1569,
+          "synthetic": false
+        },
+        {
+          "name": "tone_only",
+          "kind": "tone",
+          "duration_s": 15.0,
+          "wall_s": 1.1523279169923626,
+          "realtime_factor": 0.07682186113282417,
+          "wer": null,
+          "n_segments": 0,
+          "n_words": 0,
+          "synthetic": false
+        },
+        {
+          "name": "unsupported",
+          "kind": "unsupported",
+          "duration_s": 0.0,
+          "skipped": true,
+          "skip_reason": "decode/unsupported probe is not transcribed in A0"
+        }
+      ],
+      "worker_pid": 51297
+    }
+  ]
+}
