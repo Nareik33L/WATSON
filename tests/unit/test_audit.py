@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
 
-from tests.replay_support import open_test_db
+from tests.replay_support import open_test_db, write_mini_fixture
+from watson.capture.spool import copy_pairs_to_spool, iter_pairs
+from watson.pipeline.frames import ensure_working_day, ingest_pair
+from watson.pipeline.replay import load_and_validate_manifest
 from watson.privacy.audit import (
     ERROR_PERMISSION,
     ERROR_STILL_PRESENT,
@@ -334,3 +338,151 @@ def test_audit_error_class_walks_cause_for_permission() -> None:
     wrapped = RuntimeError("excluded spool delete failed")
     wrapped.__cause__ = PermissionError("denied")
     assert audit_error_class(wrapped) == ERROR_PERMISSION
+
+
+@pytest.mark.parametrize(
+    "value",
+    [True, False, 1.0, "1", -1, math.nan, math.inf, -math.inf],
+    ids=["bool_true", "bool_false", "float", "str", "negative", "nan", "inf", "neg_inf"],
+)
+def test_count_keys_reject_non_natural_ints(
+    data_dir: Path, key_provider: object, value: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="non-negative int"):
+            record_audit(
+                conn,
+                kind=KIND_REPLAY,
+                detail={
+                    "fixture": "day_mini",
+                    "frame_count": value,
+                    "ingested": 0,
+                    "extracted": 0,
+                    "deleted": 0,
+                    "deletion_verified": 0,
+                    "skipped_excluded": 0,
+                },
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["png", "sidecar"],
+    ids=["png", "sidecar"],
+)
+def test_deleted_count_keys_reject_bool(data_dir: Path, key_provider: object, key: str) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="non-negative int"):
+            record_audit(
+                conn,
+                kind=KIND_DELETED,
+                detail={"frame_id": SAMPLE_FRAME_ID, "png": 1, "sidecar": 1, key: True},
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Day_Mini",
+        "day mini",
+        "../secret",
+        "a" * 65,
+        "",
+        "1day",
+        "/tmp/day_mini",
+    ],
+    ids=["case", "space", "path", "too_long", "empty", "leading_digit", "abs_path"],
+)
+def test_invalid_fixture_raises_audit_error(
+    data_dir: Path, key_provider: object, value: str
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="invalid audit fixture"):
+            record_audit(
+                conn,
+                kind=KIND_REPLAY,
+                detail={
+                    "fixture": value,
+                    "frame_count": 1,
+                    "ingested": 1,
+                    "extracted": 1,
+                    "deleted": 1,
+                    "deletion_verified": 1,
+                    "skipped_excluded": 0,
+                },
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+class _ExactStr(str):
+    """str subclass whose content is already a valid id/digest.
+
+    ``isinstance(v, str)`` is true and format checks pass; only ``type(v) is str``
+    rejects it. Loosening either check back to ``isinstance`` must fail these tests.
+    """
+
+
+def test_str_subclass_frame_id_is_rejected(data_dir: Path, key_provider: object) -> None:
+    leaked = _ExactStr(SAMPLE_FRAME_ID)
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="must be a UUID"):
+            record_audit(conn, kind=KIND_VERIFIED, detail={"frame_id": leaked})
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_str_subclass_png_sha256_is_rejected(data_dir: Path, key_provider: object) -> None:
+    leaked = _ExactStr(SAMPLE_PNG_SHA256)
+    conn = open_test_db(data_dir)
+    try:
+        with pytest.raises(AuditError, match="64-char hex"):
+            record_audit(
+                conn,
+                kind=KIND_INGESTED,
+                detail={"frame_id": SAMPLE_FRAME_ID, "png_sha256": leaked},
+            )
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_ingest_rolls_back_frame_when_audit_fails(
+    data_dir: Path, key_provider: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = write_mini_fixture(tmp_path, frames=1)
+    spool = tmp_path / "spool"
+    conn = open_test_db(data_dir)
+    try:
+        manifest = load_and_validate_manifest(fixture)
+        frames_map = manifest["frames"]
+        assert isinstance(frames_map, dict)
+        copy_pairs_to_spool(fixture, frames_map.items(), spool)
+        pair = iter_pairs(spool)[0]
+        day_id = ensure_working_day(conn, str(manifest["date"]))
+
+        monkeypatch.setattr(
+            "watson.pipeline.frames.sha256_file",
+            lambda path: "not-a-digest",
+        )
+        with pytest.raises(AuditError):
+            ingest_pair(conn, pair, working_day_id=day_id)
+        assert conn.execute("SELECT COUNT(*) FROM frames").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM frames").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        conn.close()

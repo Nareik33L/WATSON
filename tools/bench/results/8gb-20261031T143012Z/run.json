@@ -10,10 +10,10 @@
     "arch": "arm64",
     "python_version": "3.12.16"
   },
-  "frames_dir": "/Users/eversign/WATSON/tools/bench/samples/frames",
+  "frames_dir": "~/WATSON/tools/bench/samples/frames",
   "frame_count": 5,
   "score_sample": 5,
-  "scoring_csv": "/Users/eversign/WATSON/tools/bench/results/8gb-20261031T143012Z/scoring.csv",
+  "scoring_csv": "~/WATSON/tools/bench/results/8gb-20261031T143012Z/scoring.csv",
   "results": [
     {
       "candidate": {
