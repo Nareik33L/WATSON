@@ -43,15 +43,69 @@ _NATIONAL_ID_COMPACT = re.compile(r"\b\d{6}[- ]?\d{4,6}\b")
 _NINO = re.compile(
     r"\b([A-Za-z]{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*\d{2}[ \t-]*[A-Da-d])\b"
 )
-# 4–8 digit OTP, optional Google-style letter prefix (G-482913).
-_OTP_TOKEN = re.compile(r"(?i)(?<![A-Za-z0-9])(?:[A-Z]-)?(\d{4,8})(?![0-9])")
-_OTP_HINT = re.compile(
-    r"(?i)\b(?:verification|security|login|auth(?:entication)?|"
-    r"one[-\s]?time(?:\s+pass(?:word|code))?|otp|2fa|passcodes?|pins?|codes?)\b"
+# Compact 4–8 digits, or common splits (3+3, 4+4, 2+2+2). Optional G- prefix.
+# Compact must not eat the first clump of a hyphenated date (2026-11-03).
+_OTP_TOKEN = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:[A-Z]-)?(?:"
+    r"\d{2}[ \t-]\d{2}[ \t-]\d{2}(?![0-9])"
+    r"|\d{3}[ \t-]\d{3}(?![0-9])"
+    r"|\d{4}[ \t-]\d{4}(?![0-9])"
+    r"|\d{4,8}(?![0-9-])"
+    r")"
 )
-_OTP_FALSE = re.compile(
-    r"(?i)\b(?:zip|postal|area|country|error|status|exit|http|source|"
-    r"qr|promo|coupon|discount|dial(?:ling|ing)?)\s+codes?\b"
+_OTP_LABEL_ONLY = re.compile(
+    r"(?i)^\s*(?:your\s+)?(?:whatsapp\s+|google\s+)?"
+    r"(?:verification\s+|security\s+|login\s+|auth(?:entication)?\s+)?"
+    r"(?:one[-\s]?time\s+)?(?:passcodes?|pins?|codes?|otp|2fa)\s*:?\s*$"
+)
+_OTP_HINT_WORDS = frozenset(
+    {
+        "code",
+        "codes",
+        "pin",
+        "pins",
+        "passcode",
+        "passcodes",
+        "otp",
+        "2fa",
+        "verification",
+    }
+)
+_OTP_WEAK_CONNECTORS = frozenset({"is", ":", "="})
+_OTP_FALSE_PREFIX = frozenset(
+    {
+        "zip",
+        "postal",
+        "area",
+        "country",
+        "error",
+        "status",
+        "exit",
+        "http",
+        "source",
+        "qr",
+        "promo",
+        "coupon",
+        "discount",
+        "dial",
+        "dialling",
+        "dialing",
+    }
+)
+_OTP_FALSE_SUFFIX = frozenset(
+    {
+        "review",
+        "freeze",
+        "changes",
+        "change",
+        "base",
+        "bases",
+        "path",
+        "owners",
+        "owner",
+        "name",
+        "names",
+    }
 )
 _PASSWORD_SAME_LINE = re.compile(
     r"(?i)\b(pass(?:word|phrase|wd)|pwd)\b([ \t]*[:=][ \t]*|[ \t]+)(\S+)"
@@ -151,11 +205,16 @@ def iban_compact(raw: str) -> str:
     return re.sub(r"[\s\t]", "", raw).upper()
 
 
+def iban_shape_ok(compact: str) -> bool:
+    """Country code + check digits + 11–30 alphanumerics, length 15–34."""
+    return bool(re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", compact)) and (
+        15 <= len(compact) <= 34
+    )
+
+
 def iban_checksum_ok(compact: str) -> bool:
     """ISO 13616: rearrange, A=10…Z=35, value mod 97 == 1."""
-    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", compact):
-        return False
-    if not (15 <= len(compact) <= 34):
+    if not iban_shape_ok(compact):
         return False
     rearranged = compact[4:] + compact[:4]
     numeric = "".join(
@@ -165,14 +224,18 @@ def iban_checksum_ok(compact: str) -> bool:
 
 
 def _replace_iban(match: re.Match[str]) -> str:
+    # Checksum is a confidence signal, not a gate: an OCR slip must not keep
+    # a shape-valid account number. Valid checksum → [IBAN]; else [SECRET].
     compact = iban_compact(match.group(1))
-    if not iban_checksum_ok(compact):
+    if not iban_shape_ok(compact):
         return match.group(0)
-    return PLACEHOLDER_IBAN
+    if iban_checksum_ok(compact):
+        return PLACEHOLDER_IBAN
+    return PLACEHOLDER_SECRET
 
 
 def _redact_otps(text: str) -> str:
-    """Replace 4–8 digit codes that sit near code/PIN/passcode/OTP wording."""
+    """Replace 4–8 digit codes that sit next to code/PIN/passcode/OTP wording."""
     pieces: list[str] = []
     last = 0
     for match in _OTP_TOKEN.finditer(text):
@@ -186,14 +249,88 @@ def _redact_otps(text: str) -> str:
 
 
 def _otp_related(text: str, start: int, end: int) -> bool:
-    before = text[max(0, start - 48) : start]
-    after = text[end : min(len(text), end + 48)]
-    before_clause = re.split(r"[.!?]", before)[-1]
-    after_clause = re.split(r"[.!?]", after)[0]
-    clause = f"{before_clause}{text[start:end]}{after_clause}"
-    if _OTP_FALSE.search(clause):
+    """True when an OTP hint is on this line and adjacent, or on the line above."""
+    line_start = text.rfind("\n", 0, start) + 1
+    newline_at = text.find("\n", end)
+    line_end = len(text) if newline_at < 0 else newline_at
+    line = text[line_start:line_end]
+    if _adjacent_otp_hint(line, start - line_start, end - line_start):
+        return True
+    if line_start > 0:
+        prev_end = line_start - 1
+        prev_start = text.rfind("\n", 0, prev_end) + 1
+        prev = text[prev_start:prev_end]
+        if _OTP_LABEL_ONLY.match(prev) and _OTP_TOKEN.fullmatch(line.strip()):
+            return True
+    return False
+
+
+def _adjacent_otp_hint(line: str, start: int, end: int) -> bool:
+    before = re.findall(r"[A-Za-z0-9]+|[:=]", line[:start])
+    after = re.findall(r"[A-Za-z0-9]+|[:=]", line[end:])
+    return _hint_before_number(before) or _hint_after_number(after)
+
+
+def _norm_words(tokens: list[str]) -> list[str]:
+    return [token.lower() for token in tokens]
+
+
+def _is_one_time_phrase(words: list[str]) -> bool:
+    if not words:
         return False
-    return _OTP_HINT.search(clause) is not None
+    last = words[-1]
+    if last in {"password", "passcode", "passcodes", "code", "codes"}:
+        if len(words) >= 2 and words[-2] in {"time", "one-time", "onetime"}:
+            return True
+        if len(words) >= 3 and words[-3] == "one" and words[-2] == "time":
+            return True
+    return last in {"one-time", "onetime"} or (
+        len(words) >= 2 and words[-2] == "one" and last == "time"
+    )
+
+
+def _hint_before_number(tokens: list[str]) -> bool:
+    words = _norm_words(tokens)
+    if words and words[-1] in _OTP_WEAK_CONNECTORS:
+        words = words[:-1]
+    if not words:
+        return False
+    if _is_one_time_phrase(words):
+        return True
+    last = words[-1]
+    if last not in _OTP_HINT_WORDS:
+        return False
+    if len(words) >= 2 and words[-2] in _OTP_FALSE_PREFIX:
+        return False
+    return True
+
+
+def _hint_after_number(tokens: list[str]) -> bool:
+    words = _norm_words(tokens)
+    if not words or words[0] != "is":
+        return False
+    words = words[1:]
+    if words and words[0] in {"your", "the", "a"}:
+        words = words[1:]
+    while words and words[0] in {
+        "verification",
+        "security",
+        "google",
+        "whatsapp",
+        "login",
+        "auth",
+        "authentication",
+        "one-time",
+        "onetime",
+        "one",
+        "time",
+    }:
+        words = words[1:]
+    if not words or words[0] not in _OTP_HINT_WORDS:
+        return False
+    if len(words) > 1 and words[1] in _OTP_FALSE_SUFFIX:
+        return False
+    return True
 
 
 def _replace_national_id(match: re.Match[str]) -> str:

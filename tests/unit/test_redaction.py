@@ -75,11 +75,22 @@ def test_luhn_card_is_replaced_non_luhn_is_kept() -> None:
         ("4829 is your PIN", "4829"),
         ("security PIN 7391", "7391"),
         ("auth code: 482913", "482913"),
+        ("Your WhatsApp code: 482-913", "482-913"),
+        ("Your code is 482 913", "482 913"),
+        ("Passcode: 7391-0428", "7391-0428"),
+        ("OTP 48 29 13", "48 29 13"),
+        ("PIN 48-29-13", "48-29-13"),
+        ("one-time code 4829 1374", "4829 1374"),
+        ("G-482-913 is your Google verification code", "482-913"),
+        ("Code\n482 913", "482 913"),
     ],
 )
 def test_otp_phrasings_before_and_after_the_number(text: str, secret: str) -> None:
     redacted = redact_ocr_text(text)
     assert secret not in redacted
+    assert secret.replace(" ", "").replace("-", "") not in redacted.replace(" ", "").replace(
+        "-", ""
+    )
     assert PLACEHOLDER_OTP in redacted
 
 
@@ -103,6 +114,13 @@ def test_otp_phrasings_before_and_after_the_number(text: str, secret: str) -> No
         "room 1200 at 14:00",
         "The verification is done. Call 482913.",
         "Dial 482913 for the front desk",
+        "PR 1234 code review",
+        "code freeze on 2026-11-03",
+        "£1200 after code changes",
+        "Login page loads in 1200 ms",
+        "Pin the 1234 roadmap",
+        "Open PR 482913 for the code review",
+        "code freeze on 14 Nov after 1200",
     ],
 )
 def test_ordinary_numbers_are_not_treated_as_otps(text: str) -> None:
@@ -140,10 +158,26 @@ def test_uk_nino_with_and_without_spaces(nino: str) -> None:
     assert PLACEHOLDER_SECRET in redacted
 
 
-def test_iban_shaped_without_checksum_and_partial_nino_are_kept() -> None:
-    fake_iban = "GB00 WEST 1234 5698 7654 32"
+@pytest.mark.parametrize(
+    "iban",
+    [
+        "GB83 WEST 1234 5698 7654 32",
+        "GB00 WEST 1234 5698 7654 32",
+        "GB83WEST12345698765432",
+        "gb83 west 1234 5698 7654 32",
+    ],
+)
+def test_shape_valid_iban_with_failed_checksum_is_still_redacted(iban: str) -> None:
+    redacted = redact_ocr_text(f"Pay to {iban} today")
+    assert iban not in redacted
+    assert iban.replace(" ", "") not in redacted.replace(" ", "")
+    assert PLACEHOLDER_SECRET in redacted
+    assert PLACEHOLDER_IBAN not in redacted
+    assert "Pay to" in redacted
+
+
+def test_partial_nino_is_kept() -> None:
     fragment = "Ref QQ 12 34 on the cover"
-    assert redact_ocr_text(f"Pay to {fake_iban} today") == f"Pay to {fake_iban} today"
     assert redact_ocr_text(fragment) == fragment
 
 

@@ -138,6 +138,57 @@ def test_planted_spaced_iban_never_reaches_frame_text(
     assert PLACEHOLDER_IBAN in text
 
 
+def test_planted_split_otp_never_reaches_frame_text(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    secrets = ("482-913", "482 913", "7391-0428", "48 29 13", "4829 1374")
+    planted = (
+        "Your WhatsApp code: 482-913. Your code is 482 913. "
+        "Passcode: 7391-0428 OTP 48 29 13 one-time code 4829 1374"
+    )
+    text, jobs, audit, tables = _replay_planted(data_dir, tmp_path, planted)
+    for secret in secrets:
+        assert secret not in text
+        assert secret.replace(" ", "").replace("-", "") not in text.replace(" ", "").replace(
+            "-", ""
+        )
+        assert secret not in jobs
+        assert secret not in audit
+        assert secret not in tables
+    assert PLACEHOLDER_OTP in text
+
+
+def test_planted_failed_checksum_iban_never_reaches_frame_text(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    ibans = ("GB83 WEST 1234 5698 7654 32", "GB83WEST12345698765432")
+    planted = "Pay " + " and ".join(ibans)
+    text, jobs, audit, tables = _replay_planted(data_dir, tmp_path, planted)
+    for iban in ibans:
+        assert iban not in text
+        assert iban.replace(" ", "") not in text.replace(" ", "")
+        assert iban not in jobs
+        assert iban not in audit
+        assert iban not in tables
+    assert PLACEHOLDER_SECRET in text
+    assert PLACEHOLDER_IBAN not in text
+
+
+def test_planted_code_phrases_are_not_over_redacted(
+    data_dir: Path, key_provider: object, tmp_path: Path
+) -> None:
+    planted = (
+        "PR 1234 code review. code freeze on 2026-11-03. "
+        "Login page loads in 1200 ms. Pin the 2025 roadmap."
+    )
+    text, _, _, _ = _replay_planted(data_dir, tmp_path, planted)
+    assert "1234" in text
+    assert "2026-11-03" in text
+    assert "1200" in text
+    assert "2025" in text
+    assert PLACEHOLDER_OTP not in text
+
+
 def test_planted_uk_nino_never_reaches_frame_text(
     data_dir: Path, key_provider: object, tmp_path: Path
 ) -> None:
