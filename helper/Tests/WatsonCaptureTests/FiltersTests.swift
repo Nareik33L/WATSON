@@ -59,6 +59,18 @@ final class FiltersTests: XCTestCase {
             FilterEngine.evaluatePreCapture(FilterSnapshot(bundleID: "com.apple.Safari", windowTitle: "Sign in to GitHub")),
             .skip(.excludedTitle)
         )
+        XCTAssertEqual(
+            FilterEngine.evaluatePreCapture(FilterSnapshot(bundleID: "com.apple.Safari", windowTitle: "Change your password")),
+            .skip(.excludedTitle)
+        )
+    }
+
+    func testImmediateSkipsBeforeWindowLookup() {
+        XCTAssertEqual(FilterEngine.evaluateImmediate(FilterSnapshot(isPaused: true)), .skip(.paused))
+        XCTAssertEqual(FilterEngine.evaluateImmediate(FilterSnapshot(isLocked: true)), .skip(.locked))
+        XCTAssertEqual(FilterEngine.evaluateImmediate(FilterSnapshot(isDisplayAsleep: true)), .skip(.displayAsleep))
+        XCTAssertEqual(FilterEngine.evaluateImmediate(FilterSnapshot(idleSeconds: 181)), .skip(.idle))
+        XCTAssertEqual(FilterEngine.evaluateImmediate(FilterSnapshot(bundleID: "")), .capture)
     }
 
     func testSharingNoneAndMissingWindow() {
@@ -83,6 +95,7 @@ final class FiltersTests: XCTestCase {
         ] {
             XCTAssertTrue(DefaultExclusions.bundleIDs.contains(bundle), bundle)
         }
+        XCTAssertTrue(DefaultExclusions.titlePatterns.contains { $0.lowercased() == "password" })
     }
 
     func testPhashDuplicateThresholdIsFour() {

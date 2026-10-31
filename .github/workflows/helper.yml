@@ -60,3 +60,15 @@ jobs:
       - name: --selftest (no ScreenCaptureKit)
         working-directory: helper
         run: .build/debug/watson-capture --selftest
+
+      - name: cleanup-spool.sh verifies removal
+        run: |
+          d="$(mktemp -d /tmp/watson-cleanup-test-XXXX)"
+          mkdir -p "$d/2026-10-31"
+          printf 'x' > "$d/2026-10-31/f.png"
+          printf '{}' > "$d/2026-10-31/f.json"
+          helper/scripts/cleanup-spool.sh "$d"
+          if [ -e "$d" ]; then
+            echo "expected $d to be gone" >&2
+            exit 1
+          fi

@@ -15,8 +15,8 @@ helper/
 ├── entitlements.plist            empty (TCC is not an entitlement)
 ├── Sources/watson-capture/       Capture.swift, OCR.swift, Filters.swift, Protocol.swift
 ├── Sources/watson-capture-cli/   main.swift
-├── Tests/WatsonCaptureTests/     protocol, sidecar, filters, --selftest (no SCK)
-└── scripts/                      build.sh, sign.sh, check-tcc.sh
+├── Tests/WatsonCaptureTests/     protocol, sidecar, filters, selftest, permissions
+└── scripts/                      build.sh, sign.sh, check-tcc.sh, cleanup-spool.sh
 ```
 
 CI (`swift build` + unit tests + `--selftest`) runs only when this directory changes. Live ScreenCaptureKit and the TCC grant are **Mac-only**; this runbook is what the person at the Mac executes.
@@ -95,8 +95,9 @@ One JSON object per line. Extra keys on commands are ignored (`duration_minutes`
 | `status` | `paused`, `screen_recording`, `locked`, `display_asleep`, `idle_s`, counters |
 | `skipped` | `reason`: `paused`, `locked`, `display_asleep`, `idle`, `excluded_app`, `excluded_title`, `sharing_none`, `duplicate`, `no_window`, `screen_recording_denied` |
 | `captured` | A PNG + sidecar was written (`frame_id`, paths) |
-| `self_report` | CPU / RSS (see below) |
-| `selftest_result` | `--selftest` verdict (`ok`, `captured_while_paused`, …) |
+| `self_report` | CPU / peak RSS (see below) |
+| `selftest_result` | `--selftest` verdict (`ok`, `captured_while_paused`, `dropped_in_flight`, …) |
+| `stdin_closed` | stdin EOF — helper quits (supervisor gone) |
 | `preflight` | `--preflight` (`granted`, `identifier`) |
 | `error` | Parse or runtime failure; the process keeps running except on fatal startup errors |
 | `stopped` | Clean quit |
@@ -108,11 +109,11 @@ Human diagnostics go to **stderr**. Do not log window titles or OCR text there.
 1. Paused / screen locked (`CGSSessionScreenIsLocked`) / display asleep (`NSWorkspace` + `CGDisplayIsAsleep`). Work hours are **not** in the helper — the supervisor pauses it.
 2. User idle > 3 min (`CGEventSourceSecondsSinceLastEventType`; override with `--idle-seconds`).
 3. Frontmost bundle ID in the exclusion list (password managers, Messages, FaceTime, Photos, Health, Keychain Access).
-4. Window title matches `Private Browsing`, `Incognito`, `InPrivate`, `1Password`, `Sign in`, `Verification code`.
+4. Window title matches `Private Browsing`, `Incognito`, `InPrivate`, `1Password`, `Sign in`, `Verification code`, `password`.
 5. `kCGWindowSharingState == none`.
 6. Perceptual hash Hamming distance ≤ 4 vs. the previous frame from the same `window_id`.
 
-`--selftest` drives pause/resume through the same filter + write path with an 8×8 synthetic PNG. It never calls ScreenCaptureKit or Vision.
+`--selftest` uses the **same** `CaptureEngine` + `handleStdinLine` path as live mode, with a fake 8×8 source (no ScreenCaptureKit / Vision). Pause is sent as `{"cmd":"pause"}`. One tick holds `screenshot` until pause is acknowledged, then the in-memory frame is dropped (`skipped` + `after_capture: true`). Without `--out`, the temp spool is deleted before exit.
 
 ---
 
@@ -133,7 +134,7 @@ watson-capture --preflight
 
 - `cpu_percent_avg` — `(user+system CPU seconds) / wall seconds * 100` since start. **This is the number to read.**
 - `cpu_percent_last_interval` — same, over the last `--self-report-interval`
-- `cpu_seconds`, `uptime_s`, `rss_bytes`, `frames_written`, `frames_skipped`
+- `cpu_seconds`, `uptime_s`, `rss_peak_bytes` (macOS `ru_maxrss`; also duplicated as `rss_bytes`), `frames_written`, `frames_skipped`
 
 ---
 
@@ -224,15 +225,15 @@ helper/.build/release/watson-capture --preflight
 # stdout includes: {"event":"preflight",...,"granted":false,"identifier":"com.watson.capture"}
 ```
 
-If `granted` is false, start a short live run so macOS can prompt:
+If `granted` is false, start a short live run so macOS can prompt. This writes **real** PNG + OCR (Tier 0). Delete them immediately after:
 
 ```bash
-mkdir -p /tmp/watson-m0b-grant
 helper/.build/release/watson-capture --interval 15 --out /tmp/watson-m0b-grant
 # Allow Screen Recording when prompted.
 # If no prompt: System Settings → Privacy & Security → Screen Recording
 #   → enable watson-capture (or com.watson.capture)
 # Ctrl-C after you allow it.
+helper/scripts/cleanup-spool.sh /tmp/watson-m0b-grant
 ```
 
 Then:
@@ -247,9 +248,10 @@ helper/.build/release/watson-capture --preflight
 ```bash
 helper/.build/release/watson-capture --selftest --out /tmp/watson-selftest
 echo "exit=$?"
+helper/scripts/cleanup-spool.sh /tmp/watson-selftest
 ```
 
-Expect `selftest_result` with `"ok":true`, `"captured_while_paused":0`, `"captured_while_running":5`, `"skipped_while_paused":5`, and exit 0. This is the §11.3 pause proof and can be run off-device (CI already does).
+Expect `selftest_result` with `"ok":true`, `"captured_while_paused":0`, `"captured_while_running":5`, `"skipped_while_paused":6`, `"dropped_in_flight":1`, and exit 0. This is the §11.3 pause proof (including an in-flight drop) and is what CI runs (`--selftest` with no `--out` also deletes its temp spool).
 
 ### 5. One-hour CPU run (the M0-B acceptance number)
 
@@ -264,7 +266,13 @@ helper/.build/release/watson-capture \
   | tee "$HOME/watson-m0b/1h.jsonl"
 ```
 
-Leave it for **one hour**. Ctrl-C. Pause / resume during the hour if you want:
+Leave it for **one hour**. Ctrl-C. Then **delete the spool before anything leaves the Mac** (D4 / Tier 0 — raw frames must not linger):
+
+```bash
+helper/scripts/cleanup-spool.sh "$HOME/Library/Application Support/WATSON/spool"
+```
+
+Pause / resume during the hour if you want:
 
 ```bash
 # from another terminal, if you attached stdin to a pipe; or type into the helper:
@@ -279,7 +287,30 @@ Read the last `self_report` (also emitted on quit):
 grep '"event":"self_report"' "$HOME/watson-m0b/1h.jsonl" | tail -n 1
 ```
 
-Acceptance: `cpu_percent_avg` **< 2**, `uptime_s` ≈ 3600, and sidecars under the spool path look like the schema above. Copy **one** sidecar back; redact `window_title` if it is personal.
+Acceptance: `cpu_percent_avg` **< 2**, `uptime_s` ≈ 3600. Do **not** keep or send PNG / OCR text. If you still have one sidecar on disk *before* cleanup, print metadata only:
+
+```bash
+python3 - <<'PY'
+import json, glob, os
+files = glob.glob(os.path.expanduser(
+    "~/Library/Application Support/WATSON/spool/*/*.json"))
+if not files:
+    raise SystemExit("no sidecar; skip this snippet")
+d = json.loads(open(files[0], encoding="utf-8").read())
+print(json.dumps({
+    "frame_id": d["frame_id"],
+    "captured_at": d["captured_at"],
+    "bundle_id": d["bundle_id"],
+    "width": d["width"],
+    "height": d["height"],
+    "capture_mode": d["capture_mode"],
+    "ocr_line_count": len(d.get("ocr", {}).get("lines", [])),
+    "phash_present": bool(d.get("phash")),
+    "window_title_len": len(d.get("window_title") or ""),
+}, indent=2))
+PY
+helper/scripts/cleanup-spool.sh "$HOME/Library/Application Support/WATSON/spool"
+```
 
 ### 6. Two-rebuild TCC persistence check
 
@@ -300,20 +331,23 @@ If build 2 flips to `granted=false`, that is the §13 TCC risk materialising —
 
 ### 7. What to send back
 
+**Metadata and toolchain only. Never send PNG, OCR line text, window titles, or URLs.**
+
 1. `sw_vers` and `swift --version`
 2. `xcode-select -p` (CLT vs Xcode.app)
-3. `security find-identity -v -p codesigning` (you can redact unrelated certs; keep the `WATSON Dev` line)
-4. `codesign -dv --verbose=4 helper/.build/release/watson-capture`
-5. `--selftest` stdout (the `selftest_result` line is enough)
+3. `security find-identity -v -p codesigning` (redact unrelated certs; keep the `WATSON Dev` line)
+4. `codesign -dv --verbose=4 helper/.build/release/watson-capture` and `codesign -d -r- …`
+5. `--selftest` stdout (`selftest_result` is enough; synthetic, no real screen)
 6. `--preflight` after the first grant
-7. Last `self_report` from the 1-hour run (`cpu_percent_avg`, `rss_bytes`, `uptime_s`, frame counts)
-8. `helper/scripts/check-tcc.sh` output (PASS/FAIL + both identifiers)
-9. One redacted sidecar JSON
-10. Decision notes:
-    - **Decision 3** (Swift helper vs PyObjC): did `swift build` under CLT work? Did SCK + Vision produce a correct sidecar?
+7. Last `self_report` from the 1-hour run (`cpu_percent_avg`, `rss_peak_bytes`, `uptime_s`, frame counts)
+8. `helper/scripts/check-tcc.sh` output (PASS/FAIL + identifiers + designated requirements)
+9. One **metadata-only** sidecar summary from the snippet in §5 (ids, sizes, `ocr_line_count` — not `ocr.lines` or `window_title`)
+10. Confirmation that `cleanup-spool.sh` printed `PASS` for the grant spool, the 1-hour spool, and `/tmp/watson-selftest`
+11. Decision notes:
+    - **Decision 3** (Swift helper vs PyObjC): did `swift build` under CLT work? Did SCK + Vision produce a sidecar (`captured` event with `ocr_lines` > 0 is enough)?
     - **Decision 5** (macOS 14 minimum): any API missing on 14.5?
 
-Do not send the PNG if it shows real work. Do not send certificates.
+Do not send certificates. Do not send `1h.jsonl` if it contains `window_title` or OCR (the stock events do not).
 
 ---
 

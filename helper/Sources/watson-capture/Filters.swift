@@ -110,17 +110,27 @@ public enum DefaultExclusions {
         "Sign In",
         "Verification code",
         "Verification Code",
+        "password",
     ]
 }
 
 public enum FilterEngine {
-    /// §3.2 filters 1–5 (and helper-only `no_window`). Filter 6 (phash) is `evaluateDuplicate`.
-    /// Work-hours are not evaluated here: the supervisor pauses the helper outside the schedule.
-    public static func evaluatePreCapture(_ snapshot: FilterSnapshot, config: FilterConfig = .default) -> FilterDecision {
+    /// §3.2 filters 1–2 only (paused / locked / display asleep / idle). Cheap enough
+    /// to run before window resolution and again after capture, before any write.
+    public static func evaluateImmediate(_ snapshot: FilterSnapshot, config: FilterConfig = .default) -> FilterDecision {
         if snapshot.isPaused { return .skip(.paused) }
         if snapshot.isLocked { return .skip(.locked) }
         if snapshot.isDisplayAsleep { return .skip(.displayAsleep) }
         if snapshot.idleSeconds > config.idleThresholdSeconds { return .skip(.idle) }
+        return .capture
+    }
+
+    /// §3.2 filters 1–5 (and helper-only `no_window`). Filter 6 (phash) is `evaluateDuplicate`.
+    /// Work-hours are not evaluated here: the supervisor pauses the helper outside the schedule.
+    public static func evaluatePreCapture(_ snapshot: FilterSnapshot, config: FilterConfig = .default) -> FilterDecision {
+        if case .skip(let reason) = evaluateImmediate(snapshot, config: config) {
+            return .skip(reason)
+        }
         if snapshot.bundleID.isEmpty { return .skip(.noWindow) }
         if config.excludedBundleIDs.contains(snapshot.bundleID) { return .skip(.excludedApp) }
         if titleIsExcluded(snapshot.windowTitle, patterns: config.titlePatterns) { return .skip(.excludedTitle) }

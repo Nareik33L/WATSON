@@ -16,7 +16,7 @@ usage() {
 2. build + sign (build 1) → watson-capture --preflight
 3. swift package clean
 4. build + sign (build 2) → watson-capture --preflight
-5. Compare codesign identifier and require granted=true both times.
+5. Compare codesign identifier + designated requirement; require granted=true both times.
 
 Grant Screen Recording to the signed helper once before this will pass.
 EOF
@@ -41,6 +41,8 @@ preflight() {
   local bin="$2"
   echo "=== $label: $bin ==="
   codesign -dv --verbose=4 "$bin" 2>&1 | tee /tmp/watson-capture-"$label"-codesign.txt
+  codesign -d -r- "$bin" > /tmp/watson-capture-"$label"-dr.txt 2>/tmp/watson-capture-"$label"-dr-err.txt
+  cat /tmp/watson-capture-"$label"-dr.txt
   local ident
   ident="$(awk -F= '/^Identifier=/{print $2; exit}' /tmp/watson-capture-"$label"-codesign.txt)"
   echo "identifier: ${ident:-unknown}"
@@ -85,13 +87,21 @@ echo "--- clean + build 2 ---"
 BIN2="$("$ROOT/scripts/build.sh" --release --identity "$IDENTITY" | tail -n 1)"
 preflight build2 "$BIN2"
 
-echo "=== compare identifiers ==="
+echo "=== compare identifiers + designated requirement ==="
 ID1="$(awk -F= '/^Identifier=/{print $2; exit}' /tmp/watson-capture-build1-codesign.txt)"
 ID2="$(awk -F= '/^Identifier=/{print $2; exit}' /tmp/watson-capture-build2-codesign.txt)"
+DR1="$(tr -d '\n' < /tmp/watson-capture-build1-dr.txt)"
+DR2="$(tr -d '\n' < /tmp/watson-capture-build2-dr.txt)"
 echo "build1 identifier=$ID1"
 echo "build2 identifier=$ID2"
+echo "build1 designated requirement=$DR1"
+echo "build2 designated requirement=$DR2"
 if [[ "$ID1" != "$ID2" || "$ID1" != "com.watson.capture" ]]; then
   echo "FAIL: identifier changed or is not com.watson.capture" >&2
+  PASS=0
+fi
+if [[ -z "$DR1" || "$DR1" != "$DR2" ]]; then
+  echo "FAIL: designated requirement missing or changed across rebuilds" >&2
   PASS=0
 fi
 

@@ -56,7 +56,7 @@ public enum CommandLineApp {
             Darwin.exit(runPreflight())
         }
         if options.selftest {
-            Darwin.exit(runSelftest(options: options))
+            Darwin.exit(await runSelftest(options: options))
         }
         await runCapture(options: options)
     }
@@ -113,7 +113,7 @@ public enum CommandLineApp {
     Options:
       --interval <seconds>             Capture period (default: 45)
       --out <dir>                      Spool directory (default: ~/Library/Application Support/WATSON/spool)
-      --selftest                       Prove pause emits no frames; no ScreenCaptureKit
+      --selftest                       Prove pause emits no frames (stdin path + in-flight drop)
       --preflight                      Print Screen Recording grant and exit (no capture)
       --self-report-interval <seconds> CPU/RSS event period (default: 60)
       --idle-seconds <seconds>         Idle skip threshold (default: 180)
@@ -307,6 +307,19 @@ struct FrontmostWindow: Sendable {
     var displayID: UInt32
     var pixelWidth: Int
     var pixelHeight: Int
+
+    static func selftestFixture() -> FrontmostWindow {
+        FrontmostWindow(
+            windowID: 1,
+            bundleID: "com.example.selftest",
+            appName: "Selftest",
+            title: "Selftest",
+            sharingState: 1,
+            displayID: 0,
+            pixelWidth: 8,
+            pixelHeight: 8
+        )
+    }
 }
 
 enum WindowCapture {
@@ -478,10 +491,30 @@ enum Spool {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
+        try tightenDirectoryTree(root)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var mutable = root
-        try mutable.setResourceValues(values)
+        try? mutable.setResourceValues(values)
+    }
+
+    /// Force 0700 on `root` and every existing subdirectory (a prior `mkdir -p` is 0755).
+    static func tightenDirectoryTree(_ root: URL) throws {
+        let fm = FileManager.default
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        guard let enumerator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+            if values.isDirectory == true {
+                try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+            }
+        }
     }
 
     static func dayDirectory(root: URL, now: Date = Date()) throws -> URL {
@@ -498,11 +531,66 @@ enum Spool {
         let day = try dayDirectory(root: root)
         let pngURL = day.appendingPathComponent("\(sidecar.frame_id).png")
         let jsonURL = day.appendingPathComponent("\(sidecar.frame_id).json")
-        try png.write(to: pngURL, options: .atomic)
-        try SidecarJSON.encode(sidecar).write(to: jsonURL, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: pngURL.path)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: jsonURL.path)
+        try writeAtomically(png, to: pngURL, mode: 0o600)
+        try writeAtomically(try SidecarJSON.encode(sidecar), to: jsonURL, mode: 0o600)
         return (pngURL, jsonURL)
+    }
+
+    /// Create `url` as `mode` via O_CREAT|O_EXCL + fchmod + rename. umask cannot widen the mode.
+    static func writeAtomically(_ data: Data, to url: URL, mode: mode_t = 0o600) throws {
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+
+        let tmp = directory.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+        let fd = tmp.path.withCString { path in
+            open(path, O_WRONLY | O_CREAT | O_EXCL, mode)
+        }
+        guard fd >= 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        var stillOpen = true
+        var renamed = false
+        func closeFd() {
+            if stillOpen {
+                close(fd)
+                stillOpen = false
+            }
+        }
+        defer {
+            closeFd()
+            if !renamed {
+                unlink(tmp.path)
+            }
+        }
+        _ = fchmod(fd, mode)
+        let wrote = data.withUnsafeBytes { buffer -> Int in
+            guard let base = buffer.baseAddress, !buffer.isEmpty else { return 0 }
+            return write(fd, base, buffer.count)
+        }
+        if wrote != data.count {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        if fsync(fd) != 0 {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        closeFd()
+        guard tmp.path.withCString({ src in url.path.withCString { dst in rename(src, dst) } }) == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        renamed = true
+    }
+
+    static func posixPermissions(at url: URL) throws -> UInt16 {
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let number = attrs[.posixPermissions] as? NSNumber else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return number.uint16Value
     }
 }
 
@@ -517,8 +605,8 @@ public enum ProcessMeter {
         return user + system
     }
 
+    /// Peak RSS (`ru_maxrss` on macOS, bytes). Not current RSS; see `rss_peak_bytes`.
     public static func rssBytes() -> UInt64 {
-        // macOS: ru_maxrss is peak resident bytes. Avoids mach_task_self_ (not Sendable in Swift 6).
         var usage = rusage()
         getrusage(RUSAGE_SELF, &usage)
         return UInt64(usage.ru_maxrss)
@@ -541,6 +629,7 @@ public enum ProcessMeter {
             "cpu_percent_avg": (avg * 100).rounded() / 100,
             "cpu_percent_last_interval": (recent * 100).rounded() / 100,
             "rss_bytes": Int(rssBytes()),
+            "rss_peak_bytes": Int(rssBytes()),
         ]
         return (fields, cpu, now)
     }
@@ -574,110 +663,402 @@ func runPreflight() -> Int32 {
     return granted ? 0 : 1
 }
 
+// MARK: - Capture engine (shared by live + --selftest)
+
+protocol FrameSource: AnyObject, Sendable {
+    func resolveFrontmost() async throws -> FrontmostWindow
+    func screenshot(of window: FrontmostWindow) async throws -> CGImage
+    func ocrLines(for image: CGImage) throws -> [OCRLine]
+}
+
+protocol SessionProbes: AnyObject, Sendable {
+    func isLocked() -> Bool
+    func isDisplayAsleep() -> Bool
+    func idleSeconds() -> Double
+    func screenRecordingGranted() -> Bool
+}
+
+enum TickOutcome: Equatable {
+    case written(String)
+    case skipped(SkipReason, afterCapture: Bool)
+    case failed(String)
+}
+
+final class CaptureEngine: @unchecked Sendable {
+    let state: RunState
+    let source: FrameSource
+    let probes: SessionProbes
+    let config: FilterConfig
+    let spool: URL
+    let captureMode: String
+    let emit: @Sendable (String) -> Void
+
+    init(
+        state: RunState,
+        source: FrameSource,
+        probes: SessionProbes,
+        config: FilterConfig,
+        spool: URL,
+        captureMode: String,
+        emit: @escaping @Sendable (String) -> Void = { StdoutEmitter.emit($0) }
+    ) {
+        self.state = state
+        self.source = source
+        self.probes = probes
+        self.config = config
+        self.spool = spool
+        self.captureMode = captureMode
+        self.emit = emit
+    }
+
+    func immediateSnapshot() -> FilterSnapshot {
+        FilterSnapshot(
+            isPaused: state.isPaused(),
+            isLocked: probes.isLocked(),
+            isDisplayAsleep: probes.isDisplayAsleep(),
+            idleSeconds: probes.idleSeconds()
+        )
+    }
+
+    @discardableResult
+    func tick() async -> TickOutcome {
+        if !probes.screenRecordingGranted() {
+            return skip(.notGranted, afterCapture: false)
+        }
+        if case .skip(let reason) = FilterEngine.evaluateImmediate(immediateSnapshot(), config: config) {
+            return skip(reason, afterCapture: false)
+        }
+
+        let window: FrontmostWindow
+        do {
+            window = try await source.resolveFrontmost()
+        } catch {
+            return skip(.noWindow, afterCapture: false, extra: ["message": String(describing: error)])
+        }
+
+        var pre = immediateSnapshot()
+        pre.bundleID = window.bundleID
+        pre.windowTitle = window.title
+        pre.sharingState = window.sharingState
+        pre.previousPhash = state.previousPhash(windowID: window.windowID)
+        if case .skip(let reason) = FilterEngine.evaluatePreCapture(pre, config: config) {
+            return skip(reason, afterCapture: false, window: window)
+        }
+
+        let image: CGImage
+        do {
+            image = try await source.screenshot(of: window)
+        } catch {
+            emit(EventJSON.line(event: "error", fields: ["message": String(describing: error)]))
+            return .failed(String(describing: error))
+        }
+
+        if case .skip(let reason) = FilterEngine.evaluateImmediate(immediateSnapshot(), config: config) {
+            return skip(reason, afterCapture: true, window: window)
+        }
+
+        let phash = PerceptualHash.hash(image: image)
+        var post = pre
+        post.phash = phash
+        if case .skip(let reason) = FilterEngine.evaluateDuplicate(post, config: config) {
+            return skip(reason, afterCapture: true, window: window)
+        }
+
+        let lines: [OCRLine]
+        do {
+            lines = try source.ocrLines(for: image)
+        } catch {
+            emit(EventJSON.line(event: "error", fields: ["message": "ocr: \(error.localizedDescription)"]))
+            lines = []
+        }
+
+        if case .skip(let reason) = FilterEngine.evaluateImmediate(immediateSnapshot(), config: config) {
+            return skip(reason, afterCapture: true, window: window)
+        }
+
+        guard let png = PNGWriter.data(from: image) else {
+            emit(EventJSON.line(event: "error", fields: ["message": "png encode failed"]))
+            return .failed("png encode failed")
+        }
+
+        let sidecar = FrameSidecar(
+            frame_id: UUID().uuidString.lowercased(),
+            captured_at: EventJSON.timestamp(),
+            display_id: window.displayID == 0 ? nil : window.displayID,
+            bundle_id: window.bundleID,
+            app_name: window.appName,
+            window_title: window.title,
+            window_id: window.windowID,
+            is_private_browsing: PrivateBrowsing.detect(windowTitle: window.title),
+            url: nil,
+            ocr: OCRPayload(lines: lines),
+            phash: PerceptualHash.hex(phash),
+            width: image.width,
+            height: image.height,
+            capture_mode: captureMode
+        )
+
+        do {
+            let paths = try Spool.write(png: png, sidecar: sidecar, root: spool)
+            state.markWritten()
+            state.remember(windowID: window.windowID, phash: phash)
+            emit(EventJSON.line(event: "captured", fields: [
+                "frame_id": sidecar.frame_id,
+                "bundle_id": sidecar.bundle_id,
+                "png": paths.png.path,
+                "sidecar": paths.json.path,
+                "ocr_lines": lines.count,
+                "phash": sidecar.phash,
+                "capture_mode": sidecar.capture_mode,
+            ]))
+            return .written(sidecar.frame_id)
+        } catch {
+            emit(EventJSON.line(event: "error", fields: ["message": "write: \(error.localizedDescription)"]))
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private func skip(
+        _ reason: SkipReason,
+        afterCapture: Bool,
+        window: FrontmostWindow? = nil,
+        extra: [String: Any] = [:]
+    ) -> TickOutcome {
+        state.markSkipped(reason)
+        var fields: [String: Any] = extra
+        fields["reason"] = reason.rawValue
+        fields["after_capture"] = afterCapture
+        if let window {
+            fields["bundle_id"] = window.bundleID
+        }
+        emit(EventJSON.line(event: "skipped", fields: fields))
+        return .skipped(reason, afterCapture: afterCapture)
+    }
+}
+
+final class LiveFrameSource: FrameSource, @unchecked Sendable {
+    func resolveFrontmost() async throws -> FrontmostWindow {
+        try await WindowCapture.resolveFrontmost()
+    }
+
+    func screenshot(of window: FrontmostWindow) async throws -> CGImage {
+        try await WindowCapture.screenshot(of: window)
+    }
+
+    func ocrLines(for image: CGImage) throws -> [OCRLine] {
+        try OCR.recognize(image: image)
+    }
+}
+
+final class LiveProbes: SessionProbes, @unchecked Sendable {
+    let flags: WorkspaceFlags
+
+    init(flags: WorkspaceFlags) {
+        self.flags = flags
+    }
+
+    func isLocked() -> Bool { SystemProbes.isScreenLocked() }
+    func isDisplayAsleep() -> Bool { flags.isDisplayAsleep() || SystemProbes.isDisplayAsleep() }
+    func idleSeconds() -> Double { SystemProbes.idleSeconds() }
+    func screenRecordingGranted() -> Bool { ScreenRecording.granted() }
+}
+
+final class ControllableProbes: SessionProbes, @unchecked Sendable {
+    private let lock = NSLock()
+    private var locked = false
+    private var asleep = false
+    private var idle: Double = 0
+    private var granted = true
+
+    func isLocked() -> Bool { lock.withLock { locked } }
+    func isDisplayAsleep() -> Bool { lock.withLock { asleep } }
+    func idleSeconds() -> Double { lock.withLock { idle } }
+    func screenRecordingGranted() -> Bool { lock.withLock { granted } }
+
+    func setLocked(_ value: Bool) { lock.withLock { locked = value } }
+    func setAsleep(_ value: Bool) { lock.withLock { asleep = value } }
+    func setIdle(_ value: Double) { lock.withLock { idle = value } }
+    func setGranted(_ value: Bool) { lock.withLock { granted = value } }
+}
+
+/// Synthetic 8×8 source. Optional gate holds `screenshot` until `releaseCapture()` (in-flight tests).
+final class FakeFrameSource: FrameSource, @unchecked Sendable {
+    var window = FrontmostWindow.selftestFixture()
+    private let lock = NSLock()
+    private var started = false
+    private var released = true
+    private var nextWindowID: UInt32 = 1
+    private var startedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func armGate() {
+        lock.lock()
+        started = false
+        released = false
+        lock.unlock()
+    }
+
+    func waitUntilCaptureStarted() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if started {
+                lock.unlock()
+                cont.resume()
+            } else {
+                startedWaiters.append(cont)
+                lock.unlock()
+            }
+        }
+    }
+
+    func releaseCapture() {
+        lock.lock()
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        lock.unlock()
+        waiters.forEach { $0.resume() }
+    }
+
+    func resolveFrontmost() async throws -> FrontmostWindow {
+        lock.lock()
+        nextWindowID += 1
+        var current = window
+        current.windowID = nextWindowID
+        lock.unlock()
+        return current
+    }
+
+    func screenshot(of window: FrontmostWindow) async throws -> CGImage {
+        _ = window
+        lock.lock()
+        started = true
+        let startedNow = startedWaiters
+        startedWaiters.removeAll()
+        let alreadyReleased = released
+        lock.unlock()
+        startedNow.forEach { $0.resume() }
+
+        if !alreadyReleased {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                lock.lock()
+                if released {
+                    lock.unlock()
+                    cont.resume()
+                } else {
+                    releaseWaiters.append(cont)
+                    lock.unlock()
+                }
+            }
+        }
+        guard let image = PNGWriter.selftestImage() else {
+            throw WindowCapture.CaptureFailure.pngEncodeFailed
+        }
+        return image
+    }
+
+    func ocrLines(for image: CGImage) throws -> [OCRLine] {
+        _ = image
+        return [OCRLine(text: "selftest", bbox: [0, 0, 8, 8], confidence: 1.0)]
+    }
+}
+
 // MARK: - Selftest (no ScreenCaptureKit)
 
 public struct SelftestStats: Equatable, Sendable {
     public var capturedWhileRunning: Int
     public var capturedWhilePaused: Int
     public var skippedWhilePaused: Int
+    public var droppedInFlight: Int
     public var ok: Bool
 
-    public init(capturedWhileRunning: Int, capturedWhilePaused: Int, skippedWhilePaused: Int) {
+    public init(
+        capturedWhileRunning: Int,
+        capturedWhilePaused: Int,
+        skippedWhilePaused: Int,
+        droppedInFlight: Int
+    ) {
         self.capturedWhileRunning = capturedWhileRunning
         self.capturedWhilePaused = capturedWhilePaused
         self.skippedWhilePaused = skippedWhilePaused
-        self.ok = capturedWhilePaused == 0 && capturedWhileRunning > 0 && skippedWhilePaused > 0
+        self.droppedInFlight = droppedInFlight
+        self.ok = capturedWhilePaused == 0
+            && capturedWhileRunning > 0
+            && skippedWhilePaused > 0
+            && droppedInFlight > 0
     }
 }
 
 public enum Selftest {
-    /// Drive the same filter + write path used in live capture, with a synthetic 8×8 PNG.
-    /// Does not call ScreenCaptureKit, Vision, or `CGRequestScreenCaptureAccess`.
+    /// Same engine as live capture. Pause/resume go through `handleStdinLine`.
+    /// One tick is gated so a pause can race an in-flight screenshot.
     public static func run(
         spool: URL,
-        emit: (String) -> Void = { StdoutEmitter.emit($0) }
-    ) throws -> SelftestStats {
+        emit: @escaping @Sendable (String) -> Void = { StdoutEmitter.emit($0) }
+    ) async throws -> SelftestStats {
         try Spool.prepare(spool)
         let state = RunState()
-        let config = FilterConfig.default
+        let source = FakeFrameSource()
+        let probes = ControllableProbes()
+        let engine = CaptureEngine(
+            state: state,
+            source: source,
+            probes: probes,
+            config: .default,
+            spool: spool,
+            captureMode: "selftest",
+            emit: emit
+        )
+
         var capturedRunning = 0
         var capturedPaused = 0
         var skippedPaused = 0
+        var droppedInFlight = 0
 
-        func tick() throws {
-            let paused = state.isPaused()
-            let snapshot = FilterSnapshot(
-                isPaused: paused,
-                bundleID: "com.example.selftest",
-                windowTitle: "Selftest",
-                sharingState: 1
-            )
-            switch FilterEngine.evaluatePreCapture(snapshot, config: config) {
-            case .skip(let reason):
-                state.markSkipped(reason)
-                emit(EventJSON.line(event: "skipped", fields: ["reason": reason.rawValue]))
+        func note(_ outcome: TickOutcome) {
+            switch outcome {
+            case .written:
+                if state.isPaused() { capturedPaused += 1 } else { capturedRunning += 1 }
+            case .skipped(let reason, let afterCapture):
                 if reason == .paused { skippedPaused += 1 }
-            case .capture:
-                let sidecar = try writeSyntheticFrame(spool: spool, state: state)
-                emit(EventJSON.line(event: "captured", fields: [
-                    "frame_id": sidecar.frame_id,
-                    "capture_mode": sidecar.capture_mode,
-                ]))
-                if paused {
-                    capturedPaused += 1
-                } else {
-                    capturedRunning += 1
+                if afterCapture && (reason == .paused || reason == .locked || reason == .displayAsleep || reason == .idle) {
+                    droppedInFlight += 1
                 }
+            case .failed:
+                break
             }
         }
 
-        for _ in 0..<3 { try tick() }
-        state.setPaused(true)
-        emit(EventJSON.line(event: "paused"))
-        for _ in 0..<5 { try tick() }
-        state.setPaused(false)
-        emit(EventJSON.line(event: "resumed"))
-        for _ in 0..<2 { try tick() }
+        for _ in 0..<3 {
+            note(await engine.tick())
+        }
+
+        source.armGate()
+        async let inflight = engine.tick()
+        await source.waitUntilCaptureStarted()
+        handleStdinLine(#"{"cmd":"pause"}"#, state: state, emit: emit)
+        source.releaseCapture()
+        note(await inflight)
+
+        for _ in 0..<5 {
+            note(await engine.tick())
+        }
+        handleStdinLine(#"{"cmd":"resume"}"#, state: state, emit: emit)
+        for _ in 0..<2 {
+            note(await engine.tick())
+        }
 
         return SelftestStats(
             capturedWhileRunning: capturedRunning,
             capturedWhilePaused: capturedPaused,
-            skippedWhilePaused: skippedPaused
+            skippedWhilePaused: skippedPaused,
+            droppedInFlight: droppedInFlight
         )
-    }
-
-    private static func writeSyntheticFrame(spool: URL, state: RunState) throws -> FrameSidecar {
-        guard let image = PNGWriter.selftestImage(), let png = PNGWriter.data(from: image) else {
-            throw WindowCapture.CaptureFailure.pngEncodeFailed
-        }
-        let frameID = UUID().uuidString.lowercased()
-        let phash = PerceptualHash.hash(image: image)
-        let sidecar = FrameSidecar(
-            frame_id: frameID,
-            captured_at: EventJSON.timestamp(),
-            display_id: nil,
-            bundle_id: "com.example.selftest",
-            app_name: "Selftest",
-            window_title: "Selftest",
-            window_id: 0,
-            is_private_browsing: false,
-            url: nil,
-            ocr: OCRPayload(lines: [
-                OCRLine(text: "selftest", bbox: [0, 0, 8, 8], confidence: 1.0),
-            ]),
-            phash: PerceptualHash.hex(phash),
-            width: image.width,
-            height: image.height,
-            capture_mode: "selftest"
-        )
-        _ = try Spool.write(png: png, sidecar: sidecar, root: spool)
-        state.markWritten()
-        state.remember(windowID: 0, phash: phash)
-        return sidecar
     }
 }
 
-func runSelftest(options: CLIOptions) -> Int32 {
+func runSelftest(options: CLIOptions) async -> Int32 {
+    let usingTemp = options.out == nil
     let spool = options.out ?? FileManager.default.temporaryDirectory
         .appendingPathComponent("watson-selftest-\(UUID().uuidString.lowercased())", isDirectory: true)
     StdoutEmitter.event("hello", fields: [
@@ -688,16 +1069,24 @@ func runSelftest(options: CLIOptions) -> Int32 {
         "out": spool.path,
     ])
     do {
-        let stats = try Selftest.run(spool: spool)
+        let stats = try await Selftest.run(spool: spool)
+        if usingTemp {
+            try? FileManager.default.removeItem(at: spool)
+        }
         StdoutEmitter.event("selftest_result", fields: [
             "ok": stats.ok,
             "captured_while_running": stats.capturedWhileRunning,
             "captured_while_paused": stats.capturedWhilePaused,
             "skipped_while_paused": stats.skippedWhilePaused,
-            "out": spool.path,
+            "dropped_in_flight": stats.droppedInFlight,
+            "out": usingTemp ? "" : spool.path,
+            "cleaned": usingTemp,
         ])
         return stats.ok ? 0 : 1
     } catch {
+        if usingTemp {
+            try? FileManager.default.removeItem(at: spool)
+        }
         StdoutEmitter.event("error", fields: ["message": String(describing: error)])
         return 1
     }
@@ -743,8 +1132,17 @@ func runCapture(options: CLIOptions) async {
         StdoutEmitter.event("permission_requested")
     }
 
+    let engine = CaptureEngine(
+        state: state,
+        source: LiveFrameSource(),
+        probes: LiveProbes(flags: flags),
+        config: config,
+        spool: options.spoolURL,
+        captureMode: "frontmost"
+    )
+
     while !state.shouldQuit() {
-        await captureTick(options: options, state: state, flags: flags, config: config)
+        await engine.tick()
 
         let now = Date()
         if now.timeIntervalSince(lastReport) >= options.selfReportInterval {
@@ -770,118 +1168,6 @@ func runCapture(options: CLIOptions) async {
     StdoutEmitter.event("stopped")
 }
 
-private func captureTick(
-    options: CLIOptions,
-    state: RunState,
-    flags: WorkspaceFlags,
-    config: FilterConfig
-) async {
-    if !ScreenRecording.granted() {
-        state.markSkipped(.notGranted)
-        StdoutEmitter.event("skipped", fields: ["reason": SkipReason.notGranted.rawValue])
-        return
-    }
-
-    let window: FrontmostWindow
-    do {
-        window = try await WindowCapture.resolveFrontmost()
-    } catch {
-        state.markSkipped(.noWindow)
-        StdoutEmitter.event("skipped", fields: [
-            "reason": SkipReason.noWindow.rawValue,
-            "message": String(describing: error),
-        ])
-        return
-    }
-
-    let pre = FilterSnapshot(
-        isPaused: state.isPaused(),
-        isLocked: SystemProbes.isScreenLocked(),
-        isDisplayAsleep: flags.isDisplayAsleep() || SystemProbes.isDisplayAsleep(),
-        idleSeconds: SystemProbes.idleSeconds(),
-        bundleID: window.bundleID,
-        windowTitle: window.title,
-        sharingState: window.sharingState,
-        previousPhash: state.previousPhash(windowID: window.windowID)
-    )
-
-    if case .skip(let reason) = FilterEngine.evaluatePreCapture(pre, config: config) {
-        state.markSkipped(reason)
-        StdoutEmitter.event("skipped", fields: skipFields(reason: reason, window: window))
-        return
-    }
-
-    let image: CGImage
-    do {
-        image = try await WindowCapture.screenshot(of: window)
-    } catch {
-        StdoutEmitter.event("error", fields: ["message": String(describing: error)])
-        return
-    }
-
-    let phash = PerceptualHash.hash(image: image)
-    var post = pre
-    post.phash = phash
-    if case .skip(let reason) = FilterEngine.evaluateDuplicate(post, config: config) {
-        state.markSkipped(reason)
-        StdoutEmitter.event("skipped", fields: skipFields(reason: reason, window: window))
-        return
-    }
-
-    let lines: [OCRLine]
-    do {
-        lines = try OCR.recognize(image: image)
-    } catch {
-        StdoutEmitter.event("error", fields: ["message": "ocr: \(error.localizedDescription)"])
-        lines = []
-    }
-
-    guard let png = PNGWriter.data(from: image) else {
-        StdoutEmitter.event("error", fields: ["message": "png encode failed"])
-        return
-    }
-
-    let sidecar = FrameSidecar(
-        frame_id: UUID().uuidString.lowercased(),
-        captured_at: EventJSON.timestamp(),
-        display_id: window.displayID,
-        bundle_id: window.bundleID,
-        app_name: window.appName,
-        window_title: window.title,
-        window_id: window.windowID,
-        is_private_browsing: PrivateBrowsing.detect(windowTitle: window.title),
-        url: nil,
-        ocr: OCRPayload(lines: lines),
-        phash: PerceptualHash.hex(phash),
-        width: image.width,
-        height: image.height,
-        capture_mode: "frontmost"
-    )
-
-    do {
-        let paths = try Spool.write(png: png, sidecar: sidecar, root: options.spoolURL)
-        state.markWritten()
-        state.remember(windowID: window.windowID, phash: phash)
-        StdoutEmitter.event("captured", fields: [
-            "frame_id": sidecar.frame_id,
-            "bundle_id": sidecar.bundle_id,
-            "png": paths.png.path,
-            "sidecar": paths.json.path,
-            "ocr_lines": lines.count,
-            "phash": sidecar.phash,
-        ])
-    } catch {
-        StdoutEmitter.event("error", fields: ["message": "write: \(error.localizedDescription)"])
-    }
-}
-
-private func skipFields(reason: SkipReason, window: FrontmostWindow) -> [String: Any] {
-    [
-        "reason": reason.rawValue,
-        "bundle_id": window.bundleID,
-    ]
-}
-
 private func sleepUntilNextTick(interval: TimeInterval, state: RunState) async {
     let deadline = Date().addingTimeInterval(interval)
     while Date() < deadline, !state.shouldQuit() {
@@ -896,6 +1182,8 @@ private func startStdinReader(state: RunState) {
         while !state.shouldQuit() {
             let chunk = handle.availableData
             if chunk.isEmpty {
+                StdoutEmitter.event("stdin_closed")
+                state.requestQuit()
                 break
             }
             buffer.append(chunk)
@@ -909,18 +1197,22 @@ private func startStdinReader(state: RunState) {
     }
 }
 
-func handleStdinLine(_ line: String, state: RunState) {
+func handleStdinLine(
+    _ line: String,
+    state: RunState,
+    emit: @escaping @Sendable (String) -> Void = { StdoutEmitter.emit($0) }
+) {
     switch CommandParser.parse(line) {
     case .failure(.empty):
         return
     case .failure(let error):
-        StdoutEmitter.event("error", fields: ["message": error.description])
+        emit(EventJSON.line(event: "error", fields: ["message": error.description]))
     case .success(.pause):
         state.setPaused(true)
-        StdoutEmitter.event("paused")
+        emit(EventJSON.line(event: "paused"))
     case .success(.resume):
         state.setPaused(false)
-        StdoutEmitter.event("resumed")
+        emit(EventJSON.line(event: "resumed"))
     case .success(.status):
         let snap = state.snapshot()
         var fields: [String: Any] = [
@@ -936,7 +1228,7 @@ func handleStdinLine(_ line: String, state: RunState) {
         if let last = snap.lastSkip {
             fields["last_skip"] = last
         }
-        StdoutEmitter.event("status", fields: fields)
+        emit(EventJSON.line(event: "status", fields: fields))
     case .success(.quit):
         state.requestQuit()
     }

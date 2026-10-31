@@ -60,7 +60,7 @@ final class SidecarTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try SidecarJSON.encode(sidecar)) as? [String: Any]
         )
-        XCTAssertEqual(object["display_id"] as? NSNull, NSNull())
+        XCTAssertTrue(object["display_id"] is NSNull, "display_id must be present as JSON null")
         XCTAssertEqual(object["phash"] as? String, "0000000000000000")
         XCTAssertEqual(object["capture_mode"] as? String, "selftest")
     }

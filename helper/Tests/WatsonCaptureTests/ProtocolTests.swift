@@ -54,11 +54,13 @@ final class ProtocolTests: XCTestCase {
             "cpu_percent_avg": 0.34,
             "cpu_percent_last_interval": 0.5,
             "rss_bytes": 42_000_000,
+            "rss_peak_bytes": 42_000_000,
             "frames_written": 80,
         ])
         let object = try decodeObject(line)
         XCTAssertEqual(object["event"] as? String, "self_report")
         XCTAssertEqual(object["rss_bytes"] as? Int, 42_000_000)
+        XCTAssertEqual(object["rss_peak_bytes"] as? Int, 42_000_000)
         XCTAssertEqual(object["cpu_percent_avg"] as? Double, 0.34)
     }
 
