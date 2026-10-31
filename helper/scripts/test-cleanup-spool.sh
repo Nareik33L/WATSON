@@ -120,6 +120,52 @@ else
 fi
 reset_selftest
 
+# Newline in a day-dir filename must abort; nothing outside the root is
+# touched. The name is shaped like the old bash-loop exploit
+# (extra "FILE <relative>" line after the newline).
+ABS_CANARY="/tmp/watson-newline-outside-canary"
+REL_CANARY="outside-canary"
+printf 'keep-abs' > "$ABS_CANARY"
+printf 'keep-rel' > "$REL_CANARY"
+python3 - "$SELFTEST" <<'PY'
+import os, sys
+day = os.path.join(sys.argv[1], "2026-10-31")
+os.makedirs(day, exist_ok=True)
+open(os.path.join(day, "f.png"), "w", encoding="utf-8").write("x")
+open(os.path.join(day, "f.json"), "w", encoding="utf-8").write("{}")
+open(os.path.join(day, "x.png\nFILE outside-canary"), "w", encoding="utf-8").write("evil")
+PY
+set +e
+nl_out="$("$CLEAN" "$SELFTEST" 2>&1)"
+nl_rc=$?
+set -e
+nl_evil="$(python3 -c 'import os; print(os.path.exists("/tmp/watson-selftest/2026-10-31/" + "x.png\nFILE outside-canary"))')"
+if [[ "$nl_rc" -eq 0 ]]; then
+  echo "FAIL: newline filename should abort cleanup" >&2
+  echo "$nl_out" >&2
+  FAILED=1
+elif [[ ! -e "$ABS_CANARY" || "$(cat "$ABS_CANARY")" != "keep-abs" ]]; then
+  echo "FAIL: newline filename touched the absolute canary" >&2
+  echo "$nl_out" >&2
+  FAILED=1
+elif [[ ! -e "$REL_CANARY" || "$(cat "$REL_CANARY")" != "keep-rel" ]]; then
+  echo "FAIL: newline filename touched the relative canary" >&2
+  echo "$nl_out" >&2
+  FAILED=1
+elif [[ ! -e "$SELFTEST/2026-10-31/f.png" || ! -e "$SELFTEST/2026-10-31/f.json" ]]; then
+  echo "FAIL: newline-filename abort deleted a spool file" >&2
+  echo "$nl_out" >&2
+  FAILED=1
+elif [[ "$nl_evil" != "True" ]]; then
+  echo "FAIL: newline-named file was removed" >&2
+  echo "$nl_out" >&2
+  FAILED=1
+else
+  echo "ok: newline filename aborted without touching anything outside the root"
+fi
+rm -f -- "$ABS_CANARY" "$REL_CANARY"
+reset_selftest
+
 if [[ "$FAILED" -ne 0 ]]; then
   echo "FAIL: cleanup-spool.sh tests" >&2
   exit 1

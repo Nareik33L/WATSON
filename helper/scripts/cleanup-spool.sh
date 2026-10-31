@@ -116,104 +116,8 @@ validate_arg() {
   printf '%s\n' "$resolved"
 }
 
-# Scan $1. Prints "FILE path" / "DIR path" lines, or exits 2 if anything
-# other than yyyy-MM-dd/*.{png,json} is present (including symlinks).
-scan_tree() {
-  python3 - "$1" <<'PY'
-import os
-import re
-import sys
-
-root = sys.argv[1]
-date_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-unexpected = []
-files = []
-dirs = []
-
-for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-    rel = os.path.relpath(dirpath, root)
-    if rel == os.curdir:
-        for name in list(dirnames):
-            path = os.path.join(dirpath, name)
-            if os.path.islink(path) or not date_re.match(name) or not os.path.isdir(path):
-                unexpected.append(path)
-            else:
-                dirs.append(path)
-        for name in filenames:
-            unexpected.append(os.path.join(dirpath, name))
-        continue
-    # Date directories must be a single level of png/json files.
-    for name in dirnames:
-        unexpected.append(os.path.join(dirpath, name))
-    for name in filenames:
-        path = os.path.join(dirpath, name)
-        if os.path.islink(path):
-            unexpected.append(path)
-        elif name.endswith(".png") or name.endswith(".json"):
-            files.append(path)
-        else:
-            unexpected.append(path)
-
-if unexpected:
-    sys.stderr.write("FAIL: unexpected entries (nothing deleted):\n")
-    for path in unexpected:
-        sys.stderr.write(f"  {path}\n")
-    sys.exit(2)
-
-for path in files:
-    print(f"FILE {path}")
-for path in dirs:
-    print(f"DIR {path}")
-PY
-}
-
-clean_root() {
-  local root="$1"
-  if [[ ! -e "$root" ]]; then
-    echo "removed: $root"
-    return 0
-  fi
-  if [[ -L "$root" ]]; then
-    refuse "spool root is a symlink: $root"
-  fi
-  if [[ ! -d "$root" ]]; then
-    echo "FAIL: not a directory: $root" >&2
-    return 1
-  fi
-
-  local listing
-  if ! listing="$(scan_tree "$root")"; then
-    return 1
-  fi
-
-  local line path
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    path="${line#FILE }"
-    if [[ "$line" == FILE\ * ]]; then
-      chmod u+w "$path" 2>/dev/null || true
-      rm -- "$path"
-    fi
-  done <<< "$listing"
-
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    path="${line#DIR }"
-    if [[ "$line" == DIR\ * ]]; then
-      chmod u+w "$path" 2>/dev/null || true
-      rmdir -- "$path"
-    fi
-  done <<< "$listing"
-
-  chmod u+w "$root" 2>/dev/null || true
-  rmdir -- "$root"
-
-  if [[ -e "$root" ]]; then
-    echo "FAIL: still exists: $root" >&2
-    return 1
-  fi
-  echo "removed: $root"
-}
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLEAN_PY="$HERE/cleanup_spool.py"
 
 targets=()
 if [[ $# -eq 0 ]]; then
@@ -234,22 +138,11 @@ else
   done
 fi
 
-# Scan every existing target before deleting any of them.
-for root in "${targets[@]+"${targets[@]}"}"; do
-  if [[ -e "$root" ]]; then
-    scan_tree "$root" >/dev/null
-  fi
-done
-
-PASS=1
-for root in "${targets[@]+"${targets[@]}"}"; do
-  if ! clean_root "$root"; then
-    PASS=0
-  fi
-done
-
-if [[ "$PASS" -ne 1 ]]; then
-  echo "FAIL: spool cleanup incomplete" >&2
-  exit 1
+# Walk + delete in Python (NUL-safe, no shell word-splitting). The helper
+# scans every root first and aborts with nothing removed if anything other
+# than yyyy-MM-dd / [A-Za-z0-9_-]+.(png|json) is present.
+if [[ ${#targets[@]} -gt 0 ]]; then
+  python3 "$CLEAN_PY" -- "${targets[@]}"
 fi
+
 echo "PASS: listed spools are empty (paths gone)."
