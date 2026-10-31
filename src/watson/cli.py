@@ -163,13 +163,14 @@ def _cmd_doctor(_args: argparse.Namespace) -> int:
 
 def _cmd_status(_args: argparse.Namespace) -> int:
     config = load_config()
+    overrides = config.exclusions.overridden_default_bundle_ids()
     if not config.db_path.is_file():
         print("db_status: missing")
-        print("\n".join(StatusReport({}, {}, None).lines()))
+        print("\n".join(StatusReport({}, {}, None, exclusion_overrides=overrides).lines()))
         return 0
     conn = _open_db(config, upgrade=True)
     try:
-        print("\n".join(collect_status(conn).lines()))
+        print("\n".join(collect_status(conn, exclusions=config.exclusions).lines()))
     finally:
         conn.close()
     return 0

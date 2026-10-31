@@ -193,17 +193,18 @@ def _cached_db_key(app: FastAPI) -> bytes:
 
 def _report(request: Request) -> StatusReport:
     config = getattr(request.app.state, "config", None)
+    overrides = config.exclusions.overridden_default_bundle_ids() if config is not None else ()
     if config is None or not config.db_path.is_file():
-        return StatusReport({}, {}, None)
+        return StatusReport({}, {}, None, exclusion_overrides=overrides)
     try:
         key = _cached_db_key(request.app)
         conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
     except (KeyProviderError, DatabaseError, sqlcipher.DatabaseError):
-        return StatusReport({}, {}, None)
+        return StatusReport({}, {}, None, exclusion_overrides=overrides)
     try:
-        return collect_status(conn)
+        return collect_status(conn, exclusions=config.exclusions)
     except (DatabaseError, sqlcipher.DatabaseError):
-        return StatusReport({}, {}, None)
+        return StatusReport({}, {}, None, exclusion_overrides=overrides)
     finally:
         conn.close()
 

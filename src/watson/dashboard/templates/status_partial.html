@@ -29,6 +29,19 @@
 </section>
 
 <section>
+  <h2>Exclusion overrides</h2>
+  {% if not status.exclusion_overrides %}
+  <p>none</p>
+  {% else %}
+  <ul>
+    {% for bundle in status.exclusion_overrides %}
+    <li class="mono">{{ bundle }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section>
   <h2>Last replay</h2>
   {% if status.last_replay is none %}
   <p>none</p>

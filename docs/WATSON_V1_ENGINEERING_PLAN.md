@@ -348,7 +348,7 @@ Rules:
 
 ### 5.1 Capture exclusions (prevention)
 
-- Bundle-ID exclusion list, pre-populated with password managers, banking apps, Messages, FaceTime, Photos, Health-type apps; user-editable.
+- Bundle-ID exclusion list, pre-populated with password managers, banking apps, Messages, FaceTime, Photos, Health-type apps; user lists **merge** with those defaults. `allowed_bundle_ids` is the visible override (load warning + status/dashboard); see [`docs/config.md`](config.md).
 - Window-title patterns (private browsing, sign-in pages, "password", "verification code").
 - Browser domain allow/deny lists, applied when the URL is available; denylist pre-populated with personal mail/banking/health/social domains.
 - `kCGWindowSharingState` honoured.

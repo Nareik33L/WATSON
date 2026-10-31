@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -13,6 +14,8 @@ from typing import Any, cast
 from pydantic import ValidationError
 
 from watson.config.schema import APPLICATION_SUPPORT_WATSON, WatsonConfig
+
+log = logging.getLogger("watson.config")
 
 _PATH_ENV = {
     "WATSON_DATA_DIR": "data_dir",
@@ -85,9 +88,20 @@ def load_config(
     merged["data_dir"] = str(Path(str(merged["data_dir"])).expanduser())
 
     try:
-        return WatsonConfig.model_validate(merged)
+        config = WatsonConfig.model_validate(merged)
     except ValidationError as exc:
         raise ConfigError(format_validation_error(exc)) from exc
+    _warn_exclusion_overrides(config)
+    return config
+
+
+def _warn_exclusion_overrides(config: WatsonConfig) -> None:
+    for bundle_id in config.exclusions.overridden_default_bundle_ids():
+        log.warning(
+            "allowed_bundle_ids un-excludes built-in default %s; "
+            "password managers and other defaults stay excluded unless this is intentional",
+            bundle_id,
+        )
 
 
 def _defaults_for(data_dir: Path, config_path: Path) -> dict[str, Any]:
