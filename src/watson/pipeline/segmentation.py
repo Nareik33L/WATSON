@@ -365,6 +365,36 @@ def _extend_segment(
     return updated
 
 
+def close_open_segments(
+    conn: sqlcipher.Connection,
+    *,
+    working_day_id: str | None = None,
+    close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+) -> int:
+    """Force-close open segments so understanding can run (plan §3.7 step 2)."""
+    if working_day_id is None:
+        rows = conn.execute(
+            "SELECT id FROM segments WHERE state = 'open' ORDER BY started_at, id"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT id FROM segments
+            WHERE working_day_id = ? AND state = 'open'
+            ORDER BY started_at, id
+            """,
+            (working_day_id,),
+        ).fetchall()
+    ids = [str(row["id"]) for row in rows]
+    for segment_id in ids:
+        _close_segment(conn, segment_id)
+    conn.commit()
+    from watson.pipeline.understanding import enqueue_eligible_understand_jobs
+
+    enqueue_eligible_understand_jobs(conn, close_after_seconds=close_after_seconds)
+    return len(ids)
+
+
 def _close_segment(conn: sqlcipher.Connection, segment_id: str) -> None:
     stamp = iso_now()
     conn.execute(

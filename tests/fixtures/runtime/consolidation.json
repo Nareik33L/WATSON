@@ -1,0 +1,46 @@
+{
+  "default_complete": {
+    "activities": []
+  },
+  "complete": [
+    {
+      "match": "Cluster these observations",
+      "response": {
+        "activities": [
+          {
+            "title": "Acme Q4 proposal",
+            "summary": "Editing the proposal and coordinating review.",
+            "observation_indexes": [1]
+          }
+        ]
+      }
+    },
+    {
+      "match": "Extract cross-segment",
+      "response": {
+        "entity_deltas": [
+          {
+            "entity_name": "Acme Q4 Proposal",
+            "entity_type": "project",
+            "delta_text": "Appendix drafted for Friday review.",
+            "claim_indexes": [1]
+          }
+        ],
+        "decisions": [
+          {
+            "text": "Ship the appendix on Friday",
+            "claim_indexes": [1]
+          }
+        ],
+        "commitments": [
+          {
+            "text": "Send Priya the draft",
+            "claim_indexes": [1],
+            "status": "open",
+            "due_hint": "Friday"
+          }
+        ]
+      }
+    }
+  ]
+}

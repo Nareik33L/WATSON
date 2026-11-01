@@ -5,11 +5,10 @@ that table exists, and ``segments.merged_text``. Frame metadata, segment
 rows, membership, jobs, and audit history are outside the tier and are
 never removed here.
 
-Conservative window (M3 consolidation has not landed): a row is expired
-when ``expires_at <= now``. Extract/segment write ``expires_at`` as
-``captured_at + retention.tier2_grace_days`` (plan default 7). Once
-consolidation exists, M3 should move ``expires_at`` to
-``consolidated_at + grace``; this sweep already honors the stored stamp.
+A row is expired when ``expires_at <= now``. Extract/segment write
+``expires_at`` as ``captured_at + retention.tier2_grace_days`` (plan
+default 7). Day consolidation moves ``expires_at`` to
+``consolidated_at + grace``; this sweep honors the stored stamp.
 """
 
 from __future__ import annotations

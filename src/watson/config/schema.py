@@ -80,6 +80,10 @@ DEFAULT_ENTITY_SIMILARITY = 0.80
 # Retrieved memory: top-k FTS5 hits over entity names/aliases.
 DEFAULT_RETRIEVE_TOP_K = 5
 
+# D12 / §3.7: work-day end (local HH:MM) and how long to wait for frames.
+DEFAULT_DAY_END = "18:30"
+DEFAULT_RECOVERY_DEADLINE_HOURS = 2
+
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -226,13 +230,24 @@ class RetentionConfig(_StrictModel):
 
 
 class PipelineConfig(_StrictModel):
-    """Worker drain bounds. Capture/ingest never waits on this."""
+    """Worker drain bounds and day-end consolidation (D12 / §3.7)."""
 
     backlog_batch_size: int = Field(
         default=DEFAULT_BACKLOG_BATCH_SIZE,
         ge=1,
         le=10_000,
         description="Max extract jobs completed in one drain_backlog call.",
+    )
+    day_end: str = Field(
+        default=DEFAULT_DAY_END,
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+        description="Local work-day end (HH:MM). Consolidation or catch-up runs after this.",
+    )
+    recovery_deadline_hours: int = Field(
+        default=DEFAULT_RECOVERY_DEADLINE_HOURS,
+        ge=0,
+        le=24,
+        description="Wait this long after day-end for remaining frames, then record a gap.",
     )
 
 
