@@ -209,8 +209,8 @@ def _insert_entity(conn: object, *, name: str = "Acme Q4 Proposal") -> str:
     return entity_id
 
 
-def _seed_day(conn: object) -> dict[str, str]:
-    day_id = _insert_day(conn)
+def _seed_day(conn: object, *, date: str = "2026-10-31") -> dict[str, str]:
+    day_id = _insert_day(conn, date=date)
     frame_id = _insert_frame(conn, day_id)
     changed = _insert_segment(conn, day_id, frame_id, line_changes=3)
     static_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T11:00:00Z")
@@ -294,7 +294,9 @@ def _seed_day(conn: object) -> dict[str, str]:
         text="Orphan outcome",
         evidence=False,
     )
-    entity_id = _insert_entity(conn)
+    entity_id = _insert_entity(
+        conn, name="Acme Q4 Proposal" if date == "2026-10-31" else f"Acme {date}"
+    )
     return {
         "day_id": day_id,
         "observed": observed,
@@ -326,6 +328,7 @@ def test_consolidate_twice_identical_row_counts(tmp_path: Path) -> None:
         assert first["commitments"] == 1
         assert first["history"] == 1
         assert first["achievements"] == 2
+        assert first["summaries"] == 1
         row = conn.execute(
             "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
         ).fetchone()
@@ -434,6 +437,7 @@ def test_failure_marks_failed_and_leaves_spool(
             "commitments": 0,
             "achievements": 0,
             "history": 0,
+            "summaries": 0,
         }
     finally:
         conn.close()
@@ -787,6 +791,7 @@ def test_retry_requeues_dead_understand_job(tmp_path: Path) -> None:
             "people_candidates": [],
         }
         runtime = FakeRuntime(
+            recordings=RECORDINGS,
             complete_queue=[
                 understand,
                 {
@@ -1020,6 +1025,7 @@ def test_achievements_and_deltas_grounded_in_day_claims(tmp_path: Path) -> None:
             pipeline_version=2,
         )
         runtime = FakeRuntime(
+            recordings=RECORDINGS,
             complete_queue=[
                 {
                     "activities": [
@@ -1182,6 +1188,7 @@ def test_runtime_down_during_understand_holds_without_consolidating(
             "commitments": 0,
             "achievements": 0,
             "history": 0,
+            "summaries": 0,
         }
         assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
         assert swept == []
@@ -1390,6 +1397,7 @@ def test_load_claims_ignores_other_pipeline_version(tmp_path: Path) -> None:
             ).fetchone()[0]
         )
         runtime = FakeRuntime(
+            recordings=RECORDINGS,
             complete_queue=[
                 {
                     "activities": [

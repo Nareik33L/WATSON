@@ -80,7 +80,7 @@ def _insert_m3a(conn: object) -> tuple[str, str, str, str]:
 def test_0007_up_down_on_empty_db(tmp_path: Path) -> None:
     path = tmp_path / "empty.db"
     command.upgrade(alembic_config(path, TEST_KEY), "0007_m3c_consolidation")
-    assert upgrade_head(path, TEST_KEY) == "0007_m3c_consolidation"
+    assert upgrade_head(path, TEST_KEY) == "0008_m3d_daily_summaries"
     conn = connect(path, TEST_KEY, load_vec=False)
     try:
         assert M3C <= _tables(conn)

@@ -1,0 +1,86 @@
+<section>
+  <h2>Day</h2>
+  {% if day is none or day.date is none %}
+  <p>no working day</p>
+  {% else %}
+  <form method="get" action="/days" class="day-picker">
+    <label>
+      <span class="label">date</span>
+      <select name="date" hx-get="/days" hx-target="#days-root" hx-swap="innerHTML" hx-push-url="true">
+        {% for choice in day.choices %}
+        <option value="{{ choice.date }}" {% if choice.date == day.date %}selected{% endif %}>
+          {{ choice.date }} ({{ choice.state }})
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  <p>
+    <span class="label">state</span>
+    <span class="day-state day-state-{{ day.state }}">{{ day.state }}</span>
+    {% if day.error %}
+    <span class="label">reason</span> {{ day.error }}
+    {% endif %}
+  </p>
+  {% if day.state == "failed" and day.id %}
+  <form method="post" action="/days/{{ day.id }}/retry">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Retry</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+
+{% if day is not none and day.date is not none %}
+<section>
+  <h2>Daily summary</h2>
+  {% if not day.spans %}
+  <p>no summary</p>
+  {% else %}
+  <p class="narrative">
+    {% for span in day.spans %}
+      {% if span.claim_id %}
+      <a class="cite" href="#claim-{{ span.claim_id }}">{{ span.text }}</a>
+      {% else %}
+      {{ span.text }}
+      {% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Unverified</h2>
+  {% if not day.unverified %}
+  <p>none</p>
+  {% else %}
+  <ul>
+    {% for item in day.unverified %}
+    <li id="unverified-{{ item.id }}">{{ item.kind }}: {{ item.text }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Claims</h2>
+  {% if not day.claims %}
+  <p>no claims</p>
+  {% else %}
+  <ul class="claims">
+    {% for item in day.claims %}
+    <li id="claim-{{ item.id }}">
+      <p><span class="mono">[c:{{ item.id }}]</span> {{ item.kind }}/{{ item.assertion }} — {{ item.text }}</p>
+      {% if item.quotes %}
+      <ul>
+        {% for quote in item.quotes %}
+        <li>{{ quote }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}

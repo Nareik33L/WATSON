@@ -50,6 +50,21 @@ class DayExtractOutput(BaseModel):
         return _inline(cls.model_json_schema())
 
 
+class SummaryParagraph(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(..., min_length=1)
+    claim_ids: list[str] = Field(default_factory=list)
+
+
+class DailySummaryOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paragraphs: list[SummaryParagraph]
+
+    @classmethod
+    def json_schema(cls) -> dict[str, Any]:
+        return _inline(cls.model_json_schema())
+
+
 def _inline(raw: dict[str, Any]) -> dict[str, Any]:
     inlined = _inline_refs(raw, raw.get("$defs", {}))
     if not isinstance(inlined, dict):
@@ -70,3 +85,4 @@ def _inline_refs(node: Any, defs: dict[str, Any]) -> Any:
 
 CLUSTERING_JSON_SCHEMA = ClusteringOutput.json_schema()
 DAY_EXTRACT_JSON_SCHEMA = DayExtractOutput.json_schema()
+DAILY_SUMMARY_JSON_SCHEMA = DailySummaryOutput.json_schema()

@@ -55,3 +55,10 @@ button {
   border-radius: 6px;
   cursor: pointer;
 }
+.day-picker { margin-bottom: 10px; }
+.day-state-failed { color: #8a1f1f; font-weight: 600; }
+.day-state-closing { color: #8a6a12; font-weight: 600; }
+.day-state-consolidated { color: var(--accent); font-weight: 600; }
+.cite { color: var(--accent); }
+.narrative { white-space: pre-wrap; }
+.claims { list-style: none; padding-left: 0; }

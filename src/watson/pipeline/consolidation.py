@@ -2,8 +2,9 @@
 
 Idempotent by ``(working_day_id, pipeline_version)``: a re-run deletes the
 previous derived rows in one transaction and inserts replacements. Daily
-narrative (step 7) is M3d. Achievement candidates are rule-based: observed
-outcomes/achievements with change evidence, never ``inferred`` alone.
+narrative (step 7) cites claim ids inline; a post-processor strips invalid
+citations. Achievement candidates are rule-based: observed outcomes with
+change evidence, never ``inferred`` alone.
 """
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ from watson.config.schema import (
     PipelineConfig,
     WatsonConfig,
 )
+from watson.intelligence.citations import (
+    VerifiedNarrative,
+    expand_index_citations,
+    verify_narrative,
+)
 from watson.intelligence.prompts import load_prompt
 from watson.intelligence.runtime import (
     UNDERSTAND_JOB_KIND,
@@ -44,8 +50,10 @@ from watson.intelligence.runtime import (
 from watson.intelligence.runtime.fake import FakeRuntime
 from watson.intelligence.schemas.consolidation import (
     CLUSTERING_JSON_SCHEMA,
+    DAILY_SUMMARY_JSON_SCHEMA,
     DAY_EXTRACT_JSON_SCHEMA,
     ClusteringOutput,
+    DailySummaryOutput,
     DayExtractOutput,
 )
 from watson.intelligence.structured import complete_structured
@@ -69,6 +77,7 @@ CONSOLIDATE_JOB_KIND = "consolidate"
 WORKER_ID = "watson-consolidate"
 CLUSTER_PROMPT_TASK = "clustering"
 EXTRACT_PROMPT_TASK = "day_extract"
+SUMMARY_PROMPT_TASK = "daily_summary"
 PROMPT_VERSION = "v1"
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
@@ -79,6 +88,7 @@ _DERIVED_TABLES = (
     "commitments",
     "achievement_candidates",
     "entity_history",
+    "daily_summaries",
 )
 
 
@@ -550,6 +560,8 @@ def derived_counts(
         key = "achievements" if table == "achievement_candidates" else table
         if table == "entity_history":
             key = "history"
+        if table == "daily_summaries":
+            key = "summaries"
         out[key] = int(row[0])
     return out
 
@@ -603,6 +615,7 @@ def _replace_derived(
     claims = _load_claims(conn, working_day_id, settings.pipeline_version)
     cluster_prompt = load_prompt(CLUSTER_PROMPT_TASK, PROMPT_VERSION)
     extract_prompt = load_prompt(EXTRACT_PROMPT_TASK, PROMPT_VERSION)
+    summary_prompt = load_prompt(SUMMARY_PROMPT_TASK, PROMPT_VERSION)
     clustering = (
         _cluster_observations(language, observations, cluster_prompt.text)
         if observations
@@ -612,6 +625,21 @@ def _replace_derived(
         _extract_day(language, claims, _load_entities(conn), extract_prompt.text)
         if claims
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
+    )
+    raw_summary = (
+        _summarize_day(language, claims, summary_prompt.text)
+        if claims
+        else DailySummaryOutput(paragraphs=[])
+    )
+    verified = verify_narrative(
+        expand_index_citations(
+            [
+                {"text": item.text, "claim_ids": list(item.claim_ids)}
+                for item in raw_summary.paragraphs
+            ],
+            claims,
+        ),
+        claims,
     )
     stamp = iso_now(now)
     try:
@@ -637,6 +665,14 @@ def _replace_derived(
         _insert_achievements(
             conn,
             working_day_id,
+            pipeline_version=settings.pipeline_version,
+            stamp=stamp,
+        )
+        _insert_summary(
+            conn,
+            working_day_id,
+            verified,
+            prompt_version=summary_prompt.prompt_version,
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
         )
@@ -689,6 +725,30 @@ def _extract_day(
         },
     ]
     return _structured(language, messages, DayExtractOutput, DAY_EXTRACT_JSON_SCHEMA, "day extract")
+
+
+def _summarize_day(
+    language: LanguageRuntime,
+    claims: list[dict[str, Any]],
+    system: str,
+) -> DailySummaryOutput:
+    claim_lines = "\n".join(
+        f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}" for row in claims
+    )
+    messages: list[Message] = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                "Write the daily narrative from these claims. "
+                "Cite each used claim inline as [c:<id>].\n\n"
+                f"Claims:\n{claim_lines}\n"
+            ),
+        },
+    ]
+    return _structured(
+        language, messages, DailySummaryOutput, DAILY_SUMMARY_JSON_SCHEMA, "daily summary"
+    )
 
 
 def _structured[T: BaseModel](
@@ -881,6 +941,36 @@ def _insert_achievements(
         )
 
 
+def _insert_summary(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    verified: VerifiedNarrative,
+    *,
+    prompt_version: str,
+    pipeline_version: int,
+    stamp: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO daily_summaries (
+            id, created_at, updated_at, working_day_id, narrative_md, sections_json,
+            claim_ids, prompt_version, pipeline_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            new_id(),
+            stamp,
+            stamp,
+            working_day_id,
+            verified.narrative_md,
+            json.dumps(verified.sections_json()),
+            json.dumps(list(verified.claim_ids)),
+            prompt_version,
+            pipeline_version,
+        ),
+    )
+
+
 def _reread_day(conn: sqlcipher.Connection, working_day_id: str) -> dict[str, Any] | None:
     """Re-read the working-day row after checkpoint. None if the row is gone."""
     row = conn.execute(
@@ -949,6 +1039,7 @@ def _apply_retention_and_sweep(
             "commitments": counts["commitments"],
             "achievements": counts["achievements"],
             "history": counts["history"],
+            "summaries": counts["summaries"],
         },
         commit=True,
     )

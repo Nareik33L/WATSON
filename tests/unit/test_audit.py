@@ -212,6 +212,7 @@ def test_unknown_kind_is_rejected(data_dir: Path, key_provider: object) -> None:
                 "commitments": 1,
                 "achievements": 0,
                 "history": 1,
+                "summaries": 1,
             },
         ),
         (
