@@ -66,3 +66,5 @@ All names and companies are fictional. Output per fixture: 16 kHz mono `audio.wa
 Edge-case WAV + empty transcripts + `truth.yaml` are generated on Linux and committed (well under 8 MB). `speech_short` commits a short non-silent placeholder WAV plus the known transcript (`synthetic: true` so it does not enter aggregate WER). Linux fake-runtime tests still score per-fixture WER; macOS CI re-renders it with `say` (no `synthetic` flag) and includes it in the bake-off WER. The 12-minute stand-up **AAC and transcript are committed** (`tests/fixtures/meetings/standup_12m/`, Mac render, whole set ≤ 8 MB). `say` is still macOS-only; Linux CI skips the stand-up clip (no WAV) and uses the committed edge fixtures. macOS CI renders every A0 script and uploads the directory as an artifact.
 
 Do not commit the 16 kHz stand-up WAV (about 22 MB).
+
+Apple `say` voice licensing may be non-commercial. The committed AAC is a synthetic fixture for CI, not a redistributable voice pack — review before V1.2 ships anything that includes it.

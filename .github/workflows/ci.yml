@@ -75,6 +75,22 @@ jobs:
           --out /tmp/watson-transcribe-ci
           --report /tmp/watson-transcribe-ci/report.md
 
+  wheel-metadata:
+    name: Product wheel excludes watson-bench
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Build wheel and assert METADATA
+        run: python3 tools/check_wheel_metadata.py --out-dir /tmp/watson-wheel
+
   no-network:
     name: OS-level no-network replay
     runs-on: ubuntu-latest

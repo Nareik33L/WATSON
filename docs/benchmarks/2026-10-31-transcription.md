@@ -3,7 +3,7 @@
 Harness-generated report. **Engine/size pairs are candidates, not chosen defaults.**
 A human fills Recommendation after the development-Mac run (plan A0 / A5).
 
-Informs V1.1 open decision 1: whisper.cpp vs mlx-whisper; sizes per RAM tier.
+Informs V1.1 §11 #1: **DECIDED** for the 8 GB profile (mlx-whisper small). 16 GB is still open.
 
 ## Hardware
 
@@ -43,13 +43,15 @@ Filled by Watson Lead after the 8 GB Mac run. See **Decision** below.
 
 | Profile | Chosen engine | Size | Rationale |
 | --- | --- | --- | --- |
-| 8gb | mlx-whisper | small | 3.1% mean WER, RTF 0.04, ~951 MiB. Fits next to the local LLM. |
+| 8gb | mlx-whisper | small | Stand-up WER 6.2% (mean 3.1% includes an 8-word clip at 0%), RTF 0.04, ~951 MiB. Unloads before the LLM (A5 / §4). |
 | 16gb | _tbd_ |  | Not measured on this machine. |
 
 Package transcription runtime (pywhispercpp vs mlx-whisper): **mlx-whisper**
 
 ## Decision
 
-Watson Lead, 2026-10-31, for V1.1.
+Watson Lead, 2026-10-31, for V1.1. Recorded as ADR 0006 and V1.1 §11 #1.
 
-Pick **mlx-whisper small**: 3.1% mean WER (6.2% on the stand-up), RTF 0.04 and about 951 MiB peak RSS on the M1 8 GB. faster-whisper small is 2.5% WER but needs 2.07 GiB and runs at RTF 0.15, too much next to the local LLM in 8 GB. pywhispercpp small is rejected for runaway repetition. Silence and tone hallucinate 1 word, so V1.1 must gate non-speech with VAD or an energy check, plus a repetition guard. Recheck Whisper plus LLM memory fit at V1.1 kickoff.
+Pick **mlx-whisper small** for the 8 GB profile: stand-up WER **6.2%** (mean 3.1% includes an 8-word clip at 0%), RTF 0.04 and about 951 MiB peak RSS on the M1 8 GB. faster-whisper small is 2.5% mean WER but needs 2.07 GiB and runs at RTF 0.15 — too much on 8 GB even with A5/§4 sequential load (Whisper and the LLM are never resident together). pywhispercpp small is rejected for runaway repetition. Silence and tone hallucinate 1 word, so V1.1 must gate non-speech per A6 (Silero VAD + no-speech/compression gating + n-gram repetition detector). Recheck Whisper plus LLM memory fit at V1.1 kickoff.
+
+New committed audio is 2.89 MiB of synthetic `say` AAC (the whole `tests/fixtures/meetings` tree is 3.90 MiB).

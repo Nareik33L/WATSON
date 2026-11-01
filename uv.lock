@@ -4047,7 +4047,6 @@ dependencies = [
     { name = "sqlcipher3" },
     { name = "sqlite-vec" },
     { name = "uvicorn" },
-    { name = "watson-bench" },
 ]
 
 [package.optional-dependencies]
@@ -4123,7 +4122,6 @@ requires-dist = [
     { name = "sqlcipher3", specifier = ">=0.6.2" },
     { name = "sqlite-vec", specifier = ">=0.1.6" },
     { name = "uvicorn", specifier = ">=0.54.0" },
-    { name = "watson-bench", editable = "tools/bench" },
 ]
 provides-extras = ["llamacpp", "mlx", "fetch", "transcribe", "mlx-whisper", "pywhispercpp"]
 

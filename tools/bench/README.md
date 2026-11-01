@@ -13,7 +13,7 @@ Hardware this repo actually has: **Apple M1, 8 GB RAM, macOS 14.5**, Python via 
 
 Every YAML row is marked `status: candidate`. Nothing here is a chosen default.
 
-`watson-bench` is a uv workspace member (`tools/bench`). `uv sync` installs it editable, so `uv run watson-bench` uses this checkout — no `PYTHONPATH` and no `--no-sync`.
+`watson-bench` is a uv workspace member (`tools/bench`), listed only in the `bench` / `dev` groups (not `[project].dependencies` — the name is unclaimed on PyPI). `uv sync --group bench` (or `--group dev`) installs it editable, so `uv run watson-bench` uses this checkout — no `PYTHONPATH` and no `--no-sync`.
 
 ## Safety
 
