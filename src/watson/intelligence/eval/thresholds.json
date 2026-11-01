@@ -1,0 +1,14 @@
+{
+  "project_f1": {"min": 0.8},
+  "people_f1": {"min": 0.75},
+  "completed_accuracy": {"min": 0.9},
+  "decisions_recall": {"min": 0.7},
+  "decisions_precision": {"min": 0.85},
+  "commitments_recall": {"min": 0.7},
+  "commitments_precision": {"min": 0.85},
+  "unsupported_achievements": {"max": 0},
+  "duplicate_observation_rate": {"max_exclusive": 0.05},
+  "noise_non_work_rate": {"min": 0.9},
+  "claims_with_evidence": {"min": 1.0},
+  "citations_resolvable": {"min": 1.0}
+}
