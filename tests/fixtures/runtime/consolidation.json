@@ -41,6 +41,17 @@
           }
         ]
       }
+    },
+    {
+      "match": "Write the daily narrative",
+      "response": {
+        "paragraphs": [
+          {
+            "text": "The Acme appendix was drafted [c:1] and the pricing thread was closed [c:5].",
+            "claim_ids": ["1", "5"]
+          }
+        ]
+      }
     }
   ]
 }

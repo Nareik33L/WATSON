@@ -2,12 +2,15 @@
 
 from watson.intelligence.schemas.consolidation import (
     CLUSTERING_JSON_SCHEMA,
+    DAILY_SUMMARY_JSON_SCHEMA,
     DAY_EXTRACT_JSON_SCHEMA,
     ActivityCluster,
     ClusteringOutput,
+    DailySummaryOutput,
     DayExtractOutput,
     EntityDelta,
     ExtractedItem,
+    SummaryParagraph,
 )
 from watson.intelligence.schemas.understanding import (
     UNDERSTANDING_JSON_SCHEMA,
@@ -21,6 +24,7 @@ from watson.intelligence.schemas.understanding import (
 
 __all__ = [
     "CLUSTERING_JSON_SCHEMA",
+    "DAILY_SUMMARY_JSON_SCHEMA",
     "DAY_EXTRACT_JSON_SCHEMA",
     "UNDERSTANDING_JSON_SCHEMA",
     "ActivityCluster",
@@ -29,9 +33,11 @@ __all__ = [
     "CandidateClaim",
     "ClaimKind",
     "ClusteringOutput",
+    "DailySummaryOutput",
     "DayExtractOutput",
     "EntityDelta",
     "EvidenceCitation",
     "ExtractedItem",
+    "SummaryParagraph",
     "UnderstandingOutput",
 ]

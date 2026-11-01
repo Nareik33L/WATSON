@@ -2,8 +2,9 @@
 
 Idempotent by ``(working_day_id, pipeline_version)``: a re-run deletes the
 previous derived rows in one transaction and inserts replacements. Daily
-narrative (step 7) is M3d. Achievement candidates are rule-based: observed
-outcomes/achievements with change evidence, never ``inferred`` alone.
+narrative (step 7) cites claim ids inline; a post-processor strips invalid
+citations. Achievement candidates are rule-based: observed outcomes with
+change evidence, never ``inferred`` alone.
 """
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ from watson.config.schema import (
     PipelineConfig,
     WatsonConfig,
 )
+from watson.intelligence.citations import (
+    VerifiedNarrative,
+    expand_index_citations,
+    verify_narrative,
+)
 from watson.intelligence.prompts import load_prompt
 from watson.intelligence.runtime import (
     UNDERSTAND_JOB_KIND,
@@ -41,11 +47,12 @@ from watson.intelligence.runtime import (
     build_runtime,
     hold_if_unavailable,
 )
-from watson.intelligence.runtime.fake import FakeRuntime
 from watson.intelligence.schemas.consolidation import (
     CLUSTERING_JSON_SCHEMA,
+    DAILY_SUMMARY_JSON_SCHEMA,
     DAY_EXTRACT_JSON_SCHEMA,
     ClusteringOutput,
+    DailySummaryOutput,
     DayExtractOutput,
 )
 from watson.intelligence.structured import complete_structured
@@ -69,6 +76,7 @@ CONSOLIDATE_JOB_KIND = "consolidate"
 WORKER_ID = "watson-consolidate"
 CLUSTER_PROMPT_TASK = "clustering"
 EXTRACT_PROMPT_TASK = "day_extract"
+SUMMARY_PROMPT_TASK = "daily_summary"
 PROMPT_VERSION = "v1"
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
@@ -79,6 +87,7 @@ _DERIVED_TABLES = (
     "commitments",
     "achievement_candidates",
     "entity_history",
+    "daily_summaries",
 )
 
 
@@ -438,10 +447,12 @@ def consolidate_working_day(
             else recovery_deadline_hours
         ),
     )
-    language = runtime if runtime is not None else FakeRuntime()
-    embedder: EmbeddingRuntime = embedding if embedding is not None else _as_embedder(language)
     moment = _aware(now)
     try:
+        if runtime is None:
+            raise RuntimeUnavailable("intelligence runtime is unavailable")
+        language = runtime
+        embedder: EmbeddingRuntime = embedding if embedding is not None else _as_embedder(language)
         day = _load_day(conn, working_day_id)
         if day is None:
             raise ConsolidationError(f"working day {working_day_id} is missing")
@@ -550,6 +561,8 @@ def derived_counts(
         key = "achievements" if table == "achievement_candidates" else table
         if table == "entity_history":
             key = "history"
+        if table == "daily_summaries":
+            key = "summaries"
         out[key] = int(row[0])
     return out
 
@@ -603,6 +616,7 @@ def _replace_derived(
     claims = _load_claims(conn, working_day_id, settings.pipeline_version)
     cluster_prompt = load_prompt(CLUSTER_PROMPT_TASK, PROMPT_VERSION)
     extract_prompt = load_prompt(EXTRACT_PROMPT_TASK, PROMPT_VERSION)
+    summary_prompt = load_prompt(SUMMARY_PROMPT_TASK, PROMPT_VERSION)
     clustering = (
         _cluster_observations(language, observations, cluster_prompt.text)
         if observations
@@ -612,6 +626,23 @@ def _replace_derived(
         _extract_day(language, claims, _load_entities(conn), extract_prompt.text)
         if claims
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
+    )
+    raw_summary = (
+        _summarize_day(language, claims, summary_prompt.text)
+        if claims
+        else DailySummaryOutput(paragraphs=[])
+    )
+    verified = verify_narrative(
+        expand_index_citations(
+            [
+                {"text": item.text, "claim_ids": list(item.claim_ids)}
+                for item in raw_summary.paragraphs
+            ],
+            claims,
+        ),
+        claims,
+        working_day_id=working_day_id,
+        pipeline_version=settings.pipeline_version,
     )
     stamp = iso_now(now)
     try:
@@ -637,6 +668,14 @@ def _replace_derived(
         _insert_achievements(
             conn,
             working_day_id,
+            pipeline_version=settings.pipeline_version,
+            stamp=stamp,
+        )
+        _insert_summary(
+            conn,
+            working_day_id,
+            verified,
+            prompt_version=summary_prompt.prompt_version,
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
         )
@@ -689,6 +728,30 @@ def _extract_day(
         },
     ]
     return _structured(language, messages, DayExtractOutput, DAY_EXTRACT_JSON_SCHEMA, "day extract")
+
+
+def _summarize_day(
+    language: LanguageRuntime,
+    claims: list[dict[str, Any]],
+    system: str,
+) -> DailySummaryOutput:
+    claim_lines = "\n".join(
+        f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}" for row in claims
+    )
+    messages: list[Message] = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                "Write the daily narrative from these claims. "
+                "Cite each used claim inline as [c:<id>].\n\n"
+                f"Claims:\n{claim_lines}\n"
+            ),
+        },
+    ]
+    return _structured(
+        language, messages, DailySummaryOutput, DAILY_SUMMARY_JSON_SCHEMA, "daily summary"
+    )
 
 
 def _structured[T: BaseModel](
@@ -881,6 +944,36 @@ def _insert_achievements(
         )
 
 
+def _insert_summary(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    verified: VerifiedNarrative,
+    *,
+    prompt_version: str,
+    pipeline_version: int,
+    stamp: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO daily_summaries (
+            id, created_at, updated_at, working_day_id, narrative_md, sections_json,
+            claim_ids, prompt_version, pipeline_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            new_id(),
+            stamp,
+            stamp,
+            working_day_id,
+            verified.narrative_md,
+            json.dumps(verified.sections_json()),
+            json.dumps(list(verified.claim_ids)),
+            prompt_version,
+            pipeline_version,
+        ),
+    )
+
+
 def _reread_day(conn: sqlcipher.Connection, working_day_id: str) -> dict[str, Any] | None:
     """Re-read the working-day row after checkpoint. None if the row is gone."""
     row = conn.execute(
@@ -890,6 +983,28 @@ def _reread_day(conn: sqlcipher.Connection, working_day_id: str) -> dict[str, An
     if row is None:
         return None
     return {"id": str(row["id"]), "state": str(row["state"])}
+
+
+def _reread_summary(
+    conn: sqlcipher.Connection, working_day_id: str, pipeline_version: int
+) -> dict[str, Any] | None:
+    """Re-read the daily summary after checkpoint. None if the row is gone."""
+    row = conn.execute(
+        """
+        SELECT id, working_day_id, pipeline_version, narrative_md
+        FROM daily_summaries
+        WHERE working_day_id = ? AND pipeline_version = ?
+        """,
+        (working_day_id, pipeline_version),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "working_day_id": str(row["working_day_id"]),
+        "pipeline_version": int(row["pipeline_version"]),
+        "narrative_md": str(row["narrative_md"]),
+    }
 
 
 def _verify_persistence(
@@ -903,6 +1018,9 @@ def _verify_persistence(
     day = _reread_day(conn, working_day_id)
     if day is None:
         raise ConsolidationError("working day missing after wal_checkpoint")
+    summary = _reread_summary(conn, working_day_id, pipeline_version)
+    if expected.get("summaries", 0) and summary is None:
+        raise ConsolidationError("summary missing after wal_checkpoint")
     seen = derived_counts(conn, working_day_id, pipeline_version)
     if seen != expected:
         raise ConsolidationError("derived rows missing after wal_checkpoint")
@@ -949,6 +1067,7 @@ def _apply_retention_and_sweep(
             "commitments": counts["commitments"],
             "achievements": counts["achievements"],
             "history": counts["history"],
+            "summaries": counts["summaries"],
         },
         commit=True,
     )
@@ -1008,7 +1127,7 @@ def _load_claims(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT id, kind, assertion, text
+        SELECT id, working_day_id, kind, assertion, text, pipeline_version
         FROM claims
         WHERE working_day_id = ? AND pipeline_version = ?
         ORDER BY created_at, id
@@ -1018,9 +1137,11 @@ def _load_claims(
     return [
         {
             "id": str(row["id"]),
+            "working_day_id": str(row["working_day_id"]),
             "kind": str(row["kind"]),
             "assertion": str(row["assertion"]),
             "text": str(row["text"]),
+            "pipeline_version": int(row["pipeline_version"]),
         }
         for row in rows
     ]
@@ -1164,7 +1285,7 @@ def _resolve_adapters(
             return runtime, embedder, ConsolidateSettings.from_config(config, model_id=model_id)
         return runtime, embedder, ConsolidateSettings.from_config(config)
     if config is None:
-        config = IntelligenceConfig(runtime="fake")
+        return None, None, ConsolidateSettings()
     if isinstance(config, WatsonConfig):
         held = hold_if_unavailable(conn, config.intelligence, now=now)
         settings = ConsolidateSettings.from_config(config)
@@ -1183,7 +1304,7 @@ def _as_embedder(runtime: LanguageRuntime) -> EmbeddingRuntime:
     embed = getattr(runtime, "embed", None)
     if callable(embed):
         return runtime  # type: ignore[return-value]
-    return FakeRuntime()
+    raise RuntimeUnavailable("intelligence runtime is unavailable")
 
 
 def _spool_from_config(config: WatsonConfig | None) -> Path | None:

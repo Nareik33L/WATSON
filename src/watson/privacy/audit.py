@@ -70,6 +70,7 @@ _COUNT_KEY_STEMS = frozenset(
         "commitments",
         "achievements",
         "history",
+        "summaries",
         "captured",
     }
 )
@@ -98,7 +99,15 @@ _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
     KIND_TIER2_PURGED: frozenset({"texts", "visuals", "segments"}),
     KIND_SPOOL_SWEPT: frozenset({"png", "sidecar", "orphaned", "stale", "unprocessed", "refused"}),
     KIND_CONSOLIDATED: frozenset(
-        {"workingdayid", "activities", "decisions", "commitments", "achievements", "history"}
+        {
+            "workingdayid",
+            "activities",
+            "decisions",
+            "commitments",
+            "achievements",
+            "history",
+            "summaries",
+        }
     ),
 }
 

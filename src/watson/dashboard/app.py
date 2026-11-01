@@ -33,6 +33,7 @@ from watson.dashboard.auth import (
 from watson.dashboard.bind import DEFAULT_PORT
 from watson.memory.db import DatabaseError, connect
 from watson.memory.keys import KeyProviderError, get_key_provider
+from watson.pipeline.day_page import DayPage, collect_day_page
 from watson.pipeline.status import StatusReport, collect_status
 from watson.pipeline.today import TodayReport, collect_today
 
@@ -171,6 +172,18 @@ def create_app(
     async def today_partial(request: Request) -> Response:
         return _render(request, "today_partial.html")
 
+    @app.get("/days", response_class=HTMLResponse)
+    async def days_page(request: Request, date: str | None = None) -> Response:
+        return _render(request, "days.html", date=date)
+
+    @app.post("/days/{working_day_id}/retry", response_class=HTMLResponse)
+    async def days_retry(request: Request, working_day_id: str) -> Response:
+        date = _retry_day(request, working_day_id)
+        if _is_htmx(request):
+            return _render(request, "days_partial.html", date=date)
+        target = f"/days?date={date}" if date else "/days"
+        return RedirectResponse(target, status_code=303)
+
     @app.get("/api/status")
     async def api_status(request: Request) -> JSONResponse:
         return JSONResponse(_report(request).as_dict())
@@ -182,16 +195,18 @@ def create_app(
     return app
 
 
-def _render(request: Request, template_name: str) -> HTMLResponse:
+def _render(request: Request, template_name: str, *, date: str | None = None) -> HTMLResponse:
     session = request.state.session
     report = _report(request)
     today = _today(request) if "today" in template_name else None
+    day = _day(request, date) if "days" in template_name else None
     return _TEMPLATES.TemplateResponse(
         request,
         template_name,
         {
             "status": report,
             "today": today,
+            "day": day,
             "csrf_token": session.csrf,
         },
     )
@@ -220,6 +235,99 @@ def _report(request: Request) -> StatusReport:
         return collect_status(conn, exclusions=config.exclusions)
     except (DatabaseError, sqlcipher.DatabaseError):
         return StatusReport({}, {}, None, exclusion_overrides=overrides)
+    finally:
+        conn.close()
+
+
+def _day(request: Request, date: str | None) -> DayPage:
+    config = getattr(request.app.state, "config", None)
+    if config is None or not config.db_path.is_file():
+        return DayPage(
+            id=None,
+            date=date,
+            state="none",
+            error=None,
+            choices=(),
+            spans=(),
+            unverified=(),
+            claims=(),
+            cited_ids=(),
+        )
+    try:
+        key = _cached_db_key(request.app)
+        conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
+    except (KeyProviderError, DatabaseError, sqlcipher.DatabaseError):
+        return DayPage(
+            id=None,
+            date=date,
+            state="none",
+            error=None,
+            choices=(),
+            spans=(),
+            unverified=(),
+            claims=(),
+            cited_ids=(),
+        )
+    try:
+        return collect_day_page(conn, date=date)
+    except (DatabaseError, sqlcipher.DatabaseError):
+        return DayPage(
+            id=None,
+            date=date,
+            state="none",
+            error=None,
+            choices=(),
+            spans=(),
+            unverified=(),
+            claims=(),
+            cited_ids=(),
+        )
+    finally:
+        conn.close()
+
+
+def _retry_day(request: Request, working_day_id: str) -> str | None:
+    from watson.intelligence.runtime import JobFailure, build_runtime, hold_if_unavailable
+    from watson.pipeline.consolidation import (
+        ConsolidateSettings,
+        ConsolidationWait,
+        retry_working_day,
+    )
+
+    config = getattr(request.app.state, "config", None)
+    if config is None or not config.db_path.is_file():
+        return None
+    key = _cached_db_key(request.app)
+    conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
+    try:
+        opted = getattr(request.app.state, "runtime", None)
+        if opted is not None:
+            language = opted
+            embedder = opted
+        else:
+            held = hold_if_unavailable(conn, config.intelligence)
+            if held.held:
+                language = None
+                embedder = None
+            else:
+                bundle = build_runtime(config)
+                language = bundle.language
+                embedder = bundle.embedding
+        try:
+            retry_working_day(
+                conn,
+                working_day_id,
+                runtime=language,
+                embedding=embedder,
+                settings=ConsolidateSettings.from_config(config),
+                spool_dir=config.spool_dir,
+            )
+        except (JobFailure, ConsolidationWait, DatabaseError, sqlcipher.DatabaseError):
+            pass
+        row = conn.execute(
+            "SELECT date FROM working_days WHERE id = ?", (working_day_id,)
+        ).fetchone()
+        return None if row is None else str(row["date"])
     finally:
         conn.close()
 
