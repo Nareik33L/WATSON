@@ -195,6 +195,7 @@ def test_eligibility_closed_or_twenty_minutes(tmp_path: Path) -> None:
         )
         specs = (
             ("open-short", "open", 60),
+            ("open-just-under", "open", 20 * 60 - 1),
             ("open-long", "open", 20 * 60),
             ("closed-short", "closed", 30),
         )
@@ -227,6 +228,7 @@ def test_eligibility_closed_or_twenty_minutes(tmp_path: Path) -> None:
         conn.commit()
         eligible = set(eligible_segment_ids(conn))
         assert ids["open-short"] not in eligible
+        assert ids["open-just-under"] not in eligible
         assert ids["open-long"] in eligible
         assert ids["closed-short"] in eligible
         added = enqueue_eligible_understand_jobs(conn)
