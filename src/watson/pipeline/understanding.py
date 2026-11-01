@@ -37,6 +37,7 @@ from watson.intelligence.runtime import (
     StructuredOutputError,
     build_runtime,
     hold_if_unavailable,
+    hold_understanding_jobs,
 )
 from watson.intelligence.runtime.fake import FakeRuntime
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
@@ -44,7 +45,7 @@ from watson.intelligence.structured import complete_structured
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
-from watson.pipeline.jobs import Job, JobLeaseError, claim, complete, enqueue, fail
+from watson.pipeline.jobs import Job, JobLeaseError, JobState, claim, complete, enqueue, fail
 
 log = logging.getLogger("watson.pipeline.understanding")
 
@@ -172,8 +173,11 @@ def drain_understand_jobs(
             completed += 1
         except JobLeaseError:
             raise
+        except RuntimeUnavailable as exc:
+            _hold_claimed_understand_job(conn, job, worker_id, exc, now=now)
+            break
         except JobFailure as exc:
-            fail(conn, job.id, str(exc), worker_id=worker_id, now=now)
+            fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
             if not exc.retryable:
                 continue
             break
@@ -259,7 +263,7 @@ def understand_segment(
     except JobFailure:
         raise
     except Exception as exc:
-        raise JobFailure(f"understanding complete failed: {exc}", retryable=True) from exc
+        raise JobFailure("understanding complete failed", retryable=True) from exc
 
     stamp = iso_now(now)
     try:
@@ -420,9 +424,12 @@ def _persist_observation(
             json.dumps(raw, sort_keys=True),
         ),
     )
+    raw_merged = str(segment.get("merged_text") or "")
+    lines = [line.strip() for line in raw_merged.splitlines() if line.strip()]
     for candidate in output.claims:
         if not candidate.evidence:
             raise JobFailure("understanding produced a claim without evidence", retryable=False)
+        supported = [item for item in candidate.evidence if _citation_supported(item, lines)]
         claim_id = new_id()
         conn.execute(
             """
@@ -444,10 +451,8 @@ def _persist_observation(
                 pipeline_version,
             ),
         )
-        for citation in candidate.evidence:
+        for citation in supported:
             snippet = citation.snippet.strip()[:300]
-            if not snippet:
-                raise JobFailure("understanding produced empty claim evidence", retryable=False)
             frame_id = _frame_for_snippet(conn, str(segment["id"]), snippet)
             conn.execute(
                 """
@@ -480,6 +485,37 @@ def _persist_observation(
     if orphan is not None:
         raise JobFailure("stored claim is missing claim_evidence", retryable=False)
     return observation_id
+
+
+def _citation_supported(citation: Any, lines: list[str]) -> bool:
+    """Keep citations whose 1-based line span exists in merged text."""
+    snippet = str(getattr(citation, "snippet", "") or "").strip()
+    start = int(getattr(citation, "line_start", 0) or 0)
+    end = int(getattr(citation, "line_end", 0) or 0)
+    return bool(snippet) and bool(lines) and 1 <= start <= end <= len(lines)
+
+
+def _hold_claimed_understand_job(
+    conn: sqlcipher.Connection,
+    job: Job,
+    worker_id: str,
+    exc: RuntimeUnavailable,
+    *,
+    now: datetime | None,
+) -> None:
+    """§7.4: return the lease and keep the job pending without burning attempts."""
+    stamp = iso_now(now)
+    reason = type(exc).__name__
+    conn.execute(
+        """
+        UPDATE jobs
+        SET state = ?, last_error = ?, claimed_by = NULL, leased_until = NULL, updated_at = ?
+        WHERE id = ? AND claimed_by = ?
+        """,
+        (JobState.PENDING.value, reason, stamp, job.id, worker_id),
+    )
+    conn.commit()
+    hold_understanding_jobs(conn, reason, now=now)
 
 
 def _frame_for_snippet(conn: sqlcipher.Connection, segment_id: str, snippet: str) -> str | None:

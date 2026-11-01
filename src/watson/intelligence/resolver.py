@@ -174,6 +174,7 @@ def _embedding_match(
         SELECT id, canonical_name, provisional
         FROM entities
         WHERE type = ? AND merged_into_id IS NULL
+        ORDER BY canonical_name, id
         """,
         (entity_type,),
     ):
@@ -191,6 +192,7 @@ def _embedding_match(
         FROM entity_aliases a
         JOIN entities e ON e.id = a.entity_id
         WHERE e.type = ? AND e.merged_into_id IS NULL
+        ORDER BY e.canonical_name, a.alias, e.id
         """,
         (entity_type,),
     ):
@@ -216,7 +218,7 @@ def _embedding_match(
         if index >= len(vectors):
             break
         score = cosine_similarity(vectors[0], vectors[index])
-        if score > threshold and (best is None or score > best[0]):
+        if score >= threshold and (best is None or score > best[0]):
             best = (score, (item[0], item[1], item[2]))
     return None if best is None else best[1]
 

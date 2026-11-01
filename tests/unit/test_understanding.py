@@ -6,12 +6,21 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from tests.replay_support import DAY_ACME_Q4, TEST_KEY, open_test_db
 from watson.config.schema import IntelligenceConfig
-from watson.intelligence.runtime import UNDERSTAND_JOB_KIND, FakeRuntime
+from watson.intelligence.runtime import UNDERSTAND_JOB_KIND, FakeRuntime, JobFailure
 from watson.intelligence.runtime import http as http_mod
 from watson.intelligence.runtime.types import RuntimeUnavailable
+from watson.intelligence.schemas.understanding import (
+    ActivityType,
+    Assertion,
+    CandidateClaim,
+    ClaimKind,
+    EvidenceCitation,
+    UnderstandingOutput,
+)
 from watson.memory.db import connect
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
@@ -20,10 +29,15 @@ from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import JobState, claim, enqueue, get_job
 from watson.pipeline.replay import replay_fixture
 from watson.pipeline.understanding import (
+    UnderstandSettings,
+    _load_segment,
+    _persist_observation,
     drain_understand_jobs,
     eligible_segment_ids,
     enqueue_eligible_understand_jobs,
     number_merged_text,
+    understand_idempotency_key,
+    understand_segment,
 )
 
 ACME_RECORDINGS = Path(__file__).resolve().parents[1] / "fixtures" / "runtime" / "acme_q4.json"
@@ -50,6 +64,88 @@ def _orphans(conn: object) -> list[str]:
             """
         )
     ]
+
+
+_LINE = "Still editing: Acme proposal appendix"
+_EMPTY_EVIDENCE_OUTPUT: dict[str, Any] = {
+    "activity_type": "knowledge_work",
+    "description": "claim without evidence",
+    "confidence": 0.5,
+    "claims": [
+        {
+            "kind": "activity",
+            "text": "Editing",
+            "assertion": "observed",
+            "evidence": [],
+        }
+    ],
+    "project_candidates": [],
+    "people_candidates": [],
+}
+
+
+def _closed_segment(conn: object, *, merged: str = _LINE) -> str:
+    day_id, frame_id, segment_id = new_id(), new_id(), new_id()
+    stamp = "2026-10-31T09:00:00Z"
+    conn.execute(
+        """
+        INSERT INTO working_days (
+            id, created_at, updated_at, date, started_at, ended_at,
+            state, consolidation_error, pipeline_version
+        ) VALUES (?, ?, ?, '2026-10-31', ?, NULL, 'open', NULL, 1)
+        """,
+        (day_id, stamp, stamp, stamp),
+    )
+    conn.execute(
+        """
+        INSERT INTO frames (
+            id, created_at, updated_at, working_day_id, captured_at, bundle_id,
+            app_name, window_title_hash, window_title, url_domain, phash, state,
+            failure_count, deleted_at, deletion_verified
+        ) VALUES (?, ?, ?, ?, ?, 'com.lumen.mail', 'Mail', NULL, 'Inbox',
+                  NULL, 'abcd', 'extracted', 0, NULL, 0)
+        """,
+        (frame_id, stamp, stamp, day_id, stamp),
+    )
+    conn.execute(
+        """
+        INSERT INTO frame_text (
+            id, created_at, updated_at, frame_id, text_redacted, ocr_confidence, expires_at, source
+        ) VALUES (?, ?, ?, ?, ?, 1.0, NULL, 'fixture_sidecar')
+        """,
+        (new_id(), stamp, stamp, frame_id, merged),
+    )
+    conn.execute(
+        """
+        INSERT INTO segments (
+            id, created_at, updated_at, working_day_id, bundle_id, window_title_norm,
+            url_domain, started_at, ended_at, frame_count, dwell_seconds, line_changes,
+            merged_text, state, expires_at, pipeline_version, start_frame_id
+        ) VALUES (?, ?, ?, ?, 'com.lumen.mail', 'inbox', NULL, ?, ?, 1, 30, 0,
+                  ?, 'closed', NULL, 1, ?)
+        """,
+        (segment_id, stamp, stamp, day_id, stamp, stamp, merged, frame_id),
+    )
+    conn.commit()
+    return segment_id
+
+
+def _output(*, evidence: list[EvidenceCitation]) -> UnderstandingOutput:
+    return UnderstandingOutput.model_construct(
+        activity_type=ActivityType.KNOWLEDGE_WORK,
+        description="desc",
+        confidence=0.5,
+        claims=[
+            CandidateClaim.model_construct(
+                kind=ClaimKind.ACTIVITY,
+                text="Editing",
+                assertion=Assertion.OBSERVED,
+                evidence=evidence,
+            )
+        ],
+        project_candidates=[],
+        people_candidates=[],
+    )
 
 
 def _seed_entity(conn: object, *, typ: str, name: str, alias: str | None = None) -> str:
@@ -257,5 +353,126 @@ def test_acme_q4_fake_runtime_replay(data_dir: Path, key_provider: object, tmp_p
             (UNDERSTAND_JOB_KIND, JobState.PENDING.value),
         ).fetchone()[0]
         assert pending == 0
+    finally:
+        conn.close()
+
+
+def test_pipeline_version_is_part_of_idempotency_and_eligibility(tmp_path: Path) -> None:
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        segment_id = _closed_segment(conn)
+        assert understand_idempotency_key(segment_id, 1) != understand_idempotency_key(
+            segment_id, 2
+        )
+        assert understand_idempotency_key(segment_id, 1).endswith(":1")
+        assert understand_idempotency_key(segment_id, 2).endswith(":2")
+
+        assert enqueue_eligible_understand_jobs(conn, pipeline_version=1) == 1
+        runtime = FakeRuntime()
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 1
+        first = conn.execute(
+            "SELECT id FROM observations WHERE segment_id = ? AND pipeline_version = 1",
+            (segment_id,),
+        ).fetchone()
+        assert first is not None
+        assert eligible_segment_ids(conn, pipeline_version=1) == []
+        assert enqueue_eligible_understand_jobs(conn, pipeline_version=1) == 0
+        again = understand_segment(
+            conn, segment_id, runtime, runtime, settings=UnderstandSettings(pipeline_version=1)
+        )
+        assert again == str(first["id"])
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+
+        assert eligible_segment_ids(conn, pipeline_version=2) == [segment_id]
+        assert enqueue_eligible_understand_jobs(conn, pipeline_version=2) == 1
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 1
+        versions = {
+            int(row[0])
+            for row in conn.execute(
+                "SELECT pipeline_version FROM observations WHERE segment_id = ?",
+                (segment_id,),
+            )
+        }
+        assert versions == {1, 2}
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 2
+        assert enqueue_eligible_understand_jobs(conn, pipeline_version=2) == 0
+        assert eligible_segment_ids(conn, pipeline_version=2) == []
+    finally:
+        conn.close()
+
+
+def test_schema_and_persist_reject_claims_without_evidence(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="evidence"):
+        CandidateClaim.model_validate(
+            {"kind": "activity", "text": "Editing", "assertion": "observed", "evidence": []}
+        )
+    with pytest.raises(ValidationError, match="evidence"):
+        UnderstandingOutput.model_validate(_EMPTY_EVIDENCE_OUTPUT)
+
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        segment_id = _closed_segment(conn)
+        enqueue_eligible_understand_jobs(conn)
+        runtime = FakeRuntime(complete_queue=[_EMPTY_EVIDENCE_OUTPUT, _EMPTY_EVIDENCE_OUTPUT])
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 0
+        assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        failed = conn.execute("SELECT last_error, attempts FROM jobs").fetchone()
+        assert failed["attempts"] >= 1
+        assert "StructuredOutputError" in str(failed["last_error"])
+
+        segment = _load_segment(conn, segment_id)
+        assert segment is not None
+        with pytest.raises(JobFailure, match="without evidence"):
+            _persist_observation(
+                conn,
+                segment,
+                _output(evidence=[]),
+                prompt_version="understanding/v1",
+                pipeline_version=1,
+                model_id="fake",
+                stamp="2026-10-31T10:00:00Z",
+            )
+        conn.rollback()
+        assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+
+        missing_line = EvidenceCitation.model_construct(snippet=_LINE, line_start=99, line_end=99)
+        with pytest.raises(JobFailure, match="missing claim_evidence"):
+            _persist_observation(
+                conn,
+                segment,
+                _output(evidence=[missing_line]),
+                prompt_version="understanding/v1",
+                pipeline_version=1,
+                model_id="fake",
+                stamp="2026-10-31T10:00:00Z",
+            )
+        conn.rollback()
+        assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_runtime_unavailable_mid_drain_holds_without_burning_attempts(tmp_path: Path) -> None:
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _closed_segment(conn)
+        enqueue_eligible_understand_jobs(conn)
+        runtime = FakeRuntime(complete_queue=[RuntimeUnavailable("model vanished")])
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 0
+        row = conn.execute("SELECT state, last_error, attempts FROM jobs").fetchone()
+        assert row["state"] == JobState.PENDING.value
+        assert row["attempts"] == 0
+        assert row["last_error"] == "RuntimeUnavailable"
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
     finally:
         conn.close()
