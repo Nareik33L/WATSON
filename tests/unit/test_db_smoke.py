@@ -89,7 +89,7 @@ def test_wrong_key_raises_database_error(tmp_path: Path) -> None:
 
 def test_migrations_create_m1_tables(tmp_path: Path) -> None:
     path = tmp_path / "watson.db"
-    assert upgrade_head(path, TEST_KEY) == "0005_m2c_on_delete"
+    assert upgrade_head(path, TEST_KEY) == "0006_m3a_understanding"
     conn = connect(path, TEST_KEY, load_vec=False)
     try:
         names = {
@@ -106,5 +106,9 @@ def test_migrations_create_m1_tables(tmp_path: Path) -> None:
         "frame_text",
         "segments",
         "segment_frames",
+        "observations",
+        "claims",
+        "claim_evidence",
+        "entities",
+        "entity_aliases",
     } <= names
-    assert "claims" not in names

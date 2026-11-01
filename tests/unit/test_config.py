@@ -39,6 +39,11 @@ def test_defaults_use_application_support_path(
     assert config.retention.spool_hard_limit_hours == 24
     assert config.pipeline.backlog_batch_size == 32
     assert config.retention.derived_days is None
+    assert config.intelligence.runtime == "ollama"
+    assert config.intelligence.llm_model == "llama3.2:3b"
+    assert config.intelligence.embedding_model == "nomic-embed-text"
+    assert config.intelligence.vlm_enabled is False
+    assert config.intelligence.ollama_host == "http://127.0.0.1:11434"
 
 
 def test_toml_and_env_overrides(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,6 +61,10 @@ denied_domains = ["example.bank"]
 
 [retention]
 window_title_days = 14
+
+[intelligence]
+runtime = "fake"
+context_window = 4096
 """,
         encoding="utf-8",
     )
@@ -71,6 +80,8 @@ window_title_days = 14
     assert set(DEFAULT_DENIED_DOMAINS).issubset(config.exclusions.denied_domains)
     assert config.retention.window_title_days == 14
     assert config.db_path == data_dir / "watson.db"
+    assert config.intelligence.runtime == "fake"
+    assert config.intelligence.context_window == 4096
 
 
 def test_bad_key_is_named_in_the_error(data_dir: Path) -> None:
@@ -181,6 +192,15 @@ spool_hard_limit_hours = 25
     with pytest.raises(ConfigError, match=r"retention\.spool_hard_limit_hours") as raised:
         load_config()
     assert "Invalid config" in str(raised.value)
+
+
+def test_unknown_intelligence_runtime_is_named(data_dir: Path) -> None:
+    (data_dir / "config.toml").write_text(
+        f'data_dir = "{data_dir}"\n[intelligence]\nruntime = "cloud"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"intelligence\.runtime"):
+        load_config()
 
 
 def test_unknown_key_is_named(data_dir: Path) -> None:

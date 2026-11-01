@@ -14,6 +14,7 @@ from watson.config.schema import (
     DEFAULT_WINDOW_TITLE_PATTERNS,
     CaptureConfig,
     ExclusionsConfig,
+    IntelligenceConfig,
     RetentionConfig,
     WatsonConfig,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "CaptureConfig",
     "ConfigError",
     "ExclusionsConfig",
+    "IntelligenceConfig",
     "RetentionConfig",
     "WatsonConfig",
     "default_data_dir",

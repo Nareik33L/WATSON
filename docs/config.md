@@ -38,3 +38,21 @@ allowed_bundle_ids = ["com.apple.FaceTime"]
 Do not put password-manager bundle IDs here unless you intend to store
 those frames. There is no way to drop the defaults by replacing
 `bundle_ids`.
+
+## Intelligence runtime
+
+`[intelligence]` selects the local adapter (plan D6 / ADR 0001). No cloud
+endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
+`llm_model = "llama3.2:3b"`, `embedding_model = "nomic-embed-text"`,
+`ollama_host = "http://127.0.0.1:11434"`, `vlm_enabled = false`,
+`context_window = 8192`, `keep_alive = "5m"`, `temperature = 0.0`.
+
+```toml
+[intelligence]
+runtime = "ollama"
+```
+
+CI uses `runtime = "fake"` or `WATSON_INTELLIGENCE_RUNTIME=fake` (recorded
+JSON, no socket). A missing runtime or model leaves understanding jobs
+`pending` with `last_error` naming the model and `ollama pull …`.
+`VisionRuntime.describe` is a stub (VLM off on 8 GB).

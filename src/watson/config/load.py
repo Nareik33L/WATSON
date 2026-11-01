@@ -119,6 +119,7 @@ def _defaults_for(data_dir: Path, config_path: Path) -> dict[str, Any]:
         "retention": {},
         "segmentation": {},
         "pipeline": {},
+        "intelligence": {},
     }
 
 
@@ -132,6 +133,11 @@ def _apply_env_overrides(merged: dict[str, Any], env: Mapping[str, str]) -> None
         capture = dict(cast(dict[str, Any], merged.get("capture") or {}))
         capture["interval_seconds"] = interval
         merged["capture"] = capture
+    runtime = env.get("WATSON_INTELLIGENCE_RUNTIME")
+    if runtime is not None and runtime != "":
+        intelligence = dict(cast(dict[str, Any], merged.get("intelligence") or {}))
+        intelligence["runtime"] = runtime
+        merged["intelligence"] = intelligence
 
 
 def _recompute_derived_paths(
