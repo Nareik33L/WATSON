@@ -136,16 +136,22 @@ def _insert_segment(
     return segment_id
 
 
-def _insert_observation(conn: object, segment_id: str, *, description: str = "Editing Acme") -> str:
+def _insert_observation(
+    conn: object,
+    segment_id: str,
+    *,
+    description: str = "Editing Acme",
+    pipeline_version: int = 1,
+) -> str:
     obs_id, stamp = new_id(), "2026-10-31T10:00:00Z"
     conn.execute(
         """
         INSERT INTO observations (
             id, created_at, updated_at, segment_id, activity_type, description,
             confidence, model_id, prompt_version, pipeline_version, raw_json
-        ) VALUES (?, ?, ?, ?, 'knowledge_work', ?, 0.8, 'fake', 'understanding/v1', 1, '{}')
+        ) VALUES (?, ?, ?, ?, 'knowledge_work', ?, 0.8, 'fake', 'understanding/v1', ?, '{}')
         """,
-        (obs_id, stamp, stamp, segment_id, description),
+        (obs_id, stamp, stamp, segment_id, description, pipeline_version),
     )
     conn.commit()
     return obs_id
@@ -1579,5 +1585,110 @@ def test_ensure_consolidate_job_leaves_consolidated_day(tmp_path: Path) -> None:
             "SELECT state FROM working_days WHERE id = ?", (seeded["day_id"],)
         ).fetchone()
         assert day["state"] == "consolidated"
+    finally:
+        conn.close()
+
+
+def test_broken_day_fails_when_other_day_has_pending_segment(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_a, segment_a = _closed_ununderstood(conn)
+        day_b = _insert_day(conn, date="2026-10-30")
+        frame_b = _insert_frame(conn, day_b, captured_at="2026-10-30T09:00:00Z")
+        _insert_segment(conn, day_b, frame_b, started_at="2026-10-30T09:00:00Z")
+        understand = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_a, "pipeline_version": 1},
+            idempotency_key=f"understand:{segment_a}:1",
+            now=NOW,
+        )
+        conn.execute(
+            "UPDATE jobs SET attempts = ?, last_error = ? WHERE id = ?",
+            (DEFAULT_MAX_ATTEMPTS - 1, "StructuredOutputError", understand.id),
+        )
+        conn.commit()
+        bad = {"not": "valid understanding"}
+        runtime = FakeRuntime(complete_queue=[bad, bad])
+        with pytest.raises(ConsolidationError, match="pending understanding"):
+            consolidate_working_day(conn, day_a, runtime=runtime, embedding=runtime, now=NOW)
+        assert runtime.complete_calls == 2
+        day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_a,)
+        ).fetchone()
+        assert day["state"] == "failed"
+        assert day["consolidation_error"] == "ConsolidationError"
+        dead = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (understand.id,)
+        ).fetchone()
+        assert dead["state"] == JobState.FAILED.value
+        assert dead["attempts"] == DEFAULT_MAX_ATTEMPTS
+        other = conn.execute("SELECT state FROM working_days WHERE id = ?", (day_b,)).fetchone()
+        assert other["state"] == "open"
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def _completed_understand(conn: object, segment_id: str):
+    job = enqueue(
+        conn,
+        kind=UNDERSTAND_JOB_KIND,
+        payload={"segment_id": segment_id, "pipeline_version": 1},
+        idempotency_key=f"understand:{segment_id}:1",
+        now=NOW,
+    )
+    conn.execute(
+        "UPDATE jobs SET state = ?, attempts = 1 WHERE id = ?",
+        (JobState.COMPLETED.value, job.id),
+    )
+    conn.commit()
+    return job
+
+
+def test_requeue_skips_completed_understand_with_same_version_observation(
+    tmp_path: Path,
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        job = _completed_understand(conn, segment_id)
+        _insert_observation(conn, segment_id, pipeline_version=1)
+        assert requeue_understand_jobs_for_day(conn, day_id, pipeline_version=1, now=NOW) == 0
+        row = conn.execute("SELECT state, attempts FROM jobs WHERE id = ?", (job.id,)).fetchone()
+        assert row["state"] == JobState.COMPLETED.value
+        assert row["attempts"] == 1
+    finally:
+        conn.close()
+
+
+def test_requeue_resets_completed_understand_without_observation(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        job = _completed_understand(conn, segment_id)
+        assert requeue_understand_jobs_for_day(conn, day_id, pipeline_version=1, now=NOW) == 1
+        row = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert row["state"] == JobState.PENDING.value
+        assert row["attempts"] == 0
+        assert row["last_error"] is None
+    finally:
+        conn.close()
+
+
+def test_requeue_resets_completed_understand_with_other_version_observation(
+    tmp_path: Path,
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        job = _completed_understand(conn, segment_id)
+        _insert_observation(conn, segment_id, pipeline_version=2)
+        assert requeue_understand_jobs_for_day(conn, day_id, pipeline_version=1, now=NOW) == 1
+        row = conn.execute("SELECT state, attempts FROM jobs WHERE id = ?", (job.id,)).fetchone()
+        assert row["state"] == JobState.PENDING.value
+        assert row["attempts"] == 0
     finally:
         conn.close()

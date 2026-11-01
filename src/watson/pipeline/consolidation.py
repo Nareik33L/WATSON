@@ -1114,6 +1114,8 @@ def _understand_is_held(
     pipeline_version: int,
     close_after_seconds: int,
 ) -> bool:
+    # This day's eligible segments only. Another day's pending work must not
+    # hold a broken day as ConsolidationWait forever.
     pending = set(
         eligible_segment_ids(
             conn,
