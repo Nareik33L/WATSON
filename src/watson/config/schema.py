@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -67,6 +67,14 @@ DEFAULT_SEGMENT_SIMILARITY = 0.25
 DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS = 20 * 60
 # Cap on segments.merged_text (line-level union of redacted OCR).
 DEFAULT_MERGED_TEXT_MAX_CHARS = 32768
+
+# ADR 0001 / plan §7.1 — V1.0 dev defaults. VLM stays off on 8 GB.
+DEFAULT_INTELLIGENCE_RUNTIME: Literal["ollama", "fake"] = "ollama"
+DEFAULT_LLM_MODEL = "llama3.2:3b"
+DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
+DEFAULT_CONTEXT_WINDOW = 8192
+DEFAULT_KEEP_ALIVE = "5m"
 
 
 class _StrictModel(BaseModel):
@@ -224,6 +232,19 @@ class PipelineConfig(_StrictModel):
     )
 
 
+class IntelligenceConfig(_StrictModel):
+    """Local inference (plan D6 / ADR 0001). No cloud endpoints."""
+
+    runtime: Literal["ollama", "fake"] = DEFAULT_INTELLIGENCE_RUNTIME
+    llm_model: str = DEFAULT_LLM_MODEL
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL
+    ollama_host: str = DEFAULT_OLLAMA_HOST
+    vlm_enabled: bool = False
+    context_window: int = Field(default=DEFAULT_CONTEXT_WINDOW, ge=512, le=128_000)
+    keep_alive: str = DEFAULT_KEEP_ALIVE
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+
+
 class WatsonConfig(_StrictModel):
     """Resolved runtime configuration. Paths are absolute after load()."""
 
@@ -239,3 +260,4 @@ class WatsonConfig(_StrictModel):
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     segmentation: SegmentationConfig = Field(default_factory=SegmentationConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    intelligence: IntelligenceConfig = Field(default_factory=IntelligenceConfig)
