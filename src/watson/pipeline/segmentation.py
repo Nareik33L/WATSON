@@ -154,6 +154,13 @@ def segment_extracted_frames(
         raise
     if assigned:
         log.info("segmented frames", extra={"assigned": assigned})
+    from watson.pipeline.understanding import enqueue_eligible_understand_jobs
+
+    enqueue_eligible_understand_jobs(
+        conn,
+        pipeline_version=PIPELINE_VERSION,
+        close_after_seconds=settings.close_after_seconds,
+    )
     return assigned
 
 

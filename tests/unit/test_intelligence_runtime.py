@@ -22,7 +22,12 @@ from watson.intelligence.runtime import (
     hold_if_unavailable,
 )
 from watson.intelligence.runtime import http as http_mod
-from watson.intelligence.runtime.http import canonical_ollama_url, direct_opener, request_json
+from watson.intelligence.runtime.http import (
+    NoRedirectHandler,
+    canonical_ollama_url,
+    direct_opener,
+    request_json,
+)
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
 from watson.memory.db import connect
 from watson.memory.migrate import upgrade_head
@@ -117,18 +122,19 @@ def test_ollama_adapter_uses_format_schema(monkeypatch: pytest.MonkeyPatch) -> N
     opened = _install_transport(
         monkeypatch,
         {
-            "/api/tags": {
-                "models": [{"name": "llama3.2:3b"}, {"name": "nomic-embed-text"}]
-            },
+            "/api/tags": {"models": [{"name": "llama3.2:3b"}, {"name": "nomic-embed-text"}]},
             "/api/chat": {"message": {"content": json.dumps(_STUB_CHAT)}},
             "/api/embed": {"embeddings": [[0.0, 1.0]]},
         },
     )
     runtime = _ollama()
     runtime.probe()
-    assert runtime.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)[
-        "activity_type"
-    ] == "knowledge_work"
+    assert (
+        runtime.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)[
+            "activity_type"
+        ]
+        == "knowledge_work"
+    )
     assert runtime.embed(["a", "b"]) == [[0.0, 1.0]]
     chat = next(req for req in opened if req.full_url.endswith("/api/chat"))
     body = json.loads(chat.data or b"{}")
@@ -171,7 +177,9 @@ def test_request_json_ignores_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None
     default_proxies = [h.proxies for h in build_opener().handlers if isinstance(h, ProxyHandler)]
     assert any("203.0.113.10" in str(value) for row in default_proxies for value in row.values())
     ours = direct_opener()
+    # Empty ProxyHandler({}) replaces the default but is not retained (no *_open).
     assert not any(isinstance(handler, ProxyHandler) for handler in ours.handlers)
+    assert any(isinstance(handler, NoRedirectHandler) for handler in ours.handlers)
 
     opened = _install_transport(monkeypatch, {"/api/tags": {"models": []}})
     assert request_json("http://127.0.0.1:11434", "GET", "/api/tags") == {"models": []}
@@ -180,6 +188,30 @@ def test_request_json_ignores_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None
     with pytest.raises(RuntimeUnavailable, match="loopback"):
         request_json("http://example.com:11434", "GET", "/api/tags")
     assert len(opened) == 1
+
+
+def test_direct_opener_refuses_redirects_without_a_socket() -> None:
+    opener = direct_opener()
+    handler = next(item for item in opener.handlers if isinstance(item, NoRedirectHandler))
+    request = Request("http://127.0.0.1:11434/api/tags")
+    with pytest.raises(RuntimeUnavailable, match="redirect"):
+        handler.redirect_request(
+            request,
+            None,
+            302,
+            "Found",
+            {"Location": "http://example.com/steal"},
+            "http://example.com/steal",
+        )
+    with pytest.raises(RuntimeUnavailable, match="redirect"):
+        handler.redirect_request(
+            request,
+            None,
+            301,
+            "Moved",
+            {"Location": "http://127.0.0.1/other"},
+            "http://127.0.0.1/other",
+        )
 
 
 def test_missing_runtime_holds_understand_jobs(

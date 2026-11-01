@@ -45,7 +45,14 @@ those frames. There is no way to drop the defaults by replacing
 endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
 `llm_model = "llama3.2:3b"`, `embedding_model = "nomic-embed-text"`,
 `ollama_host = "http://127.0.0.1:11434"`, `vlm_enabled = false`,
-`context_window = 8192`, `keep_alive = "5m"`, `temperature = 0.0`.
+`context_window = 8192`, `keep_alive = "5m"`, `temperature = 0.0`,
+`entity_similarity_threshold = 0.80`, `retrieve_top_k = 5`.
+
+`entity_similarity_threshold` is the embedding cosine above which a
+free-text project/people candidate merges into an existing entity
+(after a normalised alias miss). `retrieve_top_k` is how many
+projects/people FTS5 name/alias hits are injected into the
+understanding prompt.
 
 ```toml
 [intelligence]
