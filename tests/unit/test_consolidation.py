@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -23,6 +23,7 @@ from watson.pipeline.consolidation import (
     CONSOLIDATE_JOB_KIND,
     ConsolidationError,
     ConsolidationWait,
+    _understand_jobs_for_day,
     catch_up_on_launch,
     consolidate_idempotency_key,
     consolidate_working_day,
@@ -30,9 +31,11 @@ from watson.pipeline.consolidation import (
     drain_consolidate_jobs,
     due_working_day_ids,
     enqueue_catch_up,
+    ensure_consolidate_job,
+    requeue_understand_jobs_for_day,
     retry_working_day,
 )
-from watson.pipeline.jobs import JobState, enqueue
+from watson.pipeline.jobs import DEFAULT_MAX_ATTEMPTS, JobState, enqueue
 from watson.pipeline.segmentation import close_open_segments
 from watson.privacy.audit import KIND_CONSOLIDATED
 from watson.privacy.retention import Tier2SweepResult
@@ -1081,5 +1084,500 @@ def test_grounded_history_stores_day_claim_ids(tmp_path: Path) -> None:
             )
         }
         assert stored <= day_claims
+    finally:
+        conn.close()
+
+
+def _closed_ununderstood(conn: object) -> tuple[str, str]:
+    day_id = _insert_day(conn)
+    frame_id = _insert_frame(conn, day_id)
+    segment_id = _insert_segment(conn, day_id, frame_id, state="closed")
+    return day_id, segment_id
+
+
+def _understand_output() -> dict[str, object]:
+    return {
+        "activity_type": "knowledge_work",
+        "description": "Drafting the Acme appendix",
+        "confidence": 0.8,
+        "claims": [
+            {
+                "kind": "activity",
+                "text": "Editing",
+                "assertion": "observed",
+                "evidence": [
+                    {
+                        "snippet": "Still editing: Acme proposal appendix",
+                        "line_start": 1,
+                        "line_end": 1,
+                    }
+                ],
+            }
+        ],
+        "project_candidates": [],
+        "people_candidates": [],
+    }
+
+
+def test_runtime_down_during_understand_holds_without_consolidating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    swept: list[str] = []
+
+    def rec_tier2(*_a: object, **_k: object) -> Tier2SweepResult:
+        swept.append("tier2")
+        return Tier2SweepResult(0, 0, 0)
+
+    def rec_spool(*_a: object, **_k: object) -> SpoolSweepResult:
+        swept.append("spool")
+        return SpoolSweepResult(0, 0, 0, 0, 0, 0)
+
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_tier2", rec_tier2)
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_spool", rec_spool)
+    conn = _open(tmp_path)
+    try:
+        day_id, _segment_id = _closed_ununderstood(conn)
+        spool = tmp_path / "spool"
+        spool.mkdir()
+        marker = spool / "keep-me.png"
+        marker.write_bytes(b"png")
+        job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": day_id, "pipeline_version": 1},
+            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            now=NOW,
+        )
+        runtime = FakeRuntime(complete_queue=[RuntimeUnavailable("model down")])
+        assert (
+            drain_consolidate_jobs(
+                conn,
+                runtime=runtime,
+                embedding=runtime,
+                spool_dir=spool,
+                now=NOW,
+            )
+            == 0
+        )
+        day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()
+        assert day["state"] == "closing"
+        assert day["consolidation_error"] == "ConsolidationWait"
+        row = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert row["state"] == JobState.PENDING.value
+        assert row["attempts"] == 0
+        assert row["last_error"] == "ConsolidationWait"
+        assert derived_counts(conn, day_id) == {
+            "activities": 0,
+            "decisions": 0,
+            "commitments": 0,
+            "achievements": 0,
+            "history": 0,
+        }
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        assert swept == []
+        assert marker.is_file()
+    finally:
+        conn.close()
+
+
+def test_pending_understanding_for_this_day_blocks_consolidation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("watson.pipeline.consolidation.drain_understand_jobs", lambda *_a, **_k: 0)
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        runtime = _runtime()
+        with pytest.raises(ConsolidationWait, match="understanding held"):
+            consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()
+        assert day["state"] == "closing"
+        assert day["consolidation_error"] == "ConsolidationWait"
+        assert derived_counts(conn, day_id)["activities"] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        pending = conn.execute(
+            "SELECT id FROM jobs WHERE kind = ? AND state = ?",
+            (UNDERSTAND_JOB_KIND, JobState.PENDING.value),
+        ).fetchone()
+        assert pending is not None
+        assert (
+            conn.execute(
+                "SELECT 1 FROM segments WHERE id = ? AND state = 'closed'", (segment_id,)
+            ).fetchone()
+            is not None
+        )
+    finally:
+        conn.close()
+
+
+def test_permanently_broken_understanding_fails_day_and_stays_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    swept: list[str] = []
+
+    def rec_tier2(*_a: object, **_k: object) -> Tier2SweepResult:
+        swept.append("tier2")
+        return Tier2SweepResult(0, 0, 0)
+
+    def rec_spool(*_a: object, **_k: object) -> SpoolSweepResult:
+        swept.append("spool")
+        return SpoolSweepResult(0, 0, 0, 0, 0, 0)
+
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_tier2", rec_tier2)
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_spool", rec_spool)
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        understand = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": 1},
+            idempotency_key=f"understand:{segment_id}:1",
+            now=NOW,
+        )
+        conn.execute(
+            "UPDATE jobs SET attempts = ?, last_error = ? WHERE id = ?",
+            (DEFAULT_MAX_ATTEMPTS - 1, "StructuredOutputError", understand.id),
+        )
+        conn.commit()
+        consolidate = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": day_id, "pipeline_version": 1},
+            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            now=NOW,
+        )
+        bad = {"not": "valid understanding"}
+        broken = FakeRuntime(complete_queue=[bad, bad])
+        assert (
+            drain_consolidate_jobs(
+                conn,
+                runtime=broken,
+                embedding=broken,
+                spool_dir=tmp_path / "spool",
+                now=NOW,
+            )
+            == 0
+        )
+        assert broken.complete_calls == 2
+        day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()
+        assert day["state"] == "failed"
+        assert day["consolidation_error"] == "ConsolidationError"
+        dead = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (understand.id,)
+        ).fetchone()
+        assert dead["state"] == JobState.FAILED.value
+        assert dead["attempts"] == DEFAULT_MAX_ATTEMPTS
+        held = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (consolidate.id,)
+        ).fetchone()
+        assert held["state"] != JobState.PENDING.value or held["attempts"] > 0
+        assert derived_counts(conn, day_id)["activities"] == 0
+        assert swept == []
+
+        recovered = FakeRuntime(recordings=RECORDINGS, complete_queue=[_understand_output()])
+        retry_working_day(
+            conn,
+            day_id,
+            runtime=recovered,
+            embedding=recovered,
+            spool_dir=tmp_path / "spool",
+            now=NOW,
+        )
+        retry_day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()
+        assert retry_day["state"] == "consolidated"
+        assert retry_day["consolidation_error"] is None
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_verify_count_mismatch_fails_without_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    swept: list[str] = []
+    calls = {"n": 0}
+    real = derived_counts
+
+    def mismatch(conn: object, working_day_id: str, pipeline_version: int = 1) -> dict[str, int]:
+        calls["n"] += 1
+        seen = real(conn, working_day_id, pipeline_version)
+        if calls["n"] == 2:
+            return {key: value + 1 for key, value in seen.items()}
+        return seen
+
+    def rec_tier2(*_a: object, **_k: object) -> Tier2SweepResult:
+        swept.append("tier2")
+        return Tier2SweepResult(0, 0, 0)
+
+    def rec_spool(*_a: object, **_k: object) -> SpoolSweepResult:
+        swept.append("spool")
+        return SpoolSweepResult(0, 0, 0, 0, 0, 0)
+
+    monkeypatch.setattr("watson.pipeline.consolidation.derived_counts", mismatch)
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_tier2", rec_tier2)
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_spool", rec_spool)
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        runtime = _runtime()
+        with pytest.raises(ConsolidationError, match="derived rows missing"):
+            consolidate_working_day(
+                conn,
+                seeded["day_id"],
+                runtime=runtime,
+                embedding=runtime,
+                spool_dir=tmp_path / "spool",
+                now=NOW,
+            )
+        assert calls["n"] >= 2
+        assert swept == []
+        row = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        assert row["state"] == "failed"
+        assert row["consolidation_error"] == "ConsolidationError"
+    finally:
+        conn.close()
+
+
+def test_load_claims_ignores_other_pipeline_version(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        v2_claim = _insert_claim(
+            conn,
+            conn.execute("SELECT id FROM observations ORDER BY created_at, id LIMIT 1").fetchone()[
+                0
+            ],
+            seeded["day_id"],
+            seeded["changed"],
+            conn.execute(
+                "SELECT id FROM frames WHERE working_day_id = ? ORDER BY captured_at LIMIT 1",
+                (seeded["day_id"],),
+            ).fetchone()[0],
+            kind="decision",
+            assertion="observed",
+            text="v2-only claim must be ignored",
+            pipeline_version=2,
+        )
+        conn.execute(
+            "UPDATE claims SET created_at = '2026-10-31T10:00:01Z' WHERE id = ?",
+            (v2_claim,),
+        )
+        conn.commit()
+        v1_count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM claims WHERE working_day_id = ? AND pipeline_version = 1",
+                (seeded["day_id"],),
+            ).fetchone()[0]
+        )
+        runtime = FakeRuntime(
+            complete_queue=[
+                {
+                    "activities": [
+                        {
+                            "title": "Acme Q4 proposal",
+                            "summary": "Editing",
+                            "observation_indexes": [1],
+                        }
+                    ]
+                },
+                {
+                    "entity_deltas": [],
+                    "decisions": [
+                        {"text": "other-version decision", "claim_indexes": [v1_count + 1]}
+                    ],
+                    "commitments": [],
+                },
+            ]
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        counts = derived_counts(conn, seeded["day_id"], 1)
+        assert counts["decisions"] == 0
+        stored = {
+            claim_id
+            for row in conn.execute("SELECT claim_ids FROM decisions")
+            for claim_id in json.loads(str(row[0]))
+        }
+        assert v2_claim not in stored
+    finally:
+        conn.close()
+
+
+def test_requeue_preserves_pending_understand_attempts(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        job = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": 1},
+            idempotency_key=f"understand:{segment_id}:1",
+            now=NOW,
+        )
+        conn.execute(
+            "UPDATE jobs SET attempts = 4, last_error = ? WHERE id = ?",
+            ("StructuredOutputError", job.id),
+        )
+        conn.commit()
+        assert requeue_understand_jobs_for_day(conn, day_id, now=NOW) == 0
+        row = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert row["state"] == JobState.PENDING.value
+        assert row["attempts"] == 4
+        assert row["last_error"] == "StructuredOutputError"
+    finally:
+        conn.close()
+
+
+def test_requeue_zeros_failed_understand_attempts(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        job = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": 1},
+            idempotency_key=f"understand:{segment_id}:1",
+            now=NOW,
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ?, attempts = ?, last_error = ? WHERE id = ?",
+            (JobState.FAILED.value, DEFAULT_MAX_ATTEMPTS, "StructuredOutputError", job.id),
+        )
+        conn.commit()
+        assert requeue_understand_jobs_for_day(conn, day_id, now=NOW) == 1
+        row = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert row["state"] == JobState.PENDING.value
+        assert row["attempts"] == 0
+        assert row["last_error"] is None
+    finally:
+        conn.close()
+
+
+def test_requeue_does_not_reset_other_day_or_version_understand_jobs(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        other = _insert_day(conn, date="2026-10-30")
+        other_frame = _insert_frame(conn, other, captured_at="2026-10-30T09:00:00Z")
+        other_segment = _insert_segment(conn, other, other_frame, started_at="2026-10-30T09:00:00Z")
+        this_v1 = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": 1},
+            idempotency_key=f"understand:{segment_id}:1",
+            now=NOW,
+        )
+        other_v1 = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": other_segment, "pipeline_version": 1},
+            idempotency_key=f"understand:{other_segment}:1",
+            now=NOW,
+        )
+        this_v2 = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": 2},
+            idempotency_key=f"understand:{segment_id}:2",
+            now=NOW,
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ?, attempts = 5, last_error = 'StructuredOutputError'",
+            (JobState.FAILED.value,),
+        )
+        conn.commit()
+        scoped = {job.id for job in _understand_jobs_for_day(conn, day_id, 1)}
+        assert scoped == {this_v1.id}
+        assert requeue_understand_jobs_for_day(conn, day_id, pipeline_version=1, now=NOW) == 1
+        this_row = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (this_v1.id,)
+        ).fetchone()
+        assert this_row["state"] == JobState.PENDING.value
+        assert this_row["attempts"] == 0
+        other_row = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (other_v1.id,)
+        ).fetchone()
+        assert other_row["state"] == JobState.FAILED.value
+        assert other_row["attempts"] == 5
+        v2_row = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (this_v2.id,)
+        ).fetchone()
+        assert v2_row["state"] == JobState.FAILED.value
+        assert v2_row["attempts"] == 5
+    finally:
+        conn.close()
+
+
+def test_ensure_consolidate_job_leaves_claimed_job(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": day_id, "pipeline_version": 1},
+            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            now=NOW,
+        )
+        lease = (NOW + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn.execute(
+            "UPDATE jobs SET state = ?, claimed_by = ?, leased_until = ? WHERE id = ?",
+            (JobState.CLAIMED.value, "watson-test", lease, job.id),
+        )
+        conn.commit()
+        assert ensure_consolidate_job(conn, day_id, now=NOW) is False
+        row = conn.execute(
+            "SELECT state, claimed_by, attempts FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert row["state"] == JobState.CLAIMED.value
+        assert row["claimed_by"] == "watson-test"
+        assert row["attempts"] == 0
+    finally:
+        conn.close()
+
+
+def test_ensure_consolidate_job_leaves_consolidated_day(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        runtime = _runtime()
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": seeded["day_id"], "pipeline_version": 1},
+            idempotency_key=consolidate_idempotency_key(seeded["day_id"], 1),
+            now=NOW,
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ? WHERE id = ?",
+            (JobState.COMPLETED.value, job.id),
+        )
+        conn.commit()
+        assert ensure_consolidate_job(conn, seeded["day_id"], now=NOW) is False
+        row = conn.execute("SELECT state, attempts FROM jobs WHERE id = ?", (job.id,)).fetchone()
+        assert row["state"] == JobState.COMPLETED.value
+        assert row["attempts"] == 0
+        day = conn.execute(
+            "SELECT state FROM working_days WHERE id = ?", (seeded["day_id"],)
+        ).fetchone()
+        assert day["state"] == "consolidated"
     finally:
         conn.close()
