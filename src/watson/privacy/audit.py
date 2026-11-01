@@ -25,6 +25,8 @@ KIND_DELETE_FAILED = "frame_deletion_failed"
 KIND_SKIPPED = "frame_skipped"
 KIND_DEDUPED = "frame_deduped"
 KIND_REPLAY = "replay_completed"
+KIND_TIER2_PURGED = "tier2_purged"
+KIND_SPOOL_SWEPT = "spool_swept"
 
 # Closed sets for enum-like audit values. ``error`` is an error-class code,
 # never a free-text exception message or ``type(exc).__name__``.
@@ -56,6 +58,12 @@ _COUNT_KEY_STEMS = frozenset(
         "threshold",
         "png",
         "sidecar",
+        "texts",
+        "visuals",
+        "orphaned",
+        "stale",
+        "unprocessed",
+        "refused",
     }
 )
 
@@ -80,6 +88,8 @@ _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
             "segments",
         }
     ),
+    KIND_TIER2_PURGED: frozenset({"texts", "visuals", "segments"}),
+    KIND_SPOOL_SWEPT: frozenset({"png", "sidecar", "orphaned", "stale", "unprocessed", "refused"}),
 }
 
 # Content-style stems rejected even if a future kind forgot to list them.

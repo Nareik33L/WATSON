@@ -1,0 +1,32 @@
+<section>
+  <h2>Today</h2>
+  {% if today is none or today.date is none %}
+  <p>no working day</p>
+  {% else %}
+  <p><span class="label">date</span> {{ today.date }}</p>
+  {% if not today.segments %}
+  <p>no segments</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>app</th>
+        <th>title</th>
+        <th>start–end</th>
+        <th>duration</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in today.segments %}
+      <tr>
+        <td>{{ item.app_name or "-" }}</td>
+        <td>{{ item.window_title or "-" }}</td>
+        <td>{{ item.range_label() }}</td>
+        <td>{{ item.duration_label() }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% endif %}
+</section>

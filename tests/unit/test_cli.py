@@ -47,7 +47,7 @@ def test_doctor_and_db_commands(
 
     assert cli.main(["db", "upgrade"]) == 0
     upgraded = capsys.readouterr().out
-    assert "0004_m2b_segments" in upgraded
+    assert "0005_m2c_on_delete" in upgraded
     assert TEST_KEY.hex() not in upgraded
 
     assert cli.main(["db", "status"]) == 0
@@ -72,6 +72,7 @@ def test_status_without_db(data_dir: Path, capsys: pytest.CaptureFixture[str]) -
     assert "db_status: missing" in out
     assert "capture.state: idle" in out
     assert "queue.depth: 0" in out
+    assert "backlog.depth: 0" in out
     assert "frames.captured: 0" in out
     assert "deletion.verified: 0" in out
     assert "exclusions.override: none" in out

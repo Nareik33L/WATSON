@@ -466,5 +466,5 @@ def test_merged_text_cap_is_line_boundary_and_32k(
         name="day_cap",
     )
     merged = str(rows[0]["merged_text"])
-    assert len(merged) <= 32768
+    assert 32768 - 60 < len(merged) <= 32768
     assert merged.splitlines()[-1] in lines

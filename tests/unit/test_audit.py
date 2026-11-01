@@ -21,6 +21,8 @@ from watson.privacy.audit import (
     KIND_INGESTED,
     KIND_REPLAY,
     KIND_SKIPPED,
+    KIND_SPOOL_SWEPT,
+    KIND_TIER2_PURGED,
     KIND_VERIFIED,
     SCOPE_EXCLUDED,
     AuditError,
@@ -112,9 +114,7 @@ def test_skipped_audit_rejects_content_key_variants(
         conn.close()
 
 
-def test_deduped_audit_rejects_hash_and_content_keys(
-    data_dir: Path, key_provider: object
-) -> None:
+def test_deduped_audit_rejects_hash_and_content_keys(data_dir: Path, key_provider: object) -> None:
     conn = open_test_db(data_dir)
     try:
         with pytest.raises(AuditError, match="not allowed|content"):
@@ -199,6 +199,18 @@ def test_unknown_kind_is_rejected(data_dir: Path, key_provider: object) -> None:
                 "previous_frame_id": "22222222-2222-4222-8222-222222222222",
                 "distance": 2,
                 "threshold": 4,
+            },
+        ),
+        (KIND_TIER2_PURGED, {"texts": 1, "visuals": 0, "segments": 1}),
+        (
+            KIND_SPOOL_SWEPT,
+            {
+                "png": 1,
+                "sidecar": 1,
+                "orphaned": 1,
+                "stale": 0,
+                "unprocessed": 0,
+                "refused": 0,
             },
         ),
     ],

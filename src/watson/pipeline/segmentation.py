@@ -26,6 +26,7 @@ from watson.config.schema import (
     DEFAULT_MERGED_TEXT_MAX_CHARS,
     DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
     DEFAULT_SEGMENT_SIMILARITY,
+    DEFAULT_TIER2_GRACE_DAYS,
     SegmentationConfig,
 )
 from watson.memory.db import iso_now, parse_iso
@@ -48,15 +49,23 @@ class SegmentConfig:
     similarity_threshold: float = DEFAULT_SEGMENT_SIMILARITY
     close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS
     merged_text_max_chars: int = DEFAULT_MERGED_TEXT_MAX_CHARS
+    tier2_grace_days: int = DEFAULT_TIER2_GRACE_DAYS
 
     @classmethod
-    def from_settings(cls, settings: SegmentationConfig | None) -> SegmentConfig:
+    def from_settings(
+        cls,
+        settings: SegmentationConfig | None,
+        *,
+        tier2_grace_days: int | None = None,
+    ) -> SegmentConfig:
+        grace = DEFAULT_TIER2_GRACE_DAYS if tier2_grace_days is None else int(tier2_grace_days)
         if settings is None:
-            return cls()
+            return cls(tier2_grace_days=grace)
         return cls(
             similarity_threshold=float(settings.similarity_threshold),
             close_after_seconds=int(settings.close_after_seconds),
             merged_text_max_chars=int(settings.merged_text_max_chars),
+            tier2_grace_days=grace,
         )
 
 
@@ -244,7 +253,7 @@ def _start_segment(
     stamp = iso_now()
     segment_id = new_id()
     merged = merge_lines("", text, cap=settings.merged_text_max_chars)
-    expires_at = _expires_at(captured_at)
+    expires_at = _expires_at(captured_at, settings.tier2_grace_days)
     conn.execute(
         """
         INSERT INTO segments (
@@ -301,11 +310,8 @@ def _extend_segment(
     dwell = max(0, int((ended - started).total_seconds()))
     added = new_line_count(str(current["last_text"]), text)
     line_changes = int(current["line_changes"]) + added
-    merged = merge_lines(
-        str(current["merged_text"]), text, cap=settings.merged_text_max_chars
-    )
+    merged = merge_lines(str(current["merged_text"]), text, cap=settings.merged_text_max_chars)
     frame_count = int(current["frame_count"]) + 1
-    state = "closed" if dwell >= settings.close_after_seconds else str(current["state"])
     conn.execute(
         """
         UPDATE segments
@@ -315,7 +321,6 @@ def _extend_segment(
             line_changes = ?,
             merged_text = ?,
             url_domain = COALESCE(url_domain, ?),
-            state = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -326,7 +331,6 @@ def _extend_segment(
             line_changes,
             merged,
             url_domain,
-            state,
             stamp,
             current["id"],
         ),
@@ -349,7 +353,6 @@ def _extend_segment(
             "line_changes": line_changes,
             "merged_text": merged,
             "last_text": text,
-            "state": state,
         }
     )
     return updated
@@ -432,9 +435,9 @@ def _insert_membership(
     )
 
 
-def _expires_at(captured_at: str) -> str:
+def _expires_at(captured_at: str, grace_days: int) -> str:
     moment = parse_iso(captured_at).astimezone(UTC)
-    return iso_now(moment + timedelta(days=7))
+    return iso_now(moment + timedelta(days=int(grace_days)))
 
 
 def _iter_lines(text: str) -> list[str]:

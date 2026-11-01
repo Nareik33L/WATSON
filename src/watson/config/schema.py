@@ -53,10 +53,13 @@ DEFAULT_DENIED_DOMAINS: tuple[str, ...] = (
 
 APPLICATION_SUPPORT_WATSON = Path("Library") / "Application Support" / "WATSON"
 
-# Placeholder TTLs from plan §5. Enforcement lands with M2/M3 retention.
+# TTLs from plan §5. Tier 2 is "consolidation + 7 days"; M3 has not landed, so
+# the conservative M2c window is captured_at + tier2_grace_days (default 7).
 DEFAULT_WINDOW_TITLE_DAYS = 30
 DEFAULT_METADATA_DAYS = 365
 DEFAULT_TIER2_GRACE_DAYS = 7
+DEFAULT_SPOOL_HARD_LIMIT_HOURS = 24
+DEFAULT_BACKLOG_BATCH_SIZE = 32
 
 # D3 / §3.4: split when OCR-text similarity drops below this (word Jaccard).
 DEFAULT_SEGMENT_SIMILARITY = 0.25
@@ -186,16 +189,38 @@ class SegmentationConfig(_StrictModel):
 
 
 class RetentionConfig(_StrictModel):
-    """Retention placeholders (plan §5). Not enforced in this slice."""
+    """Retention windows (plan §5). Tier-2 and spool sweeps honor these."""
 
     window_title_days: int = Field(default=DEFAULT_WINDOW_TITLE_DAYS, ge=0, le=3650)
     metadata_days: int = Field(default=DEFAULT_METADATA_DAYS, ge=0, le=3650)
-    tier2_grace_days: int = Field(default=DEFAULT_TIER2_GRACE_DAYS, ge=0, le=365)
+    tier2_grace_days: int = Field(
+        default=DEFAULT_TIER2_GRACE_DAYS,
+        ge=0,
+        le=30,
+        description="Age window for frame_text / frame_visual / segments.merged_text.",
+    )
+    spool_hard_limit_hours: int = Field(
+        default=DEFAULT_SPOOL_HARD_LIMIT_HOURS,
+        ge=1,
+        le=24,
+        description="Tier-0 hard limit (plan §5: 24 h, no user extension).",
+    )
     derived_days: int | None = Field(
         default=None,
         ge=1,
         le=3650,
         description="Optional rolling window for claims/summaries; None = indefinite.",
+    )
+
+
+class PipelineConfig(_StrictModel):
+    """Worker drain bounds. Capture/ingest never waits on this."""
+
+    backlog_batch_size: int = Field(
+        default=DEFAULT_BACKLOG_BATCH_SIZE,
+        ge=1,
+        le=10_000,
+        description="Max extract jobs completed in one drain_backlog call.",
     )
 
 
@@ -213,3 +238,4 @@ class WatsonConfig(_StrictModel):
     exclusions: ExclusionsConfig = Field(default_factory=ExclusionsConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     segmentation: SegmentationConfig = Field(default_factory=SegmentationConfig)
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)

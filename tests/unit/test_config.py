@@ -35,6 +35,9 @@ def test_defaults_use_application_support_path(
     assert config.segmentation.close_after_seconds == 20 * 60
     assert config.exclusions.bundle_ids == DEFAULT_EXCLUDED_BUNDLE_IDS
     assert config.retention.window_title_days == 30
+    assert config.retention.tier2_grace_days == 7
+    assert config.retention.spool_hard_limit_hours == 24
+    assert config.pipeline.backlog_batch_size == 32
     assert config.retention.derived_days is None
 
 
@@ -163,6 +166,21 @@ bundle_ids = "com.example.secret"
     )
     with pytest.raises(ConfigError, match=r"exclusions"):
         load_config()
+
+
+def test_spool_hard_limit_hours_rejects_above_24(data_dir: Path) -> None:
+    (data_dir / "config.toml").write_text(
+        f"""
+data_dir = "{data_dir}"
+
+[retention]
+spool_hard_limit_hours = 25
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"retention\.spool_hard_limit_hours") as raised:
+        load_config()
+    assert "Invalid config" in str(raised.value)
 
 
 def test_unknown_key_is_named(data_dir: Path) -> None:
