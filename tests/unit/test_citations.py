@@ -47,6 +47,70 @@ def test_strips_missing_and_foreign_citations() -> None:
     assert MISSING not in unverified_ids
 
 
+def test_strips_uncited_sentences() -> None:
+    paragraphs = [
+        {
+            "text": f"Bare sentence with no citation. Cited work landed [c:{DAY_A}].",
+            "claim_ids": [DAY_A],
+        }
+    ]
+    verified = verify_narrative(paragraphs, list(CLAIMS))
+    assert "Bare sentence" not in verified.narrative_md
+    assert f"[c:{DAY_A}]" in verified.narrative_md
+    unverified_ids = {row["id"] for row in verified.unverified}
+    assert CLAIMS[1]["id"] in unverified_ids
+    assert DAY_A not in unverified_ids
+
+
+def test_verifier_scopes_to_day_and_pipeline_version() -> None:
+    other_day = {
+        "id": DAY_B,
+        "working_day_id": "day-other",
+        "pipeline_version": 1,
+        "kind": "outcome",
+        "assertion": "observed",
+        "text": "belongs elsewhere",
+    }
+    other_version = {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "working_day_id": "day-a",
+        "pipeline_version": 2,
+        "kind": "activity",
+        "assertion": "observed",
+        "text": "v2 only",
+    }
+    scoped = [
+        {
+            "id": DAY_A,
+            "working_day_id": "day-a",
+            "pipeline_version": 1,
+            "kind": "outcome",
+            "assertion": "observed",
+            "text": "Appendix drafted",
+        },
+        other_day,
+        other_version,
+    ]
+    paragraphs = [
+        {
+            "text": (
+                f"Keep this [c:{DAY_A}]. "
+                f"Drop other day [c:{DAY_B}]. "
+                f"Drop other version [c:{other_version['id']}]."
+            ),
+            "claim_ids": [DAY_A, DAY_B, other_version["id"]],
+        }
+    ]
+    verified = verify_narrative(
+        paragraphs, scoped, working_day_id="day-a", pipeline_version=1
+    )
+    assert f"[c:{DAY_A}]" in verified.narrative_md
+    assert DAY_B not in verified.narrative_md
+    assert other_version["id"] not in verified.narrative_md
+    assert verified.claim_ids == (DAY_A,)
+    assert verified.unverified == ()
+
+
 def test_uncited_claims_go_to_unverified() -> None:
     paragraphs = [{"text": f"Only the outcome [c:{DAY_A}].", "claim_ids": [DAY_A]}]
     verified = verify_narrative(paragraphs, list(CLAIMS))

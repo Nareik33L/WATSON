@@ -47,7 +47,6 @@ from watson.intelligence.runtime import (
     build_runtime,
     hold_if_unavailable,
 )
-from watson.intelligence.runtime.fake import FakeRuntime
 from watson.intelligence.schemas.consolidation import (
     CLUSTERING_JSON_SCHEMA,
     DAILY_SUMMARY_JSON_SCHEMA,
@@ -448,10 +447,12 @@ def consolidate_working_day(
             else recovery_deadline_hours
         ),
     )
-    language = runtime if runtime is not None else FakeRuntime()
-    embedder: EmbeddingRuntime = embedding if embedding is not None else _as_embedder(language)
     moment = _aware(now)
     try:
+        if runtime is None:
+            raise RuntimeUnavailable("intelligence runtime is unavailable")
+        language = runtime
+        embedder: EmbeddingRuntime = embedding if embedding is not None else _as_embedder(language)
         day = _load_day(conn, working_day_id)
         if day is None:
             raise ConsolidationError(f"working day {working_day_id} is missing")
@@ -640,6 +641,8 @@ def _replace_derived(
             claims,
         ),
         claims,
+        working_day_id=working_day_id,
+        pipeline_version=settings.pipeline_version,
     )
     stamp = iso_now(now)
     try:
@@ -982,6 +985,28 @@ def _reread_day(conn: sqlcipher.Connection, working_day_id: str) -> dict[str, An
     return {"id": str(row["id"]), "state": str(row["state"])}
 
 
+def _reread_summary(
+    conn: sqlcipher.Connection, working_day_id: str, pipeline_version: int
+) -> dict[str, Any] | None:
+    """Re-read the daily summary after checkpoint. None if the row is gone."""
+    row = conn.execute(
+        """
+        SELECT id, working_day_id, pipeline_version, narrative_md
+        FROM daily_summaries
+        WHERE working_day_id = ? AND pipeline_version = ?
+        """,
+        (working_day_id, pipeline_version),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "working_day_id": str(row["working_day_id"]),
+        "pipeline_version": int(row["pipeline_version"]),
+        "narrative_md": str(row["narrative_md"]),
+    }
+
+
 def _verify_persistence(
     conn: sqlcipher.Connection,
     working_day_id: str,
@@ -993,6 +1018,9 @@ def _verify_persistence(
     day = _reread_day(conn, working_day_id)
     if day is None:
         raise ConsolidationError("working day missing after wal_checkpoint")
+    summary = _reread_summary(conn, working_day_id, pipeline_version)
+    if expected.get("summaries", 0) and summary is None:
+        raise ConsolidationError("summary missing after wal_checkpoint")
     seen = derived_counts(conn, working_day_id, pipeline_version)
     if seen != expected:
         raise ConsolidationError("derived rows missing after wal_checkpoint")
@@ -1099,7 +1127,7 @@ def _load_claims(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT id, kind, assertion, text
+        SELECT id, working_day_id, kind, assertion, text, pipeline_version
         FROM claims
         WHERE working_day_id = ? AND pipeline_version = ?
         ORDER BY created_at, id
@@ -1109,9 +1137,11 @@ def _load_claims(
     return [
         {
             "id": str(row["id"]),
+            "working_day_id": str(row["working_day_id"]),
             "kind": str(row["kind"]),
             "assertion": str(row["assertion"]),
             "text": str(row["text"]),
+            "pipeline_version": int(row["pipeline_version"]),
         }
         for row in rows
     ]
@@ -1255,7 +1285,7 @@ def _resolve_adapters(
             return runtime, embedder, ConsolidateSettings.from_config(config, model_id=model_id)
         return runtime, embedder, ConsolidateSettings.from_config(config)
     if config is None:
-        config = IntelligenceConfig(runtime="fake")
+        return None, None, ConsolidateSettings()
     if isinstance(config, WatsonConfig):
         held = hold_if_unavailable(conn, config.intelligence, now=now)
         settings = ConsolidateSettings.from_config(config)
@@ -1274,7 +1304,7 @@ def _as_embedder(runtime: LanguageRuntime) -> EmbeddingRuntime:
     embed = getattr(runtime, "embed", None)
     if callable(embed):
         return runtime  # type: ignore[return-value]
-    return FakeRuntime()
+    raise RuntimeUnavailable("intelligence runtime is unavailable")
 
 
 def _spool_from_config(config: WatsonConfig | None) -> Path | None:

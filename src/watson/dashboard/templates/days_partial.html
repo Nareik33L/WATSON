@@ -49,18 +49,16 @@
   {% endif %}
 </section>
 
+{% if day.unverified %}
 <section>
   <h2>Unverified</h2>
-  {% if not day.unverified %}
-  <p>none</p>
-  {% else %}
   <ul>
     {% for item in day.unverified %}
     <li id="unverified-{{ item.id }}">{{ item.kind }}: {{ item.text }}</li>
     {% endfor %}
   </ul>
-  {% endif %}
 </section>
+{% endif %}
 
 <section>
   <h2>Claims</h2>

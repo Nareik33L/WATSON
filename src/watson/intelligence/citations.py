@@ -45,10 +45,28 @@ def expand_index_citations(
 
 
 def verify_narrative(
-    paragraphs: list[dict[str, Any]], day_claims: list[dict[str, Any]]
+    paragraphs: list[dict[str, Any]],
+    day_claims: list[dict[str, Any]],
+    *,
+    working_day_id: str | None = None,
+    pipeline_version: int | None = None,
 ) -> VerifiedNarrative:
-    """Keep sentences whose citations exist on this day; uncited claims → Unverified."""
-    day_ids = {str(row["id"]) for row in day_claims}
+    """Keep only sentences with valid same-day citations; uncited claims → Unverified.
+
+    §7.2 / §3.7 step 7: a body sentence without a resolvable ``[c:id]`` is
+    removed. ``working_day_id`` / ``pipeline_version`` drop foreign rows so a
+    caller cannot cite another day or another pipeline version.
+    """
+    scoped = [
+        row
+        for row in day_claims
+        if (working_day_id is None or str(row.get("working_day_id") or "") == working_day_id)
+        and (
+            pipeline_version is None
+            or int(row.get("pipeline_version") or 0) == pipeline_version
+        )
+    ]
+    day_ids = {str(row["id"]) for row in scoped}
     kept_paragraphs: list[str] = []
     cited: set[str] = set()
     for para in paragraphs:
@@ -56,7 +74,7 @@ def verify_narrative(
         kept_sentences: list[str] = []
         for sentence in _split_sentences(text):
             ids = CITATION_RE.findall(sentence)
-            if ids and not all(_resolvable(claim_id, day_ids) for claim_id in ids):
+            if not ids or not all(_resolvable(claim_id, day_ids) for claim_id in ids):
                 continue
             kept_sentences.append(sentence)
             cited.update(claim_id for claim_id in ids if _resolvable(claim_id, day_ids))
@@ -69,7 +87,7 @@ def verify_narrative(
             "kind": str(row["kind"]),
             "text": str(row["text"]),
         }
-        for row in day_claims
+        for row in scoped
         if str(row["id"]) not in cited
     )
     return VerifiedNarrative(

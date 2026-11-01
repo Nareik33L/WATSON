@@ -287,20 +287,41 @@ def _day(request: Request, date: str | None) -> DayPage:
 
 
 def _retry_day(request: Request, working_day_id: str) -> str | None:
-    from watson.intelligence.runtime import JobFailure
-    from watson.intelligence.runtime.fake import FakeRuntime
-    from watson.pipeline.consolidation import ConsolidationWait, retry_working_day
+    from watson.intelligence.runtime import JobFailure, build_runtime, hold_if_unavailable
+    from watson.pipeline.consolidation import (
+        ConsolidateSettings,
+        ConsolidationWait,
+        retry_working_day,
+    )
 
     config = getattr(request.app.state, "config", None)
     if config is None or not config.db_path.is_file():
         return None
-    runtime = getattr(request.app.state, "runtime", None)
-    language = runtime if runtime is not None else FakeRuntime()
     key = _cached_db_key(request.app)
     conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
     try:
+        opted = getattr(request.app.state, "runtime", None)
+        if opted is not None:
+            language = opted
+            embedder = opted
+        else:
+            held = hold_if_unavailable(conn, config.intelligence)
+            if held.held:
+                language = None
+                embedder = None
+            else:
+                bundle = build_runtime(config)
+                language = bundle.language
+                embedder = bundle.embedding
         try:
-            retry_working_day(conn, working_day_id, runtime=language, embedding=language)
+            retry_working_day(
+                conn,
+                working_day_id,
+                runtime=language,
+                embedding=embedder,
+                settings=ConsolidateSettings.from_config(config),
+                spool_dir=config.spool_dir,
+            )
         except (JobFailure, ConsolidationWait, DatabaseError, sqlcipher.DatabaseError):
             pass
         row = conn.execute(

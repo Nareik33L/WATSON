@@ -137,10 +137,10 @@ def _claims(
         SELECT e.claim_id AS claim_id, e.snippet AS quote
         FROM claim_evidence e
         JOIN claims c ON c.id = e.claim_id
-        WHERE c.working_day_id = ?
+        WHERE c.working_day_id = ? AND c.pipeline_version = ?
         ORDER BY e.created_at, e.id
         """,
-        (working_day_id,),
+        (working_day_id, pipeline_version),
     ).fetchall()
     quotes: dict[str, list[str]] = {}
     for row in evidence:
