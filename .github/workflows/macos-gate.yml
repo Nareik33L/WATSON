@@ -1,0 +1,48 @@
+# Cheap ubuntu gate for macOS workflows. See docs/ci.md.
+# On schedule: skip macOS if main has had no commits in the last 7 days.
+# On workflow_dispatch: always run.
+
+name: macOS gate
+
+on:
+  workflow_call:
+    outputs:
+      should_run:
+        description: Whether the caller may start a macOS runner
+        value: ${{ jobs.gate.outputs.should_run }}
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: skip if main is idle
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+    steps:
+      - name: Check out main
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Decide whether macOS should run
+        id: decide
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
+            echo "should_run=true" >> "${GITHUB_OUTPUT}"
+            echo "event ${GITHUB_EVENT_NAME}: always run macOS"
+            exit 0
+          fi
+          count="$(git rev-list --count --since='7 days ago' HEAD)"
+          echo "commits_on_main_in_last_7_days=${count}"
+          if [ "${count}" -gt 0 ]; then
+            echo "should_run=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "should_run=false" >> "${GITHUB_OUTPUT}"
+            echo "main has had no commits in 7 days; skipping macOS"
+          fi

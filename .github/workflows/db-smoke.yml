@@ -1,40 +1,30 @@
 name: DB smoke
 
 on:
-  push:
-    paths:
-      - "src/watson/memory/**"
-      - "src/watson/pipeline/jobs.py"
-      - "src/watson/config/**"
-      - "tests/unit/test_db_smoke.py"
-      - "tests/unit/test_keys.py"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "docs/decisions/0004-db-encryption.md"
-      - ".github/workflows/db-smoke.yml"
-  pull_request:
-    paths:
-      - "src/watson/memory/**"
-      - "src/watson/pipeline/jobs.py"
-      - "src/watson/config/**"
-      - "tests/unit/test_db_smoke.py"
-      - "tests/unit/test_keys.py"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "docs/decisions/0004-db-encryption.md"
-      - ".github/workflows/db-smoke.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 0"
 
 permissions:
   contents: read
 
-# macos-15 minutes are costly. This job only proves the sqlcipher3 + sqlite-vec
-# wheels on macOS arm64 (FTS5, extension load, unreadable without the key).
+# macos-15 minutes count 10× on a private repo. This job is not on
+# push/pull_request or tags. Trigger it by hand, or wait for the
+# Sunday 03:00 UTC schedule (skipped if main was idle). See docs/ci.md.
+# Proves the sqlcipher3 + sqlite-vec wheels on macOS arm64
+# (FTS5, extension load, unreadable without the key).
 # GitHub retired macos-14 images (brownout / 2026-11-02 sunset).
 
 jobs:
+  gate:
+    uses: ./.github/workflows/macos-gate.yml
+
   db-smoke-macos:
     name: SQLCipher smoke (macos-15)
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
     runs-on: macos-15
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -44,6 +34,9 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
 
       - name: Sync dependencies
         run: uv sync --locked --group dev

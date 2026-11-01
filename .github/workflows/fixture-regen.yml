@@ -7,21 +7,29 @@ on:
       - "tests/fixtures/**"
       - ".github/workflows/fixture-regen.yml"
   push:
+    branches: [main]
+    tags: ["v*"]
     paths:
       - "tools/fixture_gen/**"
       - "tests/fixtures/**"
       - ".github/workflows/fixture-regen.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')) }}
+
 permissions:
   contents: read
 
-# Default (not opt-in) regen for PRs/pushes that touch the generator or goldens.
+# Default (not opt-in) regen for PRs and for pushes to main / v* tags that
+# touch the generator or goldens. Feature-branch pushes do not run this.
 # Main CI still skips Playwright; this job installs Chromium and diffs sidecars.
 
 jobs:
   regen:
     name: playwright fixture regen
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -31,6 +39,9 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
 
       - name: Sync dependencies
         run: uv sync --locked --group dev

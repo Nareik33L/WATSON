@@ -49,7 +49,7 @@ On the development/CI Linux image, `uv add` installed the manylinux wheels above
 8. Opening with SQLCipher and the wrong key raised the same class of error (SQLCipher logs `hmac check failed` to stderr; the key is not in that message).
 9. The raw key bytes and the hex encoding were **not** present in the database file. The file header was ciphertext, not `SQLite format 3`.
 
-The same checks are locked in `tests/unit/test_db_smoke.py` (run on Ubuntu CI) and in the path-filtered macos-15 job `.github/workflows/db-smoke.yml` (macos-14 images are in brownout).
+The same checks are locked in `tests/unit/test_db_smoke.py` (run on Ubuntu CI) and in the macos-15 job `.github/workflows/db-smoke.yml` (manual / weekly; see `docs/ci.md`. macos-14 images are in brownout).
 
 ### Key handling tests
 

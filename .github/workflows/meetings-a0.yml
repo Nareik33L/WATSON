@@ -1,41 +1,27 @@
 name: Meetings A0
 
 on:
-  pull_request:
-    paths:
-      - "tools/fixture_gen/meetings/**"
-      - "tools/fixture_gen/watson_fixturegen/meetings/**"
-      - "tools/fixture_gen/watson_fixturegen/cli.py"
-      - "tools/bench/watson_bench/transcription/**"
-      - "tools/bench/watson_bench/cli.py"
-      - "tests/fixtures/meetings/**"
-      - "tests/unit/fixture_gen/test_meetings*.py"
-      - "tests/unit/bench/test_transcription*.py"
-      - "tests/eval/test_a0_macos_smoke.py"
-      - ".github/workflows/meetings-a0.yml"
-  push:
-    paths:
-      - "tools/fixture_gen/meetings/**"
-      - "tools/fixture_gen/watson_fixturegen/meetings/**"
-      - "tools/fixture_gen/watson_fixturegen/cli.py"
-      - "tools/bench/watson_bench/transcription/**"
-      - "tools/bench/watson_bench/cli.py"
-      - "tests/fixtures/meetings/**"
-      - "tests/unit/fixture_gen/test_meetings*.py"
-      - "tests/unit/bench/test_transcription*.py"
-      - "tests/eval/test_a0_macos_smoke.py"
-      - ".github/workflows/meetings-a0.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 0"
 
 permissions:
   contents: read
 
-# macos-15 minutes are costly. This job only starts when meeting scripts,
-# the meetings renderer, or the transcription harness change.
+# macos-15 minutes count 10× on a private repo. Not on push/pull_request
+# or tags. Trigger by hand, or Sunday 03:00 UTC (skipped if main was
+# idle). See docs/ci.md.
 
 jobs:
+  gate:
+    uses: ./.github/workflows/macos-gate.yml
+
   render:
     name: render fixtures + tiny smoke
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
     runs-on: macos-15
+    timeout-minutes: 25
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -45,6 +31,9 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
 
       - name: Sync fixture + bench deps
         run: uv sync --locked --group fixturegen --group bench --extra transcribe
