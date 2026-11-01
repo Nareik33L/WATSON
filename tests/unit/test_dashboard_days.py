@@ -311,6 +311,20 @@ def test_days_escape_hostile_summary_claim_and_evidence(
             text='Claim <script>pwn()</script> attr="quoted"',
             evidence=False,
         )
+        uncited_text = (
+            'Uncited <script>unverified_xss()</script> onclick="exfil" and "quotes"'
+        )
+        uncited_id = _insert_claim(
+            conn,
+            observation_id,
+            day_id,
+            segment_id,
+            frame_id,
+            kind="outcome",
+            assertion="inferred",
+            text=uncited_text,
+            evidence=False,
+        )
         stamp = "2026-10-31T10:00:00Z"
         conn.execute(
             """
@@ -334,6 +348,7 @@ def test_days_escape_hostile_summary_claim_and_evidence(
             day_id,
             narrative=f"Hello <script>alert(1)</script> cited [c:{claim_id}].",
             claim_ids=[claim_id],
+            unverified=[{"id": uncited_id, "kind": "outcome", "text": uncited_text}],
         )
     finally:
         conn.close()
@@ -346,6 +361,11 @@ def test_days_escape_hostile_summary_claim_and_evidence(
     assert "onerror" in page.text
     assert "&lt;img" in page.text
     assert "attr=&#34;quoted&#34;" in page.text or "attr=&quot;quoted&quot;" in page.text
+    assert f'id="unverified-{uncited_id}"' in page.text
+    assert "<script>unverified_xss()" not in page.text
+    assert "&lt;script&gt;unverified_xss()" in page.text
+    assert 'onclick="exfil"' not in page.text
+    assert "onclick=&#34;exfil&#34;" in page.text or "onclick=&quot;exfil&quot;" in page.text
 
 
 def test_days_page_scopes_summary_to_pipeline_version(
@@ -388,7 +408,6 @@ def test_days_page_scopes_summary_to_pipeline_version(
             """,
             (new_id(), stamp, stamp, v2, segment_id, frame_id),
         )
-        _insert_summary(conn, day_id, narrative="v1 narrative only", claim_ids=[v1])
         _insert_summary(
             conn,
             day_id,
@@ -396,6 +415,7 @@ def test_days_page_scopes_summary_to_pipeline_version(
             claim_ids=[v2],
             pipeline_version=2,
         )
+        _insert_summary(conn, day_id, narrative="v1 narrative only", claim_ids=[v1])
     finally:
         conn.close()
     client = _client()
