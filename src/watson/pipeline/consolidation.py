@@ -30,6 +30,7 @@ from watson.config.schema import (
 )
 from watson.intelligence.prompts import load_prompt
 from watson.intelligence.runtime import (
+    UNDERSTAND_JOB_KIND,
     EmbeddingRuntime,
     JobFailure,
     LanguageRuntime,
@@ -185,22 +186,114 @@ def enqueue_catch_up(
     day_end: str = DEFAULT_DAY_END,
     pipeline_version: int = PIPELINE_VERSION,
 ) -> int:
-    """Enqueue one consolidate job per due day. Idempotent."""
+    """Enqueue or requeue one consolidate job per due day. Idempotent."""
     moment = _aware(now)
     added = 0
     for day_id in due_working_day_ids(conn, now=moment, day_end=day_end):
-        key = consolidate_idempotency_key(day_id, pipeline_version)
-        before = conn.execute("SELECT id FROM jobs WHERE idempotency_key = ?", (key,)).fetchone()
+        requeue_understand_jobs_for_day(conn, day_id, pipeline_version=pipeline_version, now=moment)
+        if ensure_consolidate_job(conn, day_id, pipeline_version=pipeline_version, now=moment):
+            added += 1
+    return added
+
+
+def ensure_consolidate_job(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int = PIPELINE_VERSION,
+    now: datetime | None = None,
+) -> bool:
+    """Enqueue or return a dead consolidate job to pending. True if newly pending."""
+    moment = _aware(now)
+    key = consolidate_idempotency_key(working_day_id, pipeline_version)
+    row = conn.execute("SELECT * FROM jobs WHERE idempotency_key = ?", (key,)).fetchone()
+    if row is None:
         enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": day_id, "pipeline_version": pipeline_version},
+            payload={"working_day_id": working_day_id, "pipeline_version": pipeline_version},
             idempotency_key=key,
             now=moment,
         )
-        if before is None:
-            added += 1
-    return added
+        return True
+    job = Job.from_row(row)
+    if job.state in (JobState.PENDING, JobState.CLAIMED):
+        return False
+    day = _load_day(conn, working_day_id)
+    if (
+        job.state is JobState.COMPLETED
+        and day is not None
+        and str(day.get("state")) == "consolidated"
+    ):
+        return False
+    _reset_job(conn, job.id, now=moment)
+    return True
+
+
+def requeue_understand_jobs_for_day(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int = PIPELINE_VERSION,
+    close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+    now: datetime | None = None,
+) -> int:
+    """Return failed (or completed-without-observation) understand jobs to pending."""
+    moment = _aware(now)
+    reset = 0
+    for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version):
+        if job.state is JobState.PENDING or job.state is JobState.CLAIMED:
+            continue
+        segment_id = str(job.payload.get("segment_id") or "")
+        if job.state is JobState.COMPLETED and segment_id:
+            seen = conn.execute(
+                "SELECT 1 FROM observations WHERE segment_id = ? AND pipeline_version = ?",
+                (segment_id, pipeline_version),
+            ).fetchone()
+            if seen is not None:
+                continue
+        _reset_job(conn, job.id, now=moment)
+        reset += 1
+    enqueue_eligible_understand_jobs(
+        conn,
+        pipeline_version=pipeline_version,
+        close_after_seconds=close_after_seconds,
+        working_day_id=working_day_id,
+        now=moment,
+    )
+    return reset
+
+
+def retry_working_day(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    runtime: LanguageRuntime | None = None,
+    embedding: EmbeddingRuntime | None = None,
+    spool_dir: Path | None = None,
+    now: datetime | None = None,
+    settings: ConsolidateSettings | None = None,
+) -> str:
+    """Dashboard Retry: re-enqueue dead jobs and re-run consolidation (§3.7 / §7.4)."""
+    cfg = settings or ConsolidateSettings()
+    moment = _aware(now)
+    requeue_understand_jobs_for_day(
+        conn,
+        working_day_id,
+        pipeline_version=cfg.pipeline_version,
+        close_after_seconds=cfg.close_after_seconds,
+        now=moment,
+    )
+    ensure_consolidate_job(conn, working_day_id, pipeline_version=cfg.pipeline_version, now=moment)
+    return consolidate_working_day(
+        conn,
+        working_day_id,
+        runtime=runtime,
+        embedding=embedding,
+        spool_dir=spool_dir,
+        now=moment,
+        settings=cfg,
+    )
 
 
 def catch_up_on_launch(
@@ -359,10 +452,18 @@ def consolidate_working_day(
             working_day_id=working_day_id,
             close_after_seconds=cfg.close_after_seconds,
         )
+        requeue_understand_jobs_for_day(
+            conn,
+            working_day_id,
+            pipeline_version=cfg.pipeline_version,
+            close_after_seconds=cfg.close_after_seconds,
+            now=moment,
+        )
         enqueue_eligible_understand_jobs(
             conn,
             pipeline_version=cfg.pipeline_version,
             close_after_seconds=cfg.close_after_seconds,
+            working_day_id=working_day_id,
             now=moment,
         )
         drain_understand_jobs(
@@ -375,8 +476,16 @@ def consolidate_working_day(
             conn,
             pipeline_version=cfg.pipeline_version,
             close_after_seconds=cfg.close_after_seconds,
+            working_day_id=working_day_id,
         )
         if pending:
+            if _understand_is_held(
+                conn,
+                working_day_id,
+                pipeline_version=cfg.pipeline_version,
+                close_after_seconds=cfg.close_after_seconds,
+            ):
+                raise ConsolidationWait("understanding held")
             raise ConsolidationError("pending understanding")
         counts = _replace_derived(
             conn,
@@ -385,7 +494,12 @@ def consolidate_working_day(
             settings=cfg,
             now=moment,
         )
-        _verify_persistence(conn, working_day_id)
+        _verify_persistence(
+            conn,
+            working_day_id,
+            pipeline_version=cfg.pipeline_version,
+            expected=counts,
+        )
         _apply_retention_and_sweep(
             conn,
             working_day_id,
@@ -406,7 +520,11 @@ def consolidate_working_day(
             extra={"working_day_id": working_day_id, **counts},
         )
         return working_day_id
-    except ConsolidationWait:
+    except ConsolidationWait as exc:
+        _hold_day(conn, working_day_id, exc, now=moment)
+        raise
+    except RuntimeUnavailable as exc:
+        _hold_day(conn, working_day_id, exc, now=moment)
         raise
     except Exception as exc:
         _set_day_state(
@@ -763,20 +881,31 @@ def _insert_achievements(
         )
 
 
-def _verify_persistence(conn: sqlcipher.Connection, working_day_id: str) -> None:
-    conn.execute("PRAGMA wal_checkpoint(FULL)")
+def _reread_day(conn: sqlcipher.Connection, working_day_id: str) -> dict[str, Any] | None:
+    """Re-read the working-day row after checkpoint. None if the row is gone."""
     row = conn.execute(
         "SELECT id, state FROM working_days WHERE id = ?",
         (working_day_id,),
     ).fetchone()
     if row is None:
+        return None
+    return {"id": str(row["id"]), "state": str(row["state"])}
+
+
+def _verify_persistence(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int,
+    expected: dict[str, int],
+) -> None:
+    conn.execute("PRAGMA wal_checkpoint(FULL)")
+    day = _reread_day(conn, working_day_id)
+    if day is None:
         raise ConsolidationError("working day missing after wal_checkpoint")
-    activities = conn.execute(
-        "SELECT COUNT(*) FROM activities WHERE working_day_id = ?",
-        (working_day_id,),
-    ).fetchone()
-    if activities is None:
-        raise ConsolidationError("activities unreadable after wal_checkpoint")
+    seen = derived_counts(conn, working_day_id, pipeline_version)
+    if seen != expected:
+        raise ConsolidationError("derived rows missing after wal_checkpoint")
 
 
 def _apply_retention_and_sweep(
@@ -928,6 +1057,82 @@ def _match_entity(conn: sqlcipher.Connection, name: str, typ: str) -> str | None
         (typ, needle, needle),
     ).fetchone()
     return None if row is None else str(row["id"])
+
+
+def _hold_day(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    exc: BaseException,
+    *,
+    now: datetime | None,
+) -> None:
+    """§7.4: stay closing with a reason; do not mark the day failed."""
+    _set_day_state(conn, working_day_id, "closing", error=type(exc).__name__, now=now)
+
+
+def _reset_job(conn: sqlcipher.Connection, job_id: str, *, now: datetime | None) -> None:
+    stamp = iso_now(now)
+    conn.execute(
+        """
+        UPDATE jobs
+        SET state = ?, attempts = 0, last_error = NULL, claimed_by = NULL,
+            leased_until = NULL, run_after = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (JobState.PENDING.value, stamp, stamp, job_id),
+    )
+    conn.commit()
+
+
+def _understand_jobs_for_day(
+    conn: sqlcipher.Connection, working_day_id: str, pipeline_version: int
+) -> list[Job]:
+    segment_ids = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT id FROM segments WHERE working_day_id = ?", (working_day_id,)
+        )
+    }
+    if not segment_ids:
+        return []
+    rows = conn.execute("SELECT * FROM jobs WHERE kind = ?", (UNDERSTAND_JOB_KIND,)).fetchall()
+    out: list[Job] = []
+    for row in rows:
+        job = Job.from_row(row)
+        if str(job.payload.get("segment_id") or "") not in segment_ids:
+            continue
+        if int(job.payload.get("pipeline_version") or PIPELINE_VERSION) != pipeline_version:
+            continue
+        out.append(job)
+    return out
+
+
+def _understand_is_held(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int,
+    close_after_seconds: int,
+) -> bool:
+    pending = set(
+        eligible_segment_ids(
+            conn,
+            pipeline_version=pipeline_version,
+            close_after_seconds=close_after_seconds,
+            working_day_id=working_day_id,
+        )
+    )
+    if not pending:
+        return False
+    by_segment = {
+        str(job.payload.get("segment_id") or ""): job
+        for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version)
+    }
+    for segment_id in pending:
+        job = by_segment.get(segment_id)
+        if job is None or job.state is not JobState.FAILED:
+            return True
+    return False
 
 
 def _pick_indexes(indexes: list[int], items: list[str]) -> list[str]:

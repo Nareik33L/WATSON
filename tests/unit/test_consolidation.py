@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,11 +10,18 @@ import pytest
 
 from tests.replay_support import TEST_KEY
 from watson.config.schema import DEFAULT_DAY_END
-from watson.intelligence.runtime import FakeRuntime, JobFailure
+from watson.intelligence.runtime import (
+    UNDERSTAND_JOB_KIND,
+    FakeRuntime,
+    JobFailure,
+    RuntimeUnavailable,
+)
 from watson.memory.db import connect
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.consolidation import (
+    CONSOLIDATE_JOB_KIND,
+    ConsolidationError,
     ConsolidationWait,
     catch_up_on_launch,
     consolidate_idempotency_key,
@@ -22,7 +30,9 @@ from watson.pipeline.consolidation import (
     drain_consolidate_jobs,
     due_working_day_ids,
     enqueue_catch_up,
+    retry_working_day,
 )
+from watson.pipeline.jobs import JobState, enqueue
 from watson.pipeline.segmentation import close_open_segments
 from watson.privacy.audit import KIND_CONSOLIDATED
 from watson.privacy.retention import Tier2SweepResult
@@ -149,6 +159,7 @@ def _insert_claim(
     assertion: str,
     text: str,
     evidence: bool = True,
+    pipeline_version: int = 1,
 ) -> str:
     claim_id, stamp = new_id(), "2026-10-31T10:00:00Z"
     conn.execute(
@@ -156,9 +167,9 @@ def _insert_claim(
         INSERT INTO claims (
             id, created_at, updated_at, observation_id, working_day_id, kind, text,
             assertion, confidence, status, due_hint, pipeline_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.8, NULL, NULL, 1)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.8, NULL, NULL, ?)
         """,
-        (claim_id, stamp, stamp, observation_id, day_id, kind, text, assertion),
+        (claim_id, stamp, stamp, observation_id, day_id, kind, text, assertion, pipeline_version),
     )
     if evidence:
         conn.execute(
@@ -474,7 +485,7 @@ def test_captured_frames_wait_before_deadline(tmp_path: Path) -> None:
             (day_id,),
         ).fetchone()
         assert row["state"] == "closing"
-        assert row["consolidation_error"] is None
+        assert row["consolidation_error"] == "ConsolidationWait"
         assert row["consolidation_gap"] is None
         assert derived_counts(conn, day_id)["activities"] == 0
     finally:
@@ -606,5 +617,469 @@ def test_replace_does_not_append_across_pipeline_versions(tmp_path: Path) -> Non
         assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == (
             v1["activities"] + 1
         )
+    finally:
+        conn.close()
+
+
+def _insert_activity(conn: object, day_id: str, *, title: str, pipeline_version: int) -> str:
+    act_id, stamp = new_id(), "2026-10-31T12:00:00Z"
+    conn.execute(
+        """
+        INSERT INTO activities (
+            id, created_at, updated_at, working_day_id, title, summary,
+            observation_ids, prompt_version, pipeline_version
+        ) VALUES (?, ?, ?, ?, ?, 'seed', '[]', 'clustering/v1', ?)
+        """,
+        (act_id, stamp, stamp, day_id, title, pipeline_version),
+    )
+    conn.commit()
+    return act_id
+
+
+def test_pending_understanding_is_scoped_to_this_day(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        other = _insert_day(conn, date="2026-10-30")
+        frame = _insert_frame(conn, other, captured_at="2026-10-30T09:00:00Z")
+        _insert_segment(conn, other, frame, state="closed", started_at="2026-10-30T09:00:00Z")
+        runtime = _runtime()
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT state FROM working_days WHERE id = ?", (seeded["day_id"],)
+        ).fetchone()
+        assert row["state"] == "consolidated"
+        other_row = conn.execute("SELECT state FROM working_days WHERE id = ?", (other,)).fetchone()
+        assert other_row["state"] == "open"
+    finally:
+        conn.close()
+
+
+def test_runtime_unavailable_holds_day_not_failed(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        runtime = FakeRuntime(complete_queue=[RuntimeUnavailable("model down")])
+        with pytest.raises(RuntimeUnavailable):
+            consolidate_working_day(
+                conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW
+            )
+        row = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        assert row["state"] == "closing"
+        assert row["consolidation_error"] == "RuntimeUnavailable"
+        assert derived_counts(conn, seeded["day_id"])["activities"] == 0
+        job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": seeded["day_id"], "pipeline_version": 1},
+            idempotency_key=consolidate_idempotency_key(seeded["day_id"], 1),
+            now=NOW,
+        )
+        held = FakeRuntime(complete_queue=[RuntimeUnavailable("still down")])
+        assert (
+            drain_consolidate_jobs(
+                conn, runtime=held, embedding=held, spool_dir=tmp_path / "spool", now=NOW
+            )
+            == 0
+        )
+        again = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert again["state"] == JobState.PENDING.value
+        assert again["attempts"] == 0
+        assert again["last_error"] == "RuntimeUnavailable"
+        day = conn.execute(
+            "SELECT state FROM working_days WHERE id = ?", (seeded["day_id"],)
+        ).fetchone()
+        assert day["state"] == "closing"
+    finally:
+        conn.close()
+
+
+def test_drain_holds_consolidation_wait_without_burning_attempts(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _insert_frame(conn, day_id, state="captured")
+        early = datetime(2026, 10, 31, 19, 0, tzinfo=UTC)
+        job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": day_id, "pipeline_version": 1},
+            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            now=early,
+        )
+        runtime = _runtime()
+        assert (
+            drain_consolidate_jobs(
+                conn, runtime=runtime, embedding=runtime, spool_dir=tmp_path / "spool", now=early
+            )
+            == 0
+        )
+        row = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert row["state"] == JobState.PENDING.value
+        assert row["attempts"] == 0
+        assert row["last_error"] == "ConsolidationWait"
+        day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()
+        assert day["state"] == "closing"
+        assert day["consolidation_error"] == "ConsolidationWait"
+    finally:
+        conn.close()
+
+
+def test_retry_requeues_dead_understand_job(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn, state="failed")
+        conn.execute(
+            "UPDATE working_days SET consolidation_error = 'pending understanding' WHERE id = ?",
+            (day_id,),
+        )
+        frame_id = _insert_frame(conn, day_id)
+        segment_id = _insert_segment(conn, day_id, frame_id, state="closed")
+        _insert_entity(conn)
+        job = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": 1},
+            idempotency_key=f"understand:{segment_id}:1",
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ?, attempts = 5, last_error = ? WHERE id = ?",
+            (JobState.FAILED.value, "StructuredOutputError", job.id),
+        )
+        conn.commit()
+        understand = {
+            "activity_type": "knowledge_work",
+            "description": "Drafting the Acme appendix",
+            "confidence": 0.8,
+            "claims": [
+                {
+                    "kind": "activity",
+                    "text": "Editing",
+                    "assertion": "observed",
+                    "evidence": [
+                        {
+                            "snippet": "Still editing: Acme proposal appendix",
+                            "line_start": 1,
+                            "line_end": 1,
+                        }
+                    ],
+                }
+            ],
+            "project_candidates": [],
+            "people_candidates": [],
+        }
+        runtime = FakeRuntime(
+            complete_queue=[
+                understand,
+                {
+                    "activities": [
+                        {
+                            "title": "Acme",
+                            "summary": "editing",
+                            "observation_indexes": [1],
+                        }
+                    ]
+                },
+                {"entity_deltas": [], "decisions": [], "commitments": []},
+            ]
+        )
+        retry_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()
+        assert row["state"] == "consolidated"
+        assert row["consolidation_error"] is None
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+        refreshed = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        assert refreshed["state"] == JobState.COMPLETED.value
+    finally:
+        conn.close()
+
+
+def test_catch_up_requeues_dead_consolidate_job(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        conn.execute(
+            """
+            UPDATE working_days
+            SET date = '2026-10-30', state = 'failed', consolidation_error = 'JobFailure'
+            WHERE id = ?
+            """,
+            (seeded["day_id"],),
+        )
+        job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": seeded["day_id"], "pipeline_version": 1},
+            idempotency_key=consolidate_idempotency_key(seeded["day_id"], 1),
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ?, attempts = 5, last_error = ? WHERE id = ?",
+            (JobState.FAILED.value, "JobFailure", job.id),
+        )
+        conn.commit()
+        morning = datetime(2026, 10, 31, 9, 0, tzinfo=UTC)
+        runtime = _runtime()
+        assert (
+            catch_up_on_launch(
+                conn, runtime=runtime, embedding=runtime, spool_dir=tmp_path / "spool", now=morning
+            )
+            == 1
+        )
+        day = conn.execute(
+            "SELECT state FROM working_days WHERE id = ?", (seeded["day_id"],)
+        ).fetchone()
+        assert day["state"] == "consolidated"
+        refreshed = conn.execute("SELECT state FROM jobs WHERE id = ?", (job.id,)).fetchone()
+        assert refreshed["state"] == JobState.COMPLETED.value
+    finally:
+        conn.close()
+
+
+def test_mid_step_failure_rolls_back_previous_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        runtime = _runtime()
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        first = derived_counts(conn, seeded["day_id"])
+        titles = [
+            str(row[0]) for row in conn.execute("SELECT title FROM activities ORDER BY title, id")
+        ]
+        claim_ids = {
+            str(row[0]) for row in conn.execute("SELECT claim_id FROM achievement_candidates")
+        }
+
+        def boom(*_a: object, **_k: object) -> None:
+            raise RuntimeError("mid insert")
+
+        monkeypatch.setattr("watson.pipeline.consolidation._insert_achievements", boom)
+        with pytest.raises(RuntimeError, match="mid insert"):
+            consolidate_working_day(
+                conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW
+            )
+        assert derived_counts(conn, seeded["day_id"]) == first
+        assert [
+            str(row[0]) for row in conn.execute("SELECT title FROM activities ORDER BY title, id")
+        ] == titles
+        assert {
+            str(row[0]) for row in conn.execute("SELECT claim_id FROM achievement_candidates")
+        } == claim_ids
+        row = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        assert row["state"] == "failed"
+        assert row["consolidation_error"] == "RuntimeError"
+    finally:
+        conn.close()
+
+
+def test_verify_failure_skips_retention_and_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = _open(tmp_path)
+    order: list[str] = []
+
+    def missing(_conn: object, _day_id: str) -> dict[str, str] | None:
+        order.append("verify")
+        return None
+
+    def rec_tier2(*_a: object, **_k: object) -> Tier2SweepResult:
+        order.append("tier2")
+        return Tier2SweepResult(0, 0, 0)
+
+    def rec_spool(*_a: object, **_k: object) -> SpoolSweepResult:
+        order.append("spool")
+        return SpoolSweepResult(0, 0, 0, 0, 0, 0)
+
+    monkeypatch.setattr("watson.pipeline.consolidation._reread_day", missing)
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_tier2", rec_tier2)
+    monkeypatch.setattr("watson.pipeline.consolidation.sweep_spool", rec_spool)
+    try:
+        seeded = _seed_day(conn)
+        conn.execute("UPDATE frame_text SET expires_at = '2026-10-01T00:00:00Z'")
+        conn.commit()
+        runtime = _runtime()
+        with pytest.raises(ConsolidationError, match="missing after wal_checkpoint"):
+            consolidate_working_day(
+                conn,
+                seeded["day_id"],
+                runtime=runtime,
+                embedding=runtime,
+                spool_dir=tmp_path / "spool",
+                now=NOW,
+            )
+        assert order == ["verify"]
+        row = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        assert row["state"] == "failed"
+        assert row["consolidation_error"] == "ConsolidationError"
+        expires = {
+            str(r[0]) for r in conn.execute("SELECT expires_at FROM frame_text") if r[0] is not None
+        }
+        assert expires == {"2026-10-01T00:00:00Z"}
+    finally:
+        conn.close()
+
+
+def test_delete_and_retention_are_scoped_to_day_and_version(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        other = _insert_day(conn, date="2026-10-30")
+        other_frame = _insert_frame(conn, other, captured_at="2026-10-30T09:00:00Z")
+        other_activity = _insert_activity(conn, other, title="other-day", pipeline_version=1)
+        v2_activity = _insert_activity(conn, seeded["day_id"], title="v2-keep", pipeline_version=2)
+        conn.execute(
+            """
+            UPDATE frame_text SET expires_at = '2026-10-01T00:00:00Z'
+            WHERE frame_id IN (SELECT id FROM frames WHERE working_day_id = ?)
+            """,
+            (seeded["day_id"],),
+        )
+        conn.execute(
+            "UPDATE frame_text SET expires_at = '2026-12-01T00:00:00Z' WHERE frame_id = ?",
+            (other_frame,),
+        )
+        conn.commit()
+        runtime = _runtime()
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        assert (
+            conn.execute("SELECT id FROM activities WHERE id = ?", (other_activity,)).fetchone()
+            is not None
+        )
+        assert (
+            conn.execute("SELECT title FROM activities WHERE id = ?", (v2_activity,)).fetchone()[0]
+            == "v2-keep"
+        )
+        other_exp = conn.execute(
+            "SELECT expires_at FROM frame_text WHERE frame_id = ?", (other_frame,)
+        ).fetchone()[0]
+        assert other_exp == "2026-12-01T00:00:00Z"
+        this_exp = [
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT t.expires_at FROM frame_text t
+                JOIN frames f ON f.id = t.frame_id
+                WHERE f.working_day_id = ?
+                """,
+                (seeded["day_id"],),
+            )
+        ]
+        assert this_exp
+        assert "2026-10-01T00:00:00Z" not in this_exp
+    finally:
+        conn.close()
+
+
+def test_achievements_and_deltas_grounded_in_day_claims(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        v2_claim = _insert_claim(
+            conn,
+            conn.execute("SELECT id FROM observations ORDER BY created_at, id LIMIT 1").fetchone()[
+                0
+            ],
+            seeded["day_id"],
+            seeded["changed"],
+            conn.execute(
+                "SELECT id FROM frames WHERE working_day_id = ? ORDER BY captured_at LIMIT 1",
+                (seeded["day_id"],),
+            ).fetchone()[0],
+            kind="outcome",
+            assertion="observed",
+            text="v2 only outcome",
+            pipeline_version=2,
+        )
+        runtime = FakeRuntime(
+            complete_queue=[
+                {
+                    "activities": [
+                        {
+                            "title": "Acme Q4 proposal",
+                            "summary": "Editing",
+                            "observation_indexes": [1],
+                        }
+                    ]
+                },
+                {
+                    "entity_deltas": [
+                        {
+                            "entity_name": "Acme Q4 Proposal",
+                            "entity_type": "project",
+                            "delta_text": "ungrounded",
+                            "claim_indexes": [99],
+                        },
+                        {
+                            "entity_name": "Nobody",
+                            "entity_type": "person",
+                            "delta_text": "ghost",
+                            "claim_indexes": [1],
+                        },
+                    ],
+                    "decisions": [{"text": "ungrounded decision", "claim_indexes": [99]}],
+                    "commitments": [{"text": "ungrounded commit", "claim_indexes": [0]}],
+                },
+            ]
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        counts = derived_counts(conn, seeded["day_id"], 1)
+        assert counts["decisions"] == 0
+        assert counts["commitments"] == 0
+        assert counts["history"] == 0
+        claim_ids = {
+            str(row[0]) for row in conn.execute("SELECT claim_id FROM achievement_candidates")
+        }
+        assert seeded["observed"] in claim_ids
+        assert v2_claim not in claim_ids
+        assert all(
+            int(row[0]) == 1
+            for row in conn.execute("SELECT pipeline_version FROM achievement_candidates")
+        )
+    finally:
+        conn.close()
+
+
+def test_grounded_history_stores_day_claim_ids(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        runtime = _runtime()
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT entity_id, claim_ids FROM entity_history WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        assert row is not None
+        assert str(row["entity_id"]) == seeded["entity_id"]
+        stored = set(json.loads(str(row["claim_ids"])))
+        assert stored
+        day_claims = {
+            str(r[0])
+            for r in conn.execute(
+                "SELECT id FROM claims WHERE working_day_id = ? AND pipeline_version = 1",
+                (seeded["day_id"],),
+            )
+        }
+        assert stored <= day_claims
     finally:
         conn.close()
