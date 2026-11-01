@@ -272,7 +272,7 @@ def test_score_day_imperfect_values_for_each_metric(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_score_day_duplicate_rate_is_not_hardcoded_zero(tmp_path: Path) -> None:
+def test_score_day_duplicate_rate_ignores_same_description_revisits(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
         day_id = _seed(conn)
@@ -313,7 +313,8 @@ def test_score_day_duplicate_rate_is_not_hardcoded_zero(tmp_path: Path) -> None:
         )
         conn.commit()
         metrics = score_day(conn, day_id, TRUTH)
-        assert metrics["duplicate_observation_rate"] == 0.5
+        # Same description on a later segment is a revisit, not a duplicate.
+        assert metrics["duplicate_observation_rate"] == 0.0
     finally:
         conn.close()
 

@@ -60,7 +60,7 @@ def score_day(
         "commitments_recall": recall(predicted["commitments"], commitments),
         "commitments_precision": precision(predicted["commitments"], commitments),
         "unsupported_achievements": float(unsupported_count(predicted["completed"], completed)),
-        "duplicate_observation_rate": duplicate_rate(predicted["descriptions"]),
+        "duplicate_observation_rate": duplicate_rate(predicted["segment_ids"]),
         "noise_non_work_rate": _noise_rate(predicted["noise_rows"], noise),
         "claims_with_evidence": predicted["claims_with_evidence"],
         "citations_resolvable": predicted["citations_resolvable"],
@@ -124,11 +124,11 @@ def collect_predicted(
         """,
         (working_day_id, pipeline_version, working_day_id, pipeline_version),
     )
-    descriptions = [
+    segment_ids = [
         str(row[0])
         for row in conn.execute(
             """
-            SELECT o.description
+            SELECT o.segment_id
             FROM observations o
             JOIN segments s ON s.id = o.segment_id
             WHERE s.working_day_id = ? AND o.pipeline_version = ?
@@ -198,7 +198,7 @@ def collect_predicted(
         "decisions": decisions,
         "commitments": commitments,
         "completed": completed,
-        "descriptions": descriptions,
+        "segment_ids": segment_ids,
         "noise_rows": noise_rows,
         "claims_with_evidence": 1.0 if claims == 0 else evidenced / claims,
         "citations_resolvable": resolvable,

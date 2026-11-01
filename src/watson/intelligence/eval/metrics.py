@@ -82,9 +82,15 @@ def unsupported_count(predicted_completed: list[str], truth_completed: list[str]
     )
 
 
-def duplicate_rate(descriptions: list[str]) -> float:
-    if not descriptions:
+def duplicate_rate(segment_ids: list[str]) -> float:
+    """§11.2 duplicate observations: extras on the same activity segment.
+
+    Plan D3: one observation per segment. A later revisit of the same
+    window is a new segment and is not a duplicate. Whole-day description
+    equality is the wrong scope (it counts legitimate revisits).
+    """
+    if not segment_ids:
         return 0.0
-    counts = Counter(normalize(item) for item in descriptions)
+    counts = Counter(segment_ids)
     extra = sum(count - 1 for count in counts.values() if count > 1)
-    return extra / len(descriptions)
+    return extra / len(segment_ids)

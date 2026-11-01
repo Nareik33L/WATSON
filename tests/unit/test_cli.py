@@ -146,6 +146,60 @@ def test_eval_cli_exits_1_on_zero_fixtures(
     set_key_provider(None)
 
 
+def test_eval_cli_exits_1_on_hard_failure_without_strict(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from watson.intelligence.eval.run import DayEval, EvalReport
+
+    _eval_key(monkeypatch)
+    metrics = {
+        "project_f1": 1.0,
+        "people_f1": 1.0,
+        "completed_accuracy": 1.0,
+        "decisions_recall": 1.0,
+        "decisions_precision": 1.0,
+        "commitments_recall": 1.0,
+        "commitments_precision": 1.0,
+        "unsupported_achievements": 1.0,
+        "duplicate_observation_rate": 0.0,
+        "noise_non_work_rate": 1.0,
+        "claims_with_evidence": 1.0,
+        "citations_resolvable": 1.0,
+    }
+
+    def hard_fail(**kwargs: object) -> EvalReport:
+        return EvalReport(
+            mode="replay",
+            runtime="replay",
+            days=[
+                DayEval(
+                    name="day_acme_q4",
+                    date="2026-10-31",
+                    metrics=metrics,
+                    derived_first={"summaries": 1},
+                    derived_second={"summaries": 1},
+                    summary_present=True,
+                    identical_counts=True,
+                    narrative_nonempty=True,
+                    citation_count=1,
+                    claims=1,
+                )
+            ],
+            aggregate=metrics,
+            gate={
+                "passed": False,
+                "failures": ["unsupported_achievements"],
+                "hard_failures": ["unsupported_achievements"],
+            },
+        )
+
+    monkeypatch.setattr("watson.intelligence.eval.run.run_eval", hard_fail)
+    assert cli.main(["eval", "--mode", "replay", "--out", str(tmp_path / "hard")]) == 1
+    set_key_provider(None)
+
+
 def test_eval_cli_strict_exits_1_on_threshold_miss(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

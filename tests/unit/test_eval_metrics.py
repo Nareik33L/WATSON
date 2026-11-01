@@ -101,9 +101,21 @@ def test_threshold_minimum_is_not_maximum() -> None:
 
 
 def test_duplicate_rate_counts_extras_not_uniques() -> None:
-    assert duplicate_rate(["a", "a", "b"]) == 1 / 3
-    assert duplicate_rate(["a", "b", "c"]) == 0.0
+    assert duplicate_rate(["seg-a", "seg-a", "seg-b"]) == 1 / 3
+    assert duplicate_rate(["seg-a", "seg-b", "seg-c"]) == 0.0
     assert duplicate_rate([]) == 0.0
+
+
+def test_duplicate_rate_is_per_segment_not_whole_day_description() -> None:
+    """§11.2 / D3: one observation per segment is not a duplicate.
+
+    Two revisits of the same window are two segments. Same description
+    across those ids must not raise the rate. Two rows on one segment must.
+    """
+    morning, afternoon = "seg-acme-morning", "seg-acme-afternoon"
+    assert duplicate_rate([morning, afternoon]) == 0.0
+    assert duplicate_rate([morning, morning]) == 0.5
+    assert duplicate_rate([morning, morning, afternoon]) == 1 / 3
 
 
 def test_parenthetical_people_match() -> None:
@@ -234,6 +246,63 @@ def test_report_passed_is_false_when_summary_missing() -> None:
     assert report.gate["passed"] is True
     assert report.passed is False
     assert report.pipeline_passed is False
+
+
+def test_narrative_ok_is_not_summary_present() -> None:
+    present = DayEval(
+        name="x",
+        date="2026-10-31",
+        metrics={},
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=False,
+        citation_count=0,
+        claims=2,
+    )
+    assert present.summary_present is True
+    assert present.narrative_ok is False
+    uncited = DayEval(
+        name="x",
+        date="2026-10-31",
+        metrics={},
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=True,
+        citation_count=0,
+        claims=2,
+    )
+    assert uncited.summary_present is True
+    assert uncited.narrative_ok is False
+    cited = DayEval(
+        name="x",
+        date="2026-10-31",
+        metrics={},
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=True,
+        citation_count=1,
+        claims=2,
+    )
+    assert cited.narrative_ok is True
+    no_claims = DayEval(
+        name="x",
+        date="2026-10-31",
+        metrics={},
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=False,
+        citation_count=0,
+        claims=0,
+    )
+    assert no_claims.narrative_ok is True
 
 
 def test_report_passed_is_false_when_counts_drift() -> None:
