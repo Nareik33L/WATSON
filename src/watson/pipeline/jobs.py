@@ -141,34 +141,39 @@ def claim(
     worker_id: str,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
     now: datetime | None = None,
+    kind: str | None = None,
 ) -> Job | None:
     """Claim one due job under a lease. Two connections cannot take the same row."""
     recover_expired_leases(conn, now=now)
     moment = now or datetime.now(UTC)
     stamp = iso_now(moment)
     leased_until = iso_now(moment + timedelta(seconds=lease_seconds))
+    kind_sql = "AND kind = ?" if kind is not None else ""
+    params: list[Any] = [
+        JobState.CLAIMED.value,
+        worker_id,
+        leased_until,
+        stamp,
+        JobState.PENDING.value,
+        stamp,
+    ]
+    if kind is not None:
+        params.append(kind)
+    params.append(JobState.PENDING.value)
     cursor = conn.execute(
-        """
+        f"""
         UPDATE jobs
         SET state = ?, claimed_by = ?, leased_until = ?, updated_at = ?
         WHERE id = (
             SELECT id FROM jobs
-            WHERE state = ? AND run_after <= ?
+            WHERE state = ? AND run_after <= ? {kind_sql}
             ORDER BY run_after, created_at
             LIMIT 1
         )
         AND state = ?
         RETURNING *
         """,
-        (
-            JobState.CLAIMED.value,
-            worker_id,
-            leased_until,
-            stamp,
-            JobState.PENDING.value,
-            stamp,
-            JobState.PENDING.value,
-        ),
+        params,
     )
     row = cursor.fetchone()
     conn.commit()

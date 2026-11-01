@@ -1,6 +1,7 @@
 """Inference adapters (plan D6). Ollama for V1.0 dev; fake for CI."""
 
 from watson.intelligence.runtime.fake import FakeRuntime
+from watson.intelligence.runtime.http import NoRedirectHandler
 from watson.intelligence.runtime.ollama import OllamaRuntime
 from watson.intelligence.runtime.select import (
     UNDERSTAND_JOB_KIND,
@@ -30,6 +31,7 @@ __all__ = [
     "JobFailure",
     "LanguageRuntime",
     "Message",
+    "NoRedirectHandler",
     "OllamaRuntime",
     "RuntimeBundle",
     "RuntimeCallError",

@@ -75,6 +75,10 @@ DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_CONTEXT_WINDOW = 8192
 DEFAULT_KEEP_ALIVE = "5m"
+# Entity resolver: embedding cosine must exceed this after alias miss (§3.5).
+DEFAULT_ENTITY_SIMILARITY = 0.80
+# Retrieved memory: top-k FTS5 hits over entity names/aliases.
+DEFAULT_RETRIEVE_TOP_K = 5
 
 
 class _StrictModel(BaseModel):
@@ -243,6 +247,18 @@ class IntelligenceConfig(_StrictModel):
     context_window: int = Field(default=DEFAULT_CONTEXT_WINDOW, ge=512, le=128_000)
     keep_alive: str = DEFAULT_KEEP_ALIVE
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    entity_similarity_threshold: float = Field(
+        default=DEFAULT_ENTITY_SIMILARITY,
+        ge=0.0,
+        le=1.0,
+        description="Embedding cosine above which a candidate merges into an existing entity.",
+    )
+    retrieve_top_k: int = Field(
+        default=DEFAULT_RETRIEVE_TOP_K,
+        ge=0,
+        le=50,
+        description="Top-k projects/people retrieved via FTS5 for the understanding prompt.",
+    )
 
 
 class WatsonConfig(_StrictModel):

@@ -44,6 +44,8 @@ def test_defaults_use_application_support_path(
     assert config.intelligence.embedding_model == "nomic-embed-text"
     assert config.intelligence.vlm_enabled is False
     assert config.intelligence.ollama_host == "http://127.0.0.1:11434"
+    assert config.intelligence.entity_similarity_threshold == 0.80
+    assert config.intelligence.retrieve_top_k == 5
 
 
 def test_toml_and_env_overrides(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

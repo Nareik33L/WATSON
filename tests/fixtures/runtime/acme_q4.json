@@ -1,0 +1,92 @@
+{
+  "default_complete": {
+    "activity_type": "knowledge_work",
+    "description": "Working in a document. No completion evidence is visible.",
+    "confidence": 0.7,
+    "claims": [
+      {
+        "kind": "activity",
+        "text": "Editing a document",
+        "assertion": "observed",
+        "evidence": [
+          {
+            "snippet": "Still editing: Acme proposal appendix",
+            "line_start": 1,
+            "line_end": 1
+          }
+        ]
+      }
+    ],
+    "project_candidates": ["Acme Q4 Proposal"],
+    "people_candidates": []
+  },
+  "complete": [
+    {
+      "match": "Please send revised pricing by Friday",
+      "response": {
+        "activity_type": "communication",
+        "description": "Reading a mail that asks for revised pricing by Friday.",
+        "confidence": 0.82,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Send revised pricing by Friday",
+            "assertion": "unconfirmed",
+            "evidence": [
+              {
+                "snippet": "Please send revised pricing by Friday.",
+                "line_start": 2,
+                "line_end": 2
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": ["Priya Natarajan"]
+      }
+    },
+    {
+      "match": "Section 3 of the Internal Onboarding Guide is published this morning",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Onboarding Guide section 3 is published.",
+        "confidence": 0.88,
+        "claims": [
+          {
+            "kind": "outcome",
+            "text": "Published Onboarding Guide section 3",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Section 3 of the Internal Onboarding Guide is published this morning.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Onboarding Guide"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "Cedar Daily",
+      "response": {
+        "activity_type": "non_work",
+        "description": "Reading civic news. Not work.",
+        "confidence": 0.9,
+        "claims": [],
+        "project_candidates": [],
+        "people_candidates": []
+      }
+    }
+  ],
+  "embeddings": {
+    "Internal Onboarding Guide": [1.0, 0.0, 0.0, 0.0],
+    "Onboarding Guide": [0.99, 0.01, 0.0, 0.0],
+    "Acme Q4 Proposal": [0.0, 1.0, 0.0, 0.0],
+    "the Acme deal": [0.0, 0.98, 0.02, 0.0],
+    "Priya Natarajan": [0.0, 0.0, 1.0, 0.0],
+    "Tom Ashworth": [0.0, 0.0, 0.0, 1.0]
+  }
+}

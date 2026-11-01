@@ -30,9 +30,7 @@ def canonical_ollama_url(value: str) -> str:
         raw = "http://" + raw
     parsed = urlparse(raw)
     if parsed.scheme not in {"http", "https"}:
-        raise RuntimeUnavailable(
-            f"intelligence.ollama_host {value!r} uses an unsupported scheme."
-        )
+        raise RuntimeUnavailable(f"intelligence.ollama_host {value!r} uses an unsupported scheme.")
     host = parsed.hostname or ""
     _refuse_non_loopback(host, value)
     port = parsed.port or DEFAULT_OLLAMA_PORT
@@ -48,14 +46,38 @@ def _refuse_non_loopback(host: str, value: str) -> None:
         )
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Never follow redirects. A 30x must not hop off loopback (or anywhere)."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del fp, code, msg, headers
+        raise RuntimeUnavailable(
+            f"refusing HTTP redirect from {req.full_url!r} to {newurl!r}. "
+            "Loopback Ollama traffic must not follow Location headers."
+        )
+
+
 def direct_opener() -> urllib.request.OpenerDirector:
-    """Opener that never consults env or system proxies.
+    """Opener that never consults env or system proxies and never follows redirects.
 
     Passing an empty ``ProxyHandler`` replaces urllib's default, which would
     otherwise honour ``http_proxy`` / ``HTTPS_PROXY`` / macOS SystemConfiguration.
     An empty mapping installs no ``*_open`` hooks, so HTTP goes direct.
+    ``NoRedirectHandler`` replaces the default redirect handler so a 30x
+    cannot send a prompt to a non-loopback ``Location``.
     """
-    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        NoRedirectHandler(),
+    )
 
 
 def request_json(
@@ -89,7 +111,7 @@ def request_json(
         reason = exc.reason if not isinstance(exc.reason, BaseException) else str(exc.reason)
         raise RuntimeUnavailable(
             f"Ollama is not reachable at {base_url} ({reason}). "
-            "Start the local Ollama app or set intelligence.runtime = \"fake\"."
+            'Start the local Ollama app or set intelligence.runtime = "fake".'
         ) from exc
     except TimeoutError as exc:
         raise RuntimeCallError(f"Ollama timed out on {path}") from exc

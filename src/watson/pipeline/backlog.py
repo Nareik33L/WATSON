@@ -48,7 +48,7 @@ def drain_backlog(
         raise ValueError("backlog batch limit must be >= 1")
     completed = 0
     while completed < limit:
-        job = claim(conn, worker_id=worker_id)
+        job = claim(conn, worker_id=worker_id, kind=EXTRACT_JOB_KIND)
         if job is None:
             break
         if job.kind != EXTRACT_JOB_KIND:
