@@ -161,9 +161,7 @@ def test_score_day_does_not_swap_decision_precision_and_recall(tmp_path: Path) -
     conn = _open(tmp_path)
     try:
         day_id = _seed(conn)
-        conn.execute(
-            "DELETE FROM claims WHERE kind = 'decision' AND text LIKE '%rate card%'"
-        )
+        conn.execute("DELETE FROM claims WHERE kind = 'decision' AND text LIKE '%rate card%'")
         conn.commit()
         metrics = score_day(conn, day_id, TRUTH)
         assert metrics["decisions_recall"] == 0.5
@@ -221,6 +219,101 @@ def test_noise_rate_ignores_cedar_daily_nav_in_merged_text(tmp_path: Path) -> No
             {**TRUTH, "noise": ["Cedar Daily 10:40–10:46"]},
         )
         assert metrics["noise_non_work_rate"] == 1.0
+    finally:
+        conn.close()
+
+
+def test_noise_rate_is_not_hardcoded_perfect(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        conn.execute("UPDATE observations SET activity_type = 'knowledge_work'")
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
+        assert metrics["noise_non_work_rate"] == 0.0
+    finally:
+        conn.close()
+
+
+def test_empty_narrative_with_claims_is_not_resolvable(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        conn.execute(
+            "UPDATE daily_summaries SET narrative_md = '' WHERE working_day_id = ?",
+            (day_id,),
+        )
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
+        predicted = collect_predicted(conn, day_id)
+        assert predicted["citation_count"] == 0
+        assert metrics["citations_resolvable"] == 0.0
+    finally:
+        conn.close()
+
+
+def test_score_day_imperfect_values_for_each_metric(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        conn.execute("DELETE FROM entities WHERE type = 'project'")
+        conn.execute("DELETE FROM claim_evidence")
+        conn.execute(
+            "UPDATE daily_summaries SET narrative_md = 'no citations' WHERE working_day_id = ?",
+            (day_id,),
+        )
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
+        assert metrics["project_f1"] < 1.0
+        assert metrics["claims_with_evidence"] < 1.0
+        assert metrics["citations_resolvable"] == 0.0
+        assert metrics["unsupported_achievements"] == 0.0 or metrics["completed_accuracy"] <= 1.0
+    finally:
+        conn.close()
+
+
+def test_score_day_duplicate_rate_is_not_hardcoded_zero(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        stamp = "2026-10-31T10:00:00Z"
+        frame_id = new_id()
+        conn.execute(
+            """
+            INSERT INTO frames (
+                id, created_at, updated_at, working_day_id, captured_at, bundle_id,
+                app_name, window_title_hash, window_title, url_domain, phash, state,
+                failure_count, deleted_at, deletion_verified
+            ) VALUES (?, ?, ?, ?, ?, 'com.lumen.quill', 'Quill', NULL,
+                      'Acme Q4 Proposal — Draft', NULL, 'ef01', 'extracted', 0, NULL, 0)
+            """,
+            (frame_id, stamp, stamp, day_id, stamp),
+        )
+        segment_id = new_id()
+        conn.execute(
+            """
+            INSERT INTO segments (
+                id, created_at, updated_at, working_day_id, bundle_id, window_title_norm,
+                url_domain, started_at, ended_at, frame_count, dwell_seconds, line_changes,
+                merged_text, state, expires_at, pipeline_version, start_frame_id
+            ) VALUES (?, ?, ?, ?, 'com.lumen.quill', 'acme q4 proposal — draft', NULL,
+                      ?, ?, 1, 60, 1, 'draft', 'closed', NULL, 1, ?)
+            """,
+            (segment_id, stamp, stamp, day_id, stamp, stamp, frame_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, created_at, updated_at, segment_id, activity_type, description,
+                confidence, model_id, prompt_version, pipeline_version, raw_json
+            ) VALUES (?, ?, ?, ?, 'knowledge_work', 'Cedar Daily glance', 0.9, 'replay',
+                      'understanding/v1', 1, '{}')
+            """,
+            (new_id(), stamp, stamp, segment_id),
+        )
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
+        assert metrics["duplicate_observation_rate"] == 0.5
     finally:
         conn.close()
 

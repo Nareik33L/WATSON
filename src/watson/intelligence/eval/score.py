@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
-from watson.intelligence.citations import citations_resolvable
+from watson.intelligence.citations import CITATION_RE, citations_resolvable
 from watson.intelligence.eval.metrics import (
     completed_accuracy,
     duplicate_rate,
@@ -54,9 +54,7 @@ def score_day(
     return {
         "project_f1": f1_score(predicted["projects"], projects),
         "people_f1": f1_score(predicted["people"], people),
-        "completed_accuracy": completed_accuracy(
-            predicted["completed"], completed, not_completed
-        ),
+        "completed_accuracy": completed_accuracy(predicted["completed"], completed, not_completed),
         "decisions_recall": recall(predicted["decisions"], decisions),
         "decisions_precision": precision(predicted["decisions"], decisions),
         "commitments_recall": recall(predicted["commitments"], commitments),
@@ -172,7 +170,6 @@ def collect_predicted(
         ).fetchone()[0]
     )
     narrative = ""
-    claim_ids: set[str] = set()
     summary = conn.execute(
         """
         SELECT narrative_md FROM daily_summaries
@@ -189,6 +186,12 @@ def collect_predicted(
             (working_day_id, pipeline_version),
         )
     }
+    found = CITATION_RE.findall(narrative)
+    if claims > 0 and not found:
+        # Empty / uncited narrative is not 100% resolvable (non-vacuous).
+        resolvable = 0.0
+    else:
+        resolvable = 1.0 if citations_resolvable(narrative, claim_ids) else 0.0
     return {
         "projects": projects,
         "people": people,
@@ -198,8 +201,11 @@ def collect_predicted(
         "descriptions": descriptions,
         "noise_rows": noise_rows,
         "claims_with_evidence": 1.0 if claims == 0 else evidenced / claims,
-        "citations_resolvable": 1.0 if citations_resolvable(narrative, claim_ids) else 0.0,
+        "citations_resolvable": resolvable,
+        "citation_count": len(found),
+        "narrative_nonempty": bool(narrative.strip()),
         "summary_present": summary is not None,
+        "claims": claims,
     }
 
 

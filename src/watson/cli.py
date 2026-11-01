@@ -153,6 +153,11 @@ def _main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Limit to one fixture name (repeatable)",
     )
+    evaluate.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail on any missed §11.2 threshold (default for --mode record)",
+    )
     evaluate.set_defaults(handler=_cmd_eval)
 
     for name in _STUB_COMMANDS:
@@ -266,7 +271,13 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     )
     names = tuple(args.only) if args.only else V1_DAY_FIXTURES
     out_dir = args.out if args.out is not None else config.data_dir / "eval"
-    recordings = args.recordings if args.recordings is not None else DEFAULT_RECORDINGS
+    if args.recordings is not None:
+        recordings = args.recordings
+    elif mode == "record":
+        # Never overwrite the committed replay fixture by default.
+        recordings = out_dir / "recordings.json"
+    else:
+        recordings = DEFAULT_RECORDINGS
     ensure_runtime_dirs(config)
     key = get_key_provider().get_key()
     report = run_eval(
@@ -282,12 +293,15 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     print(f"eval_mode: {report.mode}")
     print(f"eval_runtime: {report.runtime}")
     print(f"eval_passed: {report.passed}")
+    print(f"eval_pipeline_passed: {report.pipeline_passed}")
     print(f"eval_wall_seconds: {report.wall_seconds:.3f}")
     print(f"eval_peak_rss_bytes: {report.peak_rss_bytes}")
     print(f"eval_report: {out_dir / 'report.md'}")
     for key_name, value in report.aggregate.items():
         print(f"{key_name}: {value:.4f}")
-    return 0 if report.passed else 1
+    strict = bool(args.strict) or mode == "record"
+    ok = report.passed if strict else report.pipeline_passed
+    return 0 if ok else 1
 
 
 def _cmd_db_upgrade(_args: argparse.Namespace) -> int:

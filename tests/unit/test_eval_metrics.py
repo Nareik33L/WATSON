@@ -10,6 +10,7 @@ from watson.intelligence.eval.metrics import (
     recall,
     unsupported_count,
 )
+from watson.intelligence.eval.run import DayEval, EvalReport, _aggregate
 from watson.intelligence.eval.thresholds import Threshold, gate_metrics, load_thresholds
 
 
@@ -167,6 +168,119 @@ def test_off_by_one_every_threshold() -> None:
     assert rules["commitments_precision"].allows(0.849) is False
     assert rules["noise_non_work_rate"].allows(0.90) is True
     assert rules["noise_non_work_rate"].allows(0.899) is False
+
+
+def _all_metrics(**overrides: float) -> dict[str, float]:
+    metrics = {name: 1.0 for name in load_thresholds()}
+    metrics["unsupported_achievements"] = 0.0
+    metrics["duplicate_observation_rate"] = 0.0
+    metrics.update(overrides)
+    return metrics
+
+
+def test_missing_metric_is_a_failure_not_a_pass() -> None:
+    rules = load_thresholds()
+    metrics = _all_metrics()
+    del metrics["project_f1"]
+    gate = gate_metrics(metrics, rules)
+    assert gate["passed"] is False
+    assert "project_f1" in gate["failures"]
+
+
+def test_empty_aggregate_is_a_failure() -> None:
+    gate = gate_metrics({}, load_thresholds())
+    assert gate["passed"] is False
+    assert "empty_aggregate" in gate["failures"]
+    assert gate["hard_failures"]
+
+
+def test_zero_fixtures_do_not_score_perfect() -> None:
+    assert _aggregate([]) == {}
+    report = EvalReport(
+        mode="replay", runtime="replay", days=[], aggregate={}, gate=gate_metrics({})
+    )
+    assert report.passed is False
+    assert report.pipeline_passed is False
+
+
+def test_aggregate_is_mean_not_max() -> None:
+    low = _all_metrics(project_f1=0.0)
+    high = _all_metrics(project_f1=1.0)
+    out = _aggregate([low, high])
+    assert out["project_f1"] == 0.5
+
+
+def test_report_passed_is_false_when_summary_missing() -> None:
+    metrics = _all_metrics()
+    day = DayEval(
+        name="x",
+        date="2026-10-31",
+        metrics=metrics,
+        derived_first={"summaries": 0},
+        derived_second={"summaries": 0},
+        summary_present=False,
+        identical_counts=True,
+        narrative_nonempty=False,
+        citation_count=0,
+        claims=2,
+    )
+    report = EvalReport(
+        mode="replay",
+        runtime="replay",
+        days=[day],
+        aggregate=metrics,
+        gate=gate_metrics(metrics),
+    )
+    assert report.gate["passed"] is True
+    assert report.passed is False
+    assert report.pipeline_passed is False
+
+
+def test_report_passed_is_false_when_counts_drift() -> None:
+    metrics = _all_metrics()
+    day = DayEval(
+        name="x",
+        date="2026-10-31",
+        metrics=metrics,
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 2},
+        summary_present=True,
+        identical_counts=False,
+        narrative_nonempty=True,
+        citation_count=1,
+        claims=1,
+    )
+    report = EvalReport(
+        mode="replay",
+        runtime="replay",
+        days=[day],
+        aggregate=metrics,
+        gate=gate_metrics(metrics),
+    )
+    assert report.passed is False
+
+
+def test_each_threshold_fails_on_deliberately_bad_value() -> None:
+    rules = load_thresholds()
+    bad = {
+        "project_f1": 0.0,
+        "people_f1": 0.0,
+        "completed_accuracy": 0.0,
+        "decisions_recall": 0.0,
+        "decisions_precision": 0.0,
+        "commitments_recall": 0.0,
+        "commitments_precision": 0.0,
+        "unsupported_achievements": 3.0,
+        "duplicate_observation_rate": 1.0,
+        "noise_non_work_rate": 0.0,
+        "claims_with_evidence": 0.0,
+        "citations_resolvable": 0.0,
+    }
+    for name, value in bad.items():
+        metrics = _all_metrics(**{name: value})
+        gate = gate_metrics(metrics, rules)
+        assert gate["passed"] is False, name
+        assert name in gate["failures"], name
 
 
 def test_completed_accuracy_penalizes_false_completions() -> None:

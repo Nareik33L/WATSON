@@ -20,7 +20,11 @@ from watson.intelligence.runtime import FakeRuntime, build_runtime
 from watson.intelligence.runtime.types import RuntimeUnavailable
 from watson.memory.db import connect
 from watson.memory.migrate import upgrade_head
-from watson.pipeline.consolidation import consolidate_working_day, derived_counts
+from watson.pipeline.consolidation import (
+    ConsolidationWait,
+    consolidate_working_day,
+    derived_counts,
+)
 from watson.pipeline.replay import replay_fixture
 
 V1_DAY_FIXTURES = (
@@ -41,6 +45,16 @@ class DayEval:
     derived_second: dict[str, int]
     summary_present: bool
     identical_counts: bool
+    narrative_nonempty: bool = False
+    citation_count: int = 0
+    claims: int = 0
+
+    @property
+    def narrative_ok(self) -> bool:
+        """Days with claims need a non-empty cited narrative."""
+        if self.claims <= 0:
+            return self.summary_present
+        return self.summary_present and self.narrative_nonempty and self.citation_count > 0
 
 
 @dataclass
@@ -54,10 +68,28 @@ class EvalReport:
     peak_rss_bytes: int = 0
 
     @property
+    def pipeline_passed(self) -> bool:
+        """Structural / acceptance gate used by replay CI (not a quality claim)."""
+        if not self.days or not self.aggregate:
+            return False
+        if self.gate.get("hard_failures"):
+            return False
+        failures = list(self.gate.get("failures") or [])
+        if "empty_aggregate" in failures:
+            return False
+        missing = [name for name in load_thresholds() if name not in self.aggregate]
+        if missing:
+            return False
+        return all(day.identical_counts and day.narrative_ok for day in self.days)
+
+    @property
     def passed(self) -> bool:
-        return bool(self.gate.get("passed")) and all(
-            day.identical_counts and day.summary_present for day in self.days
-        )
+        """Full §11.2 gate. False when days/aggregate/metrics are missing."""
+        if not self.days or not self.aggregate:
+            return False
+        if not self.gate.get("passed"):
+            return False
+        return self.pipeline_passed
 
 
 def build_eval_runtime(
@@ -74,12 +106,12 @@ def build_eval_runtime(
         if runtime_name not in {"replay", "recordings"}:
             raise RuntimeUnavailable(
                 f"replay mode refuses implicit {runtime_name!r}. "
-                'Use --mode replay (default) or --runtime fake.'
+                "Use --mode replay (default) or --runtime fake."
             )
         return RecordingRuntime(path=recordings, mode="replay")
     if runtime_name != "ollama":
         raise RuntimeUnavailable(
-            'record mode requires --runtime ollama (FakeRuntime is --runtime fake).'
+            "record mode requires --runtime ollama (FakeRuntime is --runtime fake)."
         )
     if config is None:
         raise RuntimeUnavailable("record mode needs WatsonConfig to build Ollama")
@@ -107,9 +139,7 @@ def run_eval(
     days: list[DayEval] = []
     for name in names:
         fixture = fixtures_root / name
-        days.append(
-            _eval_one(fixture, runtime=runtime, out_dir=out_dir / name, key=key)
-        )
+        days.append(_eval_one(fixture, runtime=runtime, out_dir=out_dir / name, key=key))
     if isinstance(runtime, RecordingRuntime):
         runtime.save()
     aggregate = _aggregate([day.metrics for day in days])
@@ -134,7 +164,9 @@ def render_markdown(report: EvalReport) -> str:
         f"runtime: `{report.runtime}`  ",
         f"wall_seconds: {report.wall_seconds:.3f}  ",
         f"peak_rss_bytes: {report.peak_rss_bytes}  ",
-        f"passed: **{report.passed}**",
+        f"passed: **{report.passed}**  ",
+        f"pipeline_passed: **{report.pipeline_passed}**  ",
+        "replay is a pipeline-only gate; quality F1 is measured, not a model claim.",
         "",
         "| Metric | Value |",
         "|---|---:|",
@@ -143,9 +175,11 @@ def render_markdown(report: EvalReport) -> str:
         lines.append(f"| {key} | {value:.4f} |")
     lines.extend(["", "## Days", ""])
     for day in report.days:
-        mark = "yes" if day.summary_present and day.identical_counts else "no"
+        mark = "yes" if day.narrative_ok and day.identical_counts else "no"
         lines.append(
             f"- `{day.name}` ({day.date}): summary={day.summary_present} "
+            f"narrative_nonempty={day.narrative_nonempty} "
+            f"citations={day.citation_count} "
             f"identical_counts={day.identical_counts} ok={mark}"
         )
     if report.gate.get("failures"):
@@ -154,11 +188,13 @@ def render_markdown(report: EvalReport) -> str:
     return "\n".join(lines)
 
 
-def _eval_one(
-    fixture: Path, *, runtime: Any, out_dir: Path, key: bytes
-) -> DayEval:
+def _eval_one(fixture: Path, *, runtime: Any, out_dir: Path, key: bytes) -> DayEval:
     out_dir.mkdir(parents=True, exist_ok=True)
     db_path = out_dir / "watson.db"
+    # A leftover DB from a prior run would keep old observations (understand
+    # is idempotent per segment) and poison the metric table.
+    if db_path.is_file():
+        db_path.unlink()
     upgrade_head(db_path, key)
     db_path.chmod(0o600)
     conn = connect(db_path, key, load_vec=False)
@@ -168,13 +204,11 @@ def _eval_one(
         now = _eval_now(result.date)
         # consolidate_working_day already understands, resolves, consolidates,
         # and writes the daily summary. Run it twice for the §12 identity check.
-        consolidate_working_day(
-            conn, day_id, runtime=runtime, embedding=runtime, now=now, spool_dir=out_dir / "spool"
-        )
+        # One retry: the last fixture segment can close during the first pass
+        # and leave a single understand job pending (ConsolidationWait).
+        _consolidate_once(conn, day_id, runtime=runtime, now=now, spool_dir=out_dir / "spool")
         first = derived_counts(conn, day_id)
-        consolidate_working_day(
-            conn, day_id, runtime=runtime, embedding=runtime, now=now, spool_dir=out_dir / "spool"
-        )
+        _consolidate_once(conn, day_id, runtime=runtime, now=now, spool_dir=out_dir / "spool")
         second = derived_counts(conn, day_id)
         truth = load_truth(fixture / "truth.yaml")
         metrics = score_day(conn, day_id, truth)
@@ -187,9 +221,30 @@ def _eval_one(
             derived_second=second,
             summary_present=bool(predicted["summary_present"]),
             identical_counts=first == second,
+            narrative_nonempty=bool(predicted["narrative_nonempty"]),
+            citation_count=int(predicted["citation_count"]),
+            claims=int(predicted["claims"]),
         )
     finally:
         conn.close()
+
+
+def _consolidate_once(
+    conn: sqlcipher.Connection,
+    day_id: str,
+    *,
+    runtime: Any,
+    now: datetime,
+    spool_dir: Path,
+) -> None:
+    try:
+        consolidate_working_day(
+            conn, day_id, runtime=runtime, embedding=runtime, now=now, spool_dir=spool_dir
+        )
+    except ConsolidationWait:
+        consolidate_working_day(
+            conn, day_id, runtime=runtime, embedding=runtime, now=now, spool_dir=spool_dir
+        )
 
 
 def _day_id(conn: sqlcipher.Connection, date: str) -> str:
@@ -239,6 +294,7 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
         "mode": report.mode,
         "runtime": report.runtime,
         "passed": report.passed,
+        "pipeline_passed": report.pipeline_passed,
         "aggregate": report.aggregate,
         "gate": report.gate,
         "wall_seconds": report.wall_seconds,
@@ -252,6 +308,9 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
                 "derived_second": day.derived_second,
                 "summary_present": day.summary_present,
                 "identical_counts": day.identical_counts,
+                "narrative_nonempty": day.narrative_nonempty,
+                "citation_count": day.citation_count,
+                "claims": day.claims,
             }
             for day in report.days
         ],

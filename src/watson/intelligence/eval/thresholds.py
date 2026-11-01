@@ -57,10 +57,21 @@ def load_thresholds(path: Path | None = None) -> dict[str, Threshold]:
 def gate_metrics(
     metrics: dict[str, float], thresholds: dict[str, Threshold] | None = None
 ) -> dict[str, Any]:
-    """Compare named metrics to §11.2 thresholds. Keys are never swapped."""
+    """Compare named metrics to §11.2 thresholds. Keys are never swapped.
+
+    A missing metric or an empty aggregate is a failure (undefined → fail).
+    """
     rules = thresholds if thresholds is not None else load_thresholds()
     failures: list[str] = []
     hard_failures: list[str] = []
+    if not metrics:
+        names = list(rules)
+        hard = [name for name in names if name in HARD_ZERO or name in HARD_HUNDRED]
+        return {
+            "passed": False,
+            "failures": ["empty_aggregate", *names],
+            "hard_failures": hard,
+        }
     for name, rule in rules.items():
         if name not in metrics:
             failures.append(name)
