@@ -63,3 +63,17 @@ CI uses `runtime = "fake"` or `WATSON_INTELLIGENCE_RUNTIME=fake` (recorded
 JSON, no socket). A missing runtime or model leaves understanding jobs
 `pending` with `last_error` naming the model and `ollama pull …`.
 `VisionRuntime.describe` is a stub (VLM off on 8 GB).
+
+## Pipeline / day-end
+
+`[pipeline]` bounds worker drains and the work-day clock (D12 / §3.7).
+Defaults: `backlog_batch_size = 32`, `day_end = "18:30"` (local HH:MM),
+`recovery_deadline_hours = 2`. After `day_end`, consolidation runs (or
+catch-up on the next launch). Frames still `captured` wait until the
+recovery deadline, then consolidation proceeds with a recorded gap.
+
+```toml
+[pipeline]
+day_end = "18:30"
+recovery_deadline_hours = 2
+```

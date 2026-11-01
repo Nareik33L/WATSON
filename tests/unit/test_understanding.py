@@ -30,6 +30,7 @@ from watson.pipeline.jobs import JobState, claim, enqueue, get_job
 from watson.pipeline.replay import replay_fixture
 from watson.pipeline.understanding import (
     UnderstandSettings,
+    _citation_supported,
     _load_segment,
     _persist_observation,
     drain_understand_jobs,
@@ -449,6 +450,23 @@ def test_schema_and_persist_reject_claims_without_evidence(tmp_path: Path) -> No
                 conn,
                 segment,
                 _output(evidence=[missing_line]),
+                prompt_version="understanding/v1",
+                pipeline_version=1,
+                model_id="fake",
+                stamp="2026-10-31T10:00:00Z",
+            )
+        conn.rollback()
+        assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0] == 0
+
+        whitespace = EvidenceCitation.model_construct(snippet="   \n\t  ", line_start=1, line_end=1)
+        assert _citation_supported(whitespace, [_LINE]) is False
+        with pytest.raises(JobFailure, match="missing claim_evidence"):
+            _persist_observation(
+                conn,
+                segment,
+                _output(evidence=[whitespace]),
                 prompt_version="understanding/v1",
                 pipeline_version=1,
                 model_id="fake",

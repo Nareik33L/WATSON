@@ -15,6 +15,7 @@ from watson.privacy.audit import (
     ERROR_PERMISSION,
     ERROR_STILL_PRESENT,
     ERROR_UNLINK_FAILED,
+    KIND_CONSOLIDATED,
     KIND_DEDUPED,
     KIND_DELETE_FAILED,
     KIND_DELETED,
@@ -202,6 +203,17 @@ def test_unknown_kind_is_rejected(data_dir: Path, key_provider: object) -> None:
             },
         ),
         (KIND_TIER2_PURGED, {"texts": 1, "visuals": 0, "segments": 1}),
+        (
+            KIND_CONSOLIDATED,
+            {
+                "working_day_id": SAMPLE_FRAME_ID,
+                "activities": 1,
+                "decisions": 1,
+                "commitments": 1,
+                "achievements": 0,
+                "history": 1,
+            },
+        ),
         (
             KIND_SPOOL_SWEPT,
             {

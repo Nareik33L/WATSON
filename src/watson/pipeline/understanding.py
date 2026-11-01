@@ -97,10 +97,15 @@ def eligible_segment_ids(
     *,
     pipeline_version: int = PIPELINE_VERSION,
     close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+    working_day_id: str | None = None,
 ) -> list[str]:
     """Closed, or still open after the 20-minute eligibility dwell."""
+    day_sql = "AND working_day_id = ?" if working_day_id is not None else ""
+    params: list[Any] = [close_after_seconds, pipeline_version]
+    if working_day_id is not None:
+        params.append(working_day_id)
     rows = conn.execute(
-        """
+        f"""
         SELECT id FROM segments
         WHERE (state = 'closed' OR dwell_seconds >= ?)
           AND NOT EXISTS (
@@ -108,9 +113,10 @@ def eligible_segment_ids(
               WHERE observations.segment_id = segments.id
                 AND observations.pipeline_version = ?
           )
+          {day_sql}
         ORDER BY started_at, id
         """,
-        (close_after_seconds, pipeline_version),
+        params,
     ).fetchall()
     return [str(row["id"]) for row in rows]
 
@@ -120,12 +126,16 @@ def enqueue_eligible_understand_jobs(
     *,
     pipeline_version: int = PIPELINE_VERSION,
     close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+    working_day_id: str | None = None,
     now: datetime | None = None,
 ) -> int:
     """Enqueue one ``understand`` job per eligible segment. Idempotent."""
     added = 0
     for segment_id in eligible_segment_ids(
-        conn, pipeline_version=pipeline_version, close_after_seconds=close_after_seconds
+        conn,
+        pipeline_version=pipeline_version,
+        close_after_seconds=close_after_seconds,
+        working_day_id=working_day_id,
     ):
         key = understand_idempotency_key(segment_id, pipeline_version)
         before = conn.execute("SELECT id FROM jobs WHERE idempotency_key = ?", (key,)).fetchone()

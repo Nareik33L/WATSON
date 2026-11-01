@@ -38,6 +38,8 @@ def test_defaults_use_application_support_path(
     assert config.retention.tier2_grace_days == 7
     assert config.retention.spool_hard_limit_hours == 24
     assert config.pipeline.backlog_batch_size == 32
+    assert config.pipeline.day_end == "18:30"
+    assert config.pipeline.recovery_deadline_hours == 2
     assert config.retention.derived_days is None
     assert config.intelligence.runtime == "ollama"
     assert config.intelligence.llm_model == "llama3.2:3b"

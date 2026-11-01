@@ -88,6 +88,8 @@ packages = ["src/watson"]
 "tools/fixture_gen/watson_fixturegen" = "watson_fixturegen"
 "schemas/sidecar.schema.json" = "watson/data/sidecar.schema.json"
 "src/watson/intelligence/prompts/understanding/v1.md" = "watson/intelligence/prompts/understanding/v1.md"
+"src/watson/intelligence/prompts/clustering/v1.md" = "watson/intelligence/prompts/clustering/v1.md"
+"src/watson/intelligence/prompts/day_extract/v1.md" = "watson/intelligence/prompts/day_extract/v1.md"
 # fonts/ and scenarios/ live inside watson_fixturegen and ship in the wheel.
 
 [tool.ruff.lint]
