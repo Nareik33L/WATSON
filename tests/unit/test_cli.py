@@ -22,6 +22,51 @@ def test_cli_imports_and_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert "watson" in capsys.readouterr().out
 
 
+def test_eval_help_is_not_a_stub(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        cli.main(["eval", "--help"])
+    assert exited.value.code == 0
+    out = capsys.readouterr().out
+    assert "--mode" in out
+    assert "replay" in out
+    assert "--runtime" in out
+    assert "not implemented" not in out
+
+
+def test_eval_cli_replays_and_writes_report(
+    data_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from watson.intelligence.eval.run import EvalReport
+
+    captured: dict[str, object] = {}
+
+    def fake_run_eval(**kwargs: object) -> EvalReport:
+        captured.update(kwargs)
+        out_dir = Path(str(kwargs["out_dir"]))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "report.json").write_text("{}\n", encoding="utf-8")
+        (out_dir / "report.md").write_text("# ok\n", encoding="utf-8")
+        return EvalReport(
+            mode="replay",
+            runtime="replay",
+            aggregate={"project_f1": 1.0},
+            gate={"passed": True, "failures": [], "hard_failures": []},
+            wall_seconds=0.01,
+            peak_rss_bytes=1,
+        )
+
+    monkeypatch.setattr("watson.intelligence.eval.run.run_eval", fake_run_eval)
+    assert cli.main(["eval", "--mode", "replay", "--out", str(tmp_path / "eval")]) == 0
+    out = capsys.readouterr().out
+    assert "eval_mode: replay" in out
+    assert "eval_passed: True" in out
+    assert captured["mode"] == "replay"
+    assert captured["runtime_name"] == "replay"
+
+
 @pytest.mark.parametrize("command", ["run", "models"])
 def test_stub_commands_not_implemented(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main([command]) == 1

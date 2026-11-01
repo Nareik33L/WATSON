@@ -1,0 +1,449 @@
+{
+  "complete": [
+    {
+      "match": "Cluster these observations",
+      "response": { "activities": [] }
+    },
+    {
+      "match": "Extract cross-segment",
+      "response": { "entity_deltas": [], "decisions": [], "commitments": [] }
+    },
+    {
+      "match": "Write the daily narrative",
+      "response": {
+        "paragraphs": [
+          { "text": "Work continued on the day's projects [c:1].", "claim_ids": ["1"] }
+        ]
+      }
+    },
+    {
+      "match": "Section 3 of the Internal Onboarding Guide is published",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Onboarding Guide section 3 published",
+        "confidence": 0.9,
+        "claims": [
+          {
+            "kind": "achievement",
+            "text": "Onboarding Guide section 3 published",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Section 3 of the Internal Onboarding Guide is published this morning.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Internal Onboarding Guide"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "Cedar Onboarding page 1 is published",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Cedar Onboarding page 1 published",
+        "confidence": 0.9,
+        "claims": [
+          {
+            "kind": "achievement",
+            "text": "Cedar Onboarding page 1 published",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Cedar Onboarding page 1 is published",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Cedar Onboarding"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "Acme demo prep",
+      "response": {
+        "activity_type": "meeting",
+        "description": "Acme demo prep call",
+        "confidence": 0.88,
+        "claims": [
+          {
+            "kind": "achievement",
+            "text": "Acme demo prep call",
+            "assertion": "observed",
+            "evidence": [
+              { "snippet": "Acme demo prep", "line_start": 1, "line_end": 1 }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "demo moves to 14 Nov",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Agreed to move the Acme demo to 14 Nov",
+        "confidence": 0.86,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Agreed to move the Acme demo to 14 Nov",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Decision: live demo moves to 14 Nov",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "three-tier rate card",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Adopt the published three-tier rate card for Acme",
+        "confidence": 0.85,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Adopt the published three-tier rate card for Acme",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Will follow the published three-tier rate card.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "Keep the Harbor walkthrough on Thursday",
+      "response": {
+        "activity_type": "meeting",
+        "description": "Keep the Harbor walkthrough on Thursday",
+        "confidence": 0.86,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Keep the Harbor walkthrough on Thursday",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Keep the Harbor walkthrough on Thursday.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Harbor planning"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "Harbor walkthrough remains Thursday",
+      "response": {
+        "activity_type": "meeting",
+        "description": "Keep the Harbor walkthrough on Thursday",
+        "confidence": 0.86,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Keep the Harbor walkthrough on Thursday",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Harbor walkthrough remains Thursday.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Harbor planning"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "Harbor walkthrough",
+      "response": {
+        "activity_type": "communication",
+        "description": "Harbor walkthrough moved to Thursday",
+        "confidence": 0.86,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Agreed to move the Harbor walkthrough to Thursday",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Agreed, Thursday for the Harbor walkthrough.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": [],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "two-year term",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Use a two-year term for the Northwind renewal",
+        "confidence": 0.86,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Use a two-year term for the Northwind renewal",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "We will use a two-year term starting 1 December.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Northwind Renewal"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "demo stays 14 Nov",
+      "response": {
+        "activity_type": "meeting",
+        "description": "Acme demo stays 14 Nov",
+        "confidence": 0.85,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Acme demo stays 14 Nov",
+            "assertion": "observed",
+            "evidence": [
+              { "snippet": "Acme demo stays 14 Nov", "line_start": 1, "line_end": 1 }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "hours grid today",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Send the North Pier hours grid today",
+        "confidence": 0.84,
+        "claims": [
+          {
+            "kind": "decision",
+            "text": "Send the North Pier hours grid today",
+            "assertion": "observed",
+            "evidence": [
+              {
+                "snippet": "Send the North Pier hours grid today",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          },
+          {
+            "kind": "commitment",
+            "text": "Send the hours grid to Mina today",
+            "assertion": "unconfirmed",
+            "evidence": [
+              { "snippet": "Send the grid today.", "line_start": 1, "line_end": 1 }
+            ]
+          }
+        ],
+        "project_candidates": ["North Pier invoice"],
+        "people_candidates": ["Mina Okonkwo"]
+      }
+    },
+    {
+      "match": "Please send revised pricing by Friday",
+      "response": {
+        "activity_type": "communication",
+        "description": "Send revised pricing to Priya by Friday",
+        "confidence": 0.84,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Send revised pricing to Priya by Friday",
+            "assertion": "unconfirmed",
+            "evidence": [
+              {
+                "snippet": "Please send revised pricing by Friday.",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": ["Priya Natarajan"]
+      }
+    },
+    {
+      "match": "risks appendix",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Flag Q4 delivery risks in the proposal appendix",
+        "confidence": 0.8,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Flag Q4 delivery risks in the proposal appendix",
+            "assertion": "unconfirmed",
+            "evidence": [
+              {
+                "snippet": "I still owe you the risks appendix",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "Harbor checklist",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Send the Harbor checklist to Ellis by Wednesday",
+        "confidence": 0.82,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Send the Harbor checklist to Ellis by Wednesday",
+            "assertion": "unconfirmed",
+            "evidence": [
+              {
+                "snippet": "Send the Harbor checklist to Ellis by Wednesday",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Harbor Safety Audit"],
+        "people_candidates": ["Ellis Voss"]
+      }
+    },
+    {
+      "match": "before Friday standup",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Publish Cedar Onboarding page 2 before Friday standup",
+        "confidence": 0.82,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Publish Cedar Onboarding page 2 before Friday standup",
+            "assertion": "unconfirmed",
+            "evidence": [
+              {
+                "snippet": "page 2 before Friday standup",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Cedar Onboarding"],
+        "people_candidates": []
+      }
+    },
+    {
+      "match": "slide outline tomorrow",
+      "response": {
+        "activity_type": "communication",
+        "description": "Send Priya the slide outline tomorrow",
+        "confidence": 0.82,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Send Priya the slide outline tomorrow",
+            "assertion": "unconfirmed",
+            "evidence": [
+              {
+                "snippet": "Send Priya the slide outline tomorrow",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": ["Priya Natarajan"]
+      }
+    },
+    {
+      "match": "slide order",
+      "response": {
+        "activity_type": "communication",
+        "description": "Samira Cole still owes the slide order",
+        "confidence": 0.8,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Samira Cole still owes the slide order",
+            "assertion": "unconfirmed",
+            "evidence": [
+              {
+                "snippet": "Samira Cole still owes the slide order",
+                "line_start": 1,
+                "line_end": 1
+              }
+            ]
+          }
+        ],
+        "project_candidates": ["Acme Q4 Proposal"],
+        "people_candidates": ["Samira Cole"]
+      }
+    },
+    {
+      "match": "hours grid to Mina",
+      "response": {
+        "activity_type": "knowledge_work",
+        "description": "Send the hours grid to Mina today",
+        "confidence": 0.82,
+        "claims": [
+          {
+            "kind": "commitment",
+            "text": "Send the hours grid to Mina today",
+            "assertion": "unconfirmed",
+            "evidence": [
+              { "snippet": "Send the grid today.", "line_start": 1, "line_end": 1 }
+            ]
+          }
+        ],
+        "project_candidates": ["North Pier invoice"],
+        "people_candidates": ["Mina Okonkwo"]
+      }
+    }
+  ],
+  "embeddings": {}
+}

@@ -15,6 +15,7 @@ from watson.config.schema import WatsonConfig
 from watson.dashboard.bind import DEFAULT_PORT, BindError
 from watson.dashboard.serve import run_dashboard
 from watson.dashboard.tokens import TokenError
+from watson.intelligence.runtime.types import RuntimeUnavailable
 from watson.memory.db import (
     DatabaseError,
     cipher_version,
@@ -111,6 +112,49 @@ def _main(argv: Sequence[str] | None = None) -> int:
     db_status = db_sub.add_parser("status", help="Show current and head Alembic revision")
     db_status.set_defaults(handler=_cmd_db_status)
 
+    evaluate = subparsers.add_parser(
+        "eval",
+        help="Score fixture days against truth.yaml (§11.2). Replay mode is default.",
+    )
+    evaluate.add_argument(
+        "--mode",
+        choices=("replay", "record"),
+        default="replay",
+        help="replay committed responses (default) or record a live runtime",
+    )
+    evaluate.add_argument(
+        "--runtime",
+        choices=("replay", "ollama", "fake"),
+        default=None,
+        help="replay (default), ollama for --mode record, or fake (explicit opt-in)",
+    )
+    evaluate.add_argument(
+        "--fixtures",
+        type=Path,
+        default=None,
+        help="Directory that contains day_* fixture folders",
+    )
+    evaluate.add_argument(
+        "--recordings",
+        type=Path,
+        default=None,
+        help="JSON recordings path (read in replay, written in record)",
+    )
+    evaluate.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Write report.json and report.md here",
+    )
+    evaluate.add_argument(
+        "--only",
+        action="append",
+        dest="only",
+        default=None,
+        help="Limit to one fixture name (repeatable)",
+    )
+    evaluate.set_defaults(handler=_cmd_eval)
+
     for name in _STUB_COMMANDS:
         subparsers.add_parser(name, help="not implemented")
 
@@ -134,7 +178,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    except (KeyProviderError, DatabaseError, TokenError, BindError) as exc:
+    except (KeyProviderError, DatabaseError, TokenError, BindError, RuntimeUnavailable) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except ReplayError as exc:
@@ -203,6 +247,47 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     print(f"deduped: {result.deduped}")
     print(f"segments: {result.segments}")
     return 0
+
+
+def _cmd_eval(args: argparse.Namespace) -> int:
+    from watson.intelligence.eval.recordings import DEFAULT_RECORDINGS
+    from watson.intelligence.eval.run import V1_DAY_FIXTURES, run_eval
+
+    config = load_config()
+    mode = str(args.mode)
+    if args.runtime:
+        runtime_name = str(args.runtime)
+    else:
+        runtime_name = "ollama" if mode == "record" else "replay"
+    fixtures_root = (
+        args.fixtures
+        if args.fixtures is not None
+        else Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+    )
+    names = tuple(args.only) if args.only else V1_DAY_FIXTURES
+    out_dir = args.out if args.out is not None else config.data_dir / "eval"
+    recordings = args.recordings if args.recordings is not None else DEFAULT_RECORDINGS
+    ensure_runtime_dirs(config)
+    key = get_key_provider().get_key()
+    report = run_eval(
+        fixtures_root=fixtures_root,
+        names=names,
+        mode=mode,
+        runtime_name=runtime_name,
+        recordings=recordings,
+        out_dir=out_dir,
+        key=key,
+        config=config,
+    )
+    print(f"eval_mode: {report.mode}")
+    print(f"eval_runtime: {report.runtime}")
+    print(f"eval_passed: {report.passed}")
+    print(f"eval_wall_seconds: {report.wall_seconds:.3f}")
+    print(f"eval_peak_rss_bytes: {report.peak_rss_bytes}")
+    print(f"eval_report: {out_dir / 'report.md'}")
+    for key_name, value in report.aggregate.items():
+        print(f"{key_name}: {value:.4f}")
+    return 0 if report.passed else 1
 
 
 def _cmd_db_upgrade(_args: argparse.Namespace) -> int:
