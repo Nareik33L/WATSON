@@ -34,14 +34,28 @@ def canonical_ollama_url(value: str) -> str:
             f"intelligence.ollama_host {value!r} uses an unsupported scheme."
         )
     host = parsed.hostname or ""
+    _refuse_non_loopback(host, value)
+    port = parsed.port or DEFAULT_OLLAMA_PORT
+    url_host = f"[{host}]" if ":" in host else host
+    return f"{parsed.scheme}://{url_host}:{port}"
+
+
+def _refuse_non_loopback(host: str, value: str) -> None:
     if not is_loopback_host(host):
         raise RuntimeUnavailable(
             f"intelligence.ollama_host {value!r} is not a loopback address. "
             "Only a local Ollama server is allowed."
         )
-    port = parsed.port or DEFAULT_OLLAMA_PORT
-    url_host = f"[{host}]" if ":" in host else host
-    return f"{parsed.scheme}://{url_host}:{port}"
+
+
+def direct_opener() -> urllib.request.OpenerDirector:
+    """Opener that never consults env or system proxies.
+
+    Passing an empty ``ProxyHandler`` replaces urllib's default, which would
+    otherwise honour ``http_proxy`` / ``HTTPS_PROXY`` / macOS SystemConfiguration.
+    An empty mapping installs no ``*_open`` hooks, so HTTP goes direct.
+    """
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def request_json(
@@ -56,6 +70,8 @@ def request_json(
     canonical_ollama_url(base_url)
     root = base_url if base_url.endswith("/") else base_url + "/"
     url = urljoin(root, path.lstrip("/"))
+    parsed = urlparse(url)
+    _refuse_non_loopback(parsed.hostname or "", url)
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -64,7 +80,7 @@ def request_json(
         headers={"Content-Type": "application/json", "Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with direct_opener().open(request, timeout=timeout) as response:
             raw = response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 import pytest
 
 from watson.intelligence.prompts import PromptError, load_prompt
-from watson.intelligence.runtime import FakeRuntime, StructuredOutputError
+from watson.intelligence.runtime import FakeRuntime, Message, StructuredOutputError
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
 from watson.intelligence.structured import complete_structured
 
@@ -46,6 +49,22 @@ def test_load_understanding_v1_returns_prompt_version() -> None:
         load_prompt("understanding", "../v1")
 
 
+class _RecordingRuntime:
+    def __init__(self) -> None:
+        self.user_messages: list[str] = []
+        self._calls = 0
+
+    def complete(
+        self, messages: Sequence[Message], schema: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        del schema
+        self._calls += 1
+        if self._calls == 1:
+            return {"nope": True}
+        self.user_messages.append(messages[-1]["content"])
+        return _VALID
+
+
 def test_complete_structured_retries_once_then_succeeds() -> None:
     runtime = FakeRuntime(complete_queue=[{"nope": True}, _VALID])
     out = complete_structured(
@@ -56,6 +75,20 @@ def test_complete_structured_retries_once_then_succeeds() -> None:
     )
     assert out.claims[0].assertion.value == "unconfirmed"
     assert runtime.complete_calls == 2
+
+
+def test_retry_message_includes_pydantic_validation_error() -> None:
+    runtime = _RecordingRuntime()
+    complete_structured(
+        runtime,
+        [{"role": "user", "content": "segment"}],
+        UnderstandingOutput,
+    )
+    assert runtime.user_messages
+    retry = runtime.user_messages[0]
+    assert "failed validation" in retry
+    assert "activity_type" in retry
+    assert "Field required" in retry
 
 
 def test_complete_structured_raises_typed_failure_after_retry() -> None:
