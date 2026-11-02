@@ -43,7 +43,7 @@ from watson.intelligence.runtime import (
     hold_understanding_jobs,
 )
 from watson.intelligence.runtime.fake import FakeRuntime
-from watson.intelligence.runtime.stats import record_understand_segment
+from watson.intelligence.runtime.stats import record_understand_prompt, record_understand_segment
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
 from watson.intelligence.structured import complete_structured
 from watson.memory.db import iso_now
@@ -51,6 +51,7 @@ from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import (
     DEFAULT_LEASE_SECONDS,
+    DEFAULT_MAX_ATTEMPTS,
     Job,
     JobLeaseError,
     JobState,
@@ -210,7 +211,7 @@ def drain_understand_jobs(
     if language is None or embedder is None:
         return 0
     completed = 0
-    pending: list[_PendingResolve] = []
+    pending: list[tuple[str, UnderstandSettings]] = []
     held: list[Job] = []
     try:
         while len(held) < limit:
@@ -228,7 +229,7 @@ def drain_understand_jobs(
                     conn, job, language, embedder, settings=settings, now=now, defer_resolve=True
                 )
                 if isinstance(work, _PendingResolve):
-                    pending.append(work)
+                    pending.append((str(work.segment["id"]), work.settings))
                 held.append(job)
             except JobLeaseError:
                 raise
@@ -236,7 +237,14 @@ def drain_understand_jobs(
                 _hold_claimed_understand_job(conn, job, worker_id, exc, now=now)
                 break
             except JobFailure as exc:
-                fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
+                fail(
+                    conn,
+                    job.id,
+                    type(exc).__name__,
+                    worker_id=worker_id,
+                    now=now,
+                    max_attempts=1 if not exc.retryable else DEFAULT_MAX_ATTEMPTS,
+                )
                 if not exc.retryable:
                     continue
                 break
@@ -245,16 +253,10 @@ def drain_understand_jobs(
                 raise
         if pending:
             # Chat sub-phase done. Unload the LLM before any resolver embeddings.
+            # Reload from raw_json so the day's outputs are not held in RAM.
             _end_phase(language, embedder)
-            for item in pending:
-                resolve_candidates(
-                    conn,
-                    embedder,
-                    project_candidates=item.output.project_candidates,
-                    people_candidates=item.output.people_candidates,
-                    threshold=item.settings.entity_similarity_threshold,
-                    seen_at=str(item.segment["ended_at"]),
-                )
+            for segment_id, job_settings in pending:
+                _resolve_stored_observation(conn, embedder, segment_id, job_settings)
             conn.commit()
         remaining = list(held)
         for job in remaining:
@@ -370,6 +372,7 @@ def _understand_segment_body(
     user = build_understand_user_message(
         segment, memory_block=format_retrieved_context(memory), max_chars=cfg.merged_text_max_chars
     )
+    record_understand_prompt(len(user))
     messages: list[Message] = [
         {"role": "system", "content": prompt.text},
         {"role": "user", "content": user},
@@ -524,6 +527,31 @@ def _end_phase(language: LanguageRuntime, embedder: EmbeddingRuntime) -> None:
     end_runtime_phase(language)
     if id(embedder) != id(language):
         end_runtime_phase(embedder)
+
+
+def _resolve_stored_observation(
+    conn: sqlcipher.Connection,
+    embedder: EmbeddingRuntime,
+    segment_id: str,
+    cfg: UnderstandSettings,
+) -> None:
+    row = conn.execute(
+        "SELECT raw_json FROM observations WHERE segment_id = ? AND pipeline_version = ?",
+        (segment_id, cfg.pipeline_version),
+    ).fetchone()
+    if row is None:
+        raise JobFailure(
+            f"understand job refers to missing observation for {segment_id}", retryable=False
+        )
+    item = _pending_from_stored(conn, segment_id, str(row["raw_json"]), cfg=cfg)
+    resolve_candidates(
+        conn,
+        embedder,
+        project_candidates=item.output.project_candidates,
+        people_candidates=item.output.people_candidates,
+        threshold=item.settings.entity_similarity_threshold,
+        seen_at=str(item.segment["ended_at"]),
+    )
 
 
 def _pending_from_stored(

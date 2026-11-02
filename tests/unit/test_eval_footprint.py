@@ -39,6 +39,7 @@ def test_sampler_adds_injected_pid(monkeypatch: object) -> None:
     monkeypatch.setattr("watson.intelligence.eval.footprint.worker_rss_bytes", lambda: 50)
     sampler = FootprintSampler(extra_pids=[99], measure_model=False)
     assert sampler.sample() == 1050
+    assert sampler.worker_peak_bytes == 50
 
 
 def test_measure_model_includes_discovered_pids(monkeypatch: object) -> None:

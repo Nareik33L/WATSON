@@ -64,7 +64,17 @@ from watson.intelligence.structured import complete_structured
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
-from watson.pipeline.jobs import Job, JobLeaseError, JobState, claim, complete, enqueue, fail
+from watson.pipeline.jobs import (
+    Job,
+    JobLeaseError,
+    JobState,
+    backoff_seconds,
+    claim,
+    complete,
+    enqueue,
+    fail,
+    recover_expired_leases,
+)
 from watson.pipeline.segmentation import close_open_segments
 from watson.pipeline.understanding import (
     drain_understand_jobs,
@@ -216,6 +226,7 @@ def ensure_consolidate_job(
     *,
     pipeline_version: int = PIPELINE_VERSION,
     now: datetime | None = None,
+    force: bool = False,
 ) -> bool:
     """Enqueue or return a dead consolidate job to pending. True if newly pending."""
     moment = _aware(now)
@@ -240,6 +251,12 @@ def ensure_consolidate_job(
         and str(day.get("state")) == "consolidated"
     ):
         return False
+    if (
+        not force
+        and job.state is JobState.FAILED
+        and _has_terminal_understand_jobs(conn, working_day_id, pipeline_version)
+    ):
+        return False
     _reset_job(conn, job.id, now=moment)
     return True
 
@@ -251,8 +268,13 @@ def requeue_understand_jobs_for_day(
     pipeline_version: int = PIPELINE_VERSION,
     close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
     now: datetime | None = None,
+    force: bool = False,
 ) -> int:
-    """Return failed (or completed-without-observation) understand jobs to pending."""
+    """Return incomplete understand jobs to pending.
+
+    Terminal-failed jobs keep their attempt count and stay ``failed`` unless
+    ``force`` (dashboard Retry) starts a fresh attempt.
+    """
     moment = _aware(now)
     reset = 0
     for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version):
@@ -266,7 +288,9 @@ def requeue_understand_jobs_for_day(
             ).fetchone()
             if seen is not None:
                 continue
-        _reset_job(conn, job.id, now=moment)
+        if job.state is JobState.FAILED and not force:
+            continue
+        _reset_job(conn, job.id, now=moment, preserve_attempts=not force)
         reset += 1
     enqueue_eligible_understand_jobs(
         conn,
@@ -291,14 +315,22 @@ def retry_working_day(
     """Dashboard Retry: re-enqueue dead jobs and re-run consolidation (§3.7 / §7.4)."""
     cfg = settings or ConsolidateSettings()
     moment = _aware(now)
+    recover_expired_leases(conn, now=moment)
     requeue_understand_jobs_for_day(
         conn,
         working_day_id,
         pipeline_version=cfg.pipeline_version,
         close_after_seconds=cfg.close_after_seconds,
         now=moment,
+        force=True,
     )
-    ensure_consolidate_job(conn, working_day_id, pipeline_version=cfg.pipeline_version, now=moment)
+    ensure_consolidate_job(
+        conn,
+        working_day_id,
+        pipeline_version=cfg.pipeline_version,
+        now=moment,
+        force=True,
+    )
     return consolidate_working_day(
         conn,
         working_day_id,
@@ -378,7 +410,7 @@ def drain_consolidate_jobs(
             raise
         except ConsolidationWait as exc:
             _hold_waiting_job(conn, job, worker_id, exc, now=now)
-            break
+            continue
         except RuntimeUnavailable as exc:
             _hold_waiting_job(conn, job, worker_id, exc, now=now)
             break
@@ -454,6 +486,7 @@ def consolidate_working_day(
     )
     moment = _aware(now)
     try:
+        recover_expired_leases(conn, now=moment)
         if runtime is None:
             raise RuntimeUnavailable("intelligence runtime is unavailable")
         language = runtime
@@ -467,6 +500,7 @@ def consolidate_working_day(
             conn,
             working_day_id=working_day_id,
             close_after_seconds=cfg.close_after_seconds,
+            now=moment,
         )
         requeue_understand_jobs_for_day(
             conn,
@@ -1255,17 +1289,34 @@ def _hold_day(
     _set_day_state(conn, working_day_id, "closing", error=type(exc).__name__, now=now)
 
 
-def _reset_job(conn: sqlcipher.Connection, job_id: str, *, now: datetime | None) -> None:
+def _reset_job(
+    conn: sqlcipher.Connection,
+    job_id: str,
+    *,
+    now: datetime | None,
+    preserve_attempts: bool = False,
+) -> None:
     stamp = iso_now(now)
-    conn.execute(
-        """
-        UPDATE jobs
-        SET state = ?, attempts = 0, last_error = NULL, claimed_by = NULL,
-            leased_until = NULL, run_after = ?, updated_at = ?
-        WHERE id = ?
-        """,
-        (JobState.PENDING.value, stamp, stamp, job_id),
-    )
+    if preserve_attempts:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET state = ?, last_error = NULL, claimed_by = NULL,
+                leased_until = NULL, run_after = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (JobState.PENDING.value, stamp, stamp, job_id),
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET state = ?, attempts = 0, last_error = NULL, claimed_by = NULL,
+                leased_until = NULL, run_after = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (JobState.PENDING.value, stamp, stamp, job_id),
+        )
     conn.commit()
 
 
@@ -1290,6 +1341,33 @@ def _understand_jobs_for_day(
             continue
         out.append(job)
     return out
+
+
+def understand_block_reason(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int = PIPELINE_VERSION,
+    close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+    now: datetime | None = None,
+) -> str | None:
+    """``wait`` / ``error`` / ``None``. Shared by consolidation hold and eval drain."""
+    recover_expired_leases(conn, now=now)
+    return _understand_incomplete(
+        conn,
+        working_day_id,
+        pipeline_version=pipeline_version,
+        close_after_seconds=close_after_seconds,
+    )
+
+
+def _has_terminal_understand_jobs(
+    conn: sqlcipher.Connection, working_day_id: str, pipeline_version: int
+) -> bool:
+    return any(
+        job.state is JobState.FAILED
+        for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version)
+    )
 
 
 def _understand_has_claimed(
@@ -1431,14 +1509,17 @@ def _hold_waiting_job(
     *,
     now: datetime | None,
 ) -> None:
-    stamp = iso_now(now)
+    moment = _aware(now)
+    stamp = iso_now(moment)
+    run_after = iso_now(moment + timedelta(seconds=backoff_seconds(max(job.attempts, 1))))
     conn.execute(
         """
         UPDATE jobs
-        SET state = ?, last_error = ?, claimed_by = NULL, leased_until = NULL, updated_at = ?
+        SET state = ?, last_error = ?, claimed_by = NULL, leased_until = NULL,
+            run_after = ?, updated_at = ?
         WHERE id = ? AND claimed_by = ?
         """,
-        (JobState.PENDING.value, type(exc).__name__, stamp, job.id, worker_id),
+        (JobState.PENDING.value, type(exc).__name__, run_after, stamp, job.id, worker_id),
     )
     conn.commit()
 

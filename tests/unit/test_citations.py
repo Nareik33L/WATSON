@@ -101,13 +101,21 @@ def test_verifier_scopes_to_day_and_pipeline_version() -> None:
             "claim_ids": [DAY_A, DAY_B, other_version["id"]],
         }
     ]
-    verified = verify_narrative(
-        paragraphs, scoped, working_day_id="day-a", pipeline_version=1
-    )
+    verified = verify_narrative(paragraphs, scoped, working_day_id="day-a", pipeline_version=1)
     assert f"[c:{DAY_A}]" in verified.narrative_md
     assert DAY_B not in verified.narrative_md
     assert other_version["id"] not in verified.narrative_md
     assert verified.claim_ids == (DAY_A,)
+    assert verified.unverified == ()
+
+
+def test_all_uncited_narrative_falls_back_to_cited_claims() -> None:
+    paragraphs = [{"text": "The model cited nothing at all.", "claim_ids": []}]
+    verified = verify_narrative(paragraphs, list(CLAIMS))
+    assert verified.narrative_md
+    assert f"[c:{DAY_A}]" in verified.narrative_md
+    assert f"[c:{CLAIMS[1]['id']}]" in verified.narrative_md
+    assert citations_resolvable(verified.narrative_md, {DAY_A, CLAIMS[1]["id"]})
     assert verified.unverified == ()
 
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import resource
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,26 +15,44 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
+from watson.config.schema import DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS
 from watson.intelligence.eval.footprint import FootprintSampler
 from watson.intelligence.eval.recordings import DEFAULT_RECORDINGS, RecordingRuntime
 from watson.intelligence.eval.score import collect_predicted, load_truth, score_day
-from watson.intelligence.eval.thresholds import gate_metrics, load_thresholds
-from watson.intelligence.runtime import FakeRuntime, build_runtime
+from watson.intelligence.eval.thresholds import (
+    gate_metrics,
+    gate_profile,
+    load_thresholds,
+    select_eval_profile,
+)
+from watson.intelligence.runtime import UNDERSTAND_JOB_KIND, FakeRuntime, build_runtime
 from watson.intelligence.runtime.stats import (
     InferenceStats,
     TimingRuntime,
     bind_stats,
+    record_consolidate,
     reset_stats,
 )
 from watson.intelligence.runtime.types import RuntimeUnavailable
-from watson.memory.db import connect
+from watson.memory.db import connect, parse_iso
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.consolidation import (
+    ConsolidationError,
     ConsolidationWait,
     consolidate_working_day,
     derived_counts,
+    understand_block_reason,
 )
+from watson.pipeline.frames import PIPELINE_VERSION
+from watson.pipeline.jobs import JobState
 from watson.pipeline.replay import replay_fixture
+from watson.pipeline.segmentation import close_open_segments
+from watson.pipeline.understanding import (
+    drain_understand_jobs,
+    enqueue_eligible_understand_jobs,
+)
+
+_MAX_EVAL_DRAIN_ROUNDS = 10_000
 
 V1_DAY_FIXTURES = (
     "day_acme_q4",
@@ -55,6 +75,7 @@ class DayEval:
     narrative_nonempty: bool = False
     citation_count: int = 0
     claims: int = 0
+    consolidate_s: float = 0.0
     error: str | None = None
 
     @property
@@ -75,8 +96,12 @@ class EvalReport:
     wall_seconds: float = 0.0
     peak_rss_bytes: int = 0
     worker_plus_model_peak_bytes: int | None = None
+    worker_peak_bytes: int | None = None
     failure_reason: str | None = None
     latency: dict[str, Any] = field(default_factory=dict)
+    profile: str = "primary"
+    profile_gate: dict[str, Any] = field(default_factory=dict)
+    measure_model: bool = False
 
     @property
     def pipeline_passed(self) -> bool:
@@ -103,6 +128,8 @@ class EvalReport:
         if not self.days or not self.aggregate:
             return False
         if not self.gate.get("passed"):
+            return False
+        if self.measure_model and not self.profile_gate.get("passed", True):
             return False
         return self.pipeline_passed
 
@@ -147,8 +174,11 @@ def run_eval(
     config: Any | None = None,
     rss_pids: tuple[int, ...] = (),
     measure_model: bool = False,
+    profile: str | None = None,
+    now_fn: Callable[[], datetime] | None = None,
 ) -> EvalReport:
     started = time.perf_counter()
+    active_profile = select_eval_profile(profile)
     path = recordings if recordings is not None else DEFAULT_RECORDINGS
     stats = InferenceStats()
     stats_token = bind_stats(stats)
@@ -165,10 +195,19 @@ def run_eval(
         for name in names:
             fixture = fixtures_root / name
             try:
-                days.append(_eval_one(fixture, runtime=runtime, out_dir=out_dir / name, key=key))
+                days.append(
+                    _eval_one(
+                        fixture,
+                        runtime=runtime,
+                        out_dir=out_dir / name,
+                        key=key,
+                        now_fn=now_fn or (lambda: datetime.now(UTC)),
+                    )
+                )
             except Exception as exc:
                 failure_reason = _format_failure(exc)
                 days.append(_failed_day(name, exc))
+            gc.collect()
     except Exception as exc:
         failure_reason = _format_failure(exc)
     finally:
@@ -184,6 +223,9 @@ def run_eval(
         reset_stats(stats_token)
         scored = [day.metrics for day in days if not day.error and day.metrics]
         aggregate = _aggregate(scored)
+        latency = stats.summary()
+        understand = latency.get("understand_segment") if isinstance(latency, dict) else None
+        understand_p95 = understand.get("p95_s") if isinstance(understand, dict) else None
         report = EvalReport(
             mode=mode,
             runtime=getattr(runtime, "name", runtime_name) if runtime is not None else runtime_name,
@@ -193,8 +235,18 @@ def run_eval(
             wall_seconds=time.perf_counter() - started,
             peak_rss_bytes=_peak_rss_bytes(),
             worker_plus_model_peak_bytes=worker_plus_model,
+            worker_peak_bytes=sampler.worker_peak_bytes,
             failure_reason=failure_reason,
-            latency=stats.summary(),
+            latency=latency,
+            profile=active_profile,
+            profile_gate=gate_profile(
+                understand_p95_s=(
+                    understand_p95 if isinstance(understand_p95, int | float) else None
+                ),
+                worker_plus_model_peak_bytes=worker_plus_model,
+                profile=active_profile,
+            ),
+            measure_model=measure_model,
         )
         _write_reports(out_dir, report)
     return report
@@ -209,6 +261,8 @@ def render_markdown(report: EvalReport) -> str:
         f"wall_seconds: {report.wall_seconds:.3f}  ",
         f"peak_rss_bytes: {report.peak_rss_bytes}  ",
         f"worker_plus_model_peak_bytes: {report.worker_plus_model_peak_bytes}  ",
+        f"worker_peak_bytes: {report.worker_peak_bytes}  ",
+        f"profile: `{report.profile}`  ",
         f"passed: **{report.passed}**  ",
         f"pipeline_passed: **{report.pipeline_passed}**  ",
         "replay is a pipeline-only gate; quality F1 is measured, not a model claim.",
@@ -228,17 +282,23 @@ def render_markdown(report: EvalReport) -> str:
             f"- `{day.name}` ({day.date}): summary={day.summary_present} "
             f"narrative_nonempty={day.narrative_nonempty} "
             f"citations={day.citation_count} "
+            f"consolidate_s={day.consolidate_s:.3f} "
             f"identical_counts={day.identical_counts} ok={mark}"
         )
     if report.failure_reason:
         lines.extend(["", f"failure_reason: {report.failure_reason}"])
     if report.gate.get("failures"):
         lines.extend(["", f"failures: {', '.join(report.gate['failures'])}"])
+    if report.measure_model and report.profile_gate.get("failures"):
+        names = ", ".join(report.profile_gate["failures"])
+        lines.extend(["", f"profile_failures ({report.profile}): {names}"])
     latency = report.latency
     if latency:
         lines.extend(["", "## Latency", ""])
         complete = latency.get("complete") if isinstance(latency, dict) else None
         understand = latency.get("understand_segment") if isinstance(latency, dict) else None
+        consolidate = latency.get("consolidate") if isinstance(latency, dict) else None
+        prompt = latency.get("prompt") if isinstance(latency, dict) else None
         timeouts = latency.get("timeouts") if isinstance(latency, dict) else 0
         if isinstance(complete, dict):
             lines.append(
@@ -254,12 +314,33 @@ def render_markdown(report: EvalReport) -> str:
             per = understand.get("per_segment_s") or []
             if per:
                 lines.append("- per_segment_s: " + ", ".join(f"{item:.3f}" for item in per))
+        if isinstance(consolidate, dict):
+            lines.append(
+                f"- consolidate p50={consolidate.get('p50_s')} "
+                f"p95={consolidate.get('p95_s')} max={consolidate.get('max_s')} "
+                f"total={consolidate.get('total_s')} n={consolidate.get('n')}"
+            )
+        if isinstance(prompt, dict):
+            lines.append(
+                f"- prompt chars p50={prompt.get('chars_p50')} "
+                f"p95={prompt.get('chars_p95')} max={prompt.get('chars_max')} "
+                f"tokens_est p50={prompt.get('tokens_est_p50')} "
+                f"p95={prompt.get('tokens_est_p95')} max={prompt.get('tokens_est_max')} "
+                f"n={prompt.get('n')}"
+            )
         lines.append(f"- timeouts: {timeouts}")
     lines.append("")
     return "\n".join(lines)
 
 
-def _eval_one(fixture: Path, *, runtime: Any, out_dir: Path, key: bytes) -> DayEval:
+def _eval_one(
+    fixture: Path,
+    *,
+    runtime: Any,
+    out_dir: Path,
+    key: bytes,
+    now_fn: Callable[[], datetime],
+) -> DayEval:
     out_dir.mkdir(parents=True, exist_ok=True)
     db_path = out_dir / "watson.db"
     # A leftover DB from a prior run would keep old observations (understand
@@ -272,15 +353,13 @@ def _eval_one(fixture: Path, *, runtime: Any, out_dir: Path, key: bytes) -> DayE
     try:
         result = replay_fixture(fixture, conn, instant=True, spool_dir=out_dir / "spool")
         day_id = _day_id(conn, result.date)
-        now = _eval_now(result.date)
-        # consolidate_working_day already understands, resolves, consolidates,
-        # and writes the daily summary. Run it twice for the §12 identity check.
-        # One retry: the last fixture segment can close during the first pass
-        # and leave a single understand job pending (ConsolidationWait).
-        _consolidate_once(conn, day_id, runtime=runtime, now=now, spool_dir=out_dir / "spool")
-        first = derived_counts(conn, day_id)
-        _consolidate_once(conn, day_id, runtime=runtime, now=now, spool_dir=out_dir / "spool")
-        second = derived_counts(conn, day_id)
+        spool = out_dir / "spool"
+        first = _eval_consolidate(
+            conn, day_id, runtime=runtime, date=result.date, now_fn=now_fn, spool_dir=spool
+        )
+        second = _eval_consolidate(
+            conn, day_id, runtime=runtime, date=result.date, now_fn=now_fn, spool_dir=spool
+        )
         truth = load_truth(fixture / "truth.yaml")
         metrics = score_day(conn, day_id, truth)
         predicted = collect_predicted(conn, day_id)
@@ -288,34 +367,116 @@ def _eval_one(fixture: Path, *, runtime: Any, out_dir: Path, key: bytes) -> DayE
             name=fixture.name,
             date=result.date,
             metrics=metrics,
-            derived_first=first,
-            derived_second=second,
+            derived_first=first[0],
+            derived_second=second[0],
             summary_present=bool(predicted["summary_present"]),
-            identical_counts=first == second,
+            identical_counts=first[0] == second[0],
             narrative_nonempty=bool(predicted["narrative_nonempty"]),
             citation_count=int(predicted["citation_count"]),
             claims=int(predicted["claims"]),
+            consolidate_s=first[1] + second[1],
         )
     finally:
         conn.close()
 
 
-def _consolidate_once(
+def _drain_until_idle(
+    conn: sqlcipher.Connection,
+    *,
+    runtime: Any,
+    day_id: str,
+    date: str,
+    now_fn: Callable[[], datetime],
+) -> datetime:
+    """Drain until no understand job is claimable, pending, or unresolved.
+
+    Uses the queue's ``run_after`` clock so jobs enqueued after day start,
+    or parked with backoff, become claimable. Does not swallow the
+    production ConsolidationWait hold — it keeps draining until that hold
+    would not fire.
+    """
+    for _ in range(_MAX_EVAL_DRAIN_ROUNDS):
+        now = _eval_queue_now(conn, date=date, now_fn=now_fn)
+        close_open_segments(
+            conn,
+            working_day_id=day_id,
+            close_after_seconds=DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+            now=now,
+        )
+        enqueue_eligible_understand_jobs(
+            conn,
+            working_day_id=day_id,
+            close_after_seconds=DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+            now=now,
+        )
+        drain_understand_jobs(conn, runtime=runtime, embedding=runtime, now=now)
+        blocked = understand_block_reason(
+            conn,
+            day_id,
+            pipeline_version=PIPELINE_VERSION,
+            close_after_seconds=DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+            now=now,
+        )
+        if blocked is None:
+            _reconcile_understand_jobs(conn, day_id)
+            return now
+        if blocked == "error":
+            raise ConsolidationError("pending understanding")
+    raise ConsolidationWait("understanding held")
+
+
+def _eval_consolidate(
     conn: sqlcipher.Connection,
     day_id: str,
     *,
     runtime: Any,
-    now: datetime,
+    date: str,
+    now_fn: Callable[[], datetime],
     spool_dir: Path,
-) -> None:
+) -> tuple[dict[str, int], float]:
+    now = _drain_until_idle(conn, runtime=runtime, day_id=day_id, date=date, now_fn=now_fn)
+    started = time.perf_counter()
     try:
         consolidate_working_day(
             conn, day_id, runtime=runtime, embedding=runtime, now=now, spool_dir=spool_dir
         )
     except ConsolidationWait:
+        now = _drain_until_idle(conn, runtime=runtime, day_id=day_id, date=date, now_fn=now_fn)
+        started = time.perf_counter()
         consolidate_working_day(
             conn, day_id, runtime=runtime, embedding=runtime, now=now, spool_dir=spool_dir
         )
+    elapsed = time.perf_counter() - started
+    record_consolidate(elapsed)
+    return derived_counts(conn, day_id), elapsed
+
+
+def _reconcile_understand_jobs(conn: sqlcipher.Connection, day_id: str) -> None:
+    from watson.pipeline.consolidation import _understand_jobs_for_day
+
+    jobs = _understand_jobs_for_day(conn, day_id, PIPELINE_VERSION)
+    unfinished = [job for job in jobs if job.state is not JobState.COMPLETED]
+    if unfinished:
+        raise ConsolidationWait("understanding held")
+
+
+def _eval_queue_now(
+    conn: sqlcipher.Connection,
+    *,
+    date: str,
+    now_fn: Callable[[], datetime],
+) -> datetime:
+    """At least the caller clock, day-end, and any pending ``run_after``."""
+    times = [_eval_now(date, now=now_fn())]
+    rows = conn.execute(
+        "SELECT run_after FROM jobs WHERE kind = ? AND state = ?",
+        (UNDERSTAND_JOB_KIND, JobState.PENDING.value),
+    ).fetchall()
+    for row in rows:
+        raw = row[0] if not hasattr(row, "keys") else row["run_after"]
+        if raw:
+            times.append(parse_iso(str(raw)))
+    return max(times)
 
 
 def _day_id(conn: sqlcipher.Connection, date: str) -> str:
@@ -325,16 +486,11 @@ def _day_id(conn: sqlcipher.Connection, date: str) -> str:
     return str(row[0])
 
 
-def _eval_now(date: str) -> datetime:
-    """A timestamp that can claim jobs enqueued at wall-clock *and* close the day.
-
-    ``close_open_segments`` enqueues understand jobs with ``run_after`` at
-    wall clock. Passing only the fixture day's 23:00 would miss those jobs
-    when the fixture date is in the past.
-    """
+def _eval_now(date: str, now: datetime | None = None) -> datetime:
+    """A timestamp that can claim jobs enqueued at wall-clock *and* close the day."""
     year, month, day = (int(part) for part in date.split("-"))
     end = datetime(year, month, day, 23, 0, tzinfo=UTC)
-    wall = datetime.now(UTC)
+    wall = now if now is not None else datetime.now(UTC)
     return wall if wall > end else end
 
 
@@ -389,8 +545,11 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
         "wall_seconds": report.wall_seconds,
         "peak_rss_bytes": report.peak_rss_bytes,
         "worker_plus_model_peak_bytes": report.worker_plus_model_peak_bytes,
+        "worker_peak_bytes": report.worker_peak_bytes,
         "failure_reason": report.failure_reason,
         "latency": report.latency,
+        "profile": report.profile,
+        "profile_gate": report.profile_gate,
         "days": [
             {
                 "name": day.name,
@@ -403,6 +562,7 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
                 "narrative_nonempty": day.narrative_nonempty,
                 "citation_count": day.citation_count,
                 "claims": day.claims,
+                "consolidate_s": day.consolidate_s,
                 "error": day.error,
             }
             for day in report.days

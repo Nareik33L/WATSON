@@ -16,15 +16,36 @@ class InferenceStats:
     complete_s: list[float] = field(default_factory=list)
     embed_s: list[float] = field(default_factory=list)
     understand_segment_s: list[float] = field(default_factory=list)
+    consolidate_s: list[float] = field(default_factory=list)
+    prompt_chars: list[int] = field(default_factory=list)
+    prompt_tokens_est: list[int] = field(default_factory=list)
     timeouts: int = 0
 
     def summary(self) -> dict[str, Any]:
+        chars = [float(item) for item in self.prompt_chars]
+        tokens = [float(item) for item in self.prompt_tokens_est]
         return {
             "complete": _latency_block(self.complete_s),
             "embed": _latency_block(self.embed_s),
             "understand_segment": {
                 **_latency_block(self.understand_segment_s),
                 "per_segment_s": list(self.understand_segment_s),
+            },
+            "consolidate": {
+                **_latency_block(self.consolidate_s),
+                "per_day_s": list(self.consolidate_s),
+                "total_s": round(sum(self.consolidate_s), 6) if self.consolidate_s else 0.0,
+            },
+            "prompt": {
+                "n": len(self.prompt_chars),
+                "chars": list(self.prompt_chars),
+                "tokens_est": list(self.prompt_tokens_est),
+                "chars_p50": _percentile(chars, 50) if chars else None,
+                "chars_p95": _percentile(chars, 95) if chars else None,
+                "chars_max": max(self.prompt_chars) if self.prompt_chars else None,
+                "tokens_est_p50": _percentile(tokens, 50) if tokens else None,
+                "tokens_est_p95": _percentile(tokens, 95) if tokens else None,
+                "tokens_est_max": max(self.prompt_tokens_est) if self.prompt_tokens_est else None,
             },
             "timeouts": self.timeouts,
         }
@@ -49,6 +70,21 @@ def record_understand_segment(latency_s: float) -> None:
     stats = _STATS.get()
     if stats is not None:
         stats.understand_segment_s.append(latency_s)
+
+
+def record_understand_prompt(chars: int) -> None:
+    stats = _STATS.get()
+    if stats is None:
+        return
+    size = max(0, int(chars))
+    stats.prompt_chars.append(size)
+    stats.prompt_tokens_est.append((size + 3) // 4)
+
+
+def record_consolidate(latency_s: float) -> None:
+    stats = _STATS.get()
+    if stats is not None:
+        stats.consolidate_s.append(latency_s)
 
 
 def _is_timeout(exc: BaseException) -> bool:

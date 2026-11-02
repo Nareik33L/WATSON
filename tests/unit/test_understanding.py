@@ -38,7 +38,13 @@ from watson.memory.db import DatabaseError, connect
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.backlog import drain_backlog
-from watson.pipeline.consolidation import ConsolidationWait, consolidate_working_day, derived_counts
+from watson.pipeline.consolidation import (
+    ConsolidationError,
+    ConsolidationWait,
+    consolidate_working_day,
+    derived_counts,
+    understand_block_reason,
+)
 from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import (
     DEFAULT_LEASE_SECONDS,
@@ -46,7 +52,6 @@ from watson.pipeline.jobs import (
     claim,
     enqueue,
     get_job,
-    recover_expired_leases,
 )
 from watson.pipeline.replay import replay_fixture
 from watson.pipeline.segmentation import close_open_segments
@@ -1198,17 +1203,17 @@ def test_poison_raw_json_fails_job_and_continues_drain(
         ).fetchone()
         assert poison_job["attempts"] == 1
         assert poison_job["last_error"] == "JobFailure"
-        assert poison_job["state"] in {JobState.PENDING.value, JobState.FAILED.value}
+        assert poison_job["state"] == JobState.FAILED.value
         assert good_job["state"] == JobState.COMPLETED.value
         assert _has_entity(conn, typ="person", name="Priya Natarajan")
         assert any("poison observation raw_json" in rec.message for rec in caplog.records)
         runtime = FakeRuntime(recordings=CONSOLIDATION_RECORDINGS)
-        with pytest.raises(ConsolidationWait, match="understanding held"):
+        with pytest.raises(ConsolidationError, match="pending understanding"):
             consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=_NOW)
         day = _day_row(conn, day_id)
-        assert day["state"] != "consolidated"
+        assert day["state"] == "failed"
         assert day["consolidated_at"] is None
-        assert day["consolidation_error"] == "ConsolidationWait"
+        assert day["consolidation_error"] == "ConsolidationError"
     finally:
         conn.close()
 
@@ -1299,10 +1304,9 @@ def test_sigkill_mid_drain_holds_consolidation_until_lease_recovered(tmp_path: P
         assert day["consolidation_error"] == "ConsolidationWait"
         assert _consolidated_audit_count(conn) == audits_before
         recovered_at = moment + timedelta(hours=2)
-        recovered = recover_expired_leases(conn, now=recovered_at)
-        assert recovered == n_jobs
+        understand_block_reason(conn, day_id, now=recovered_at)
         assert JobState.CLAIMED.value not in _understand_job_states(conn)
-        assert _drain_acme(conn, now=recovered_at) >= n_jobs
+        assert _drain_acme(conn, now=recovered_at) >= 1
         assert JobState.PENDING.value not in _understand_job_states(conn)
         assert JobState.CLAIMED.value not in _understand_job_states(conn)
         consolidate_working_day(

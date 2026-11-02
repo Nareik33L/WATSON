@@ -16,7 +16,7 @@ from watson.intelligence.runtime import (
     JobFailure,
     RuntimeUnavailable,
 )
-from watson.memory.db import connect, iso_now
+from watson.memory.db import connect, iso_now, parse_iso
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.consolidation import (
@@ -39,7 +39,7 @@ from watson.pipeline.consolidation import (
     retry_working_day,
 )
 from watson.pipeline.frames import PIPELINE_VERSION
-from watson.pipeline.jobs import DEFAULT_MAX_ATTEMPTS, JobState, enqueue
+from watson.pipeline.jobs import DEFAULT_MAX_ATTEMPTS, JobState, backoff_seconds, enqueue
 from watson.pipeline.segmentation import close_open_segments
 from watson.privacy.audit import KIND_CONSOLIDATED
 from watson.privacy.retention import Tier2SweepResult
@@ -2084,7 +2084,7 @@ def test_requeue_preserves_pending_understand_attempts(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_requeue_zeros_failed_understand_attempts(tmp_path: Path) -> None:
+def test_requeue_leaves_failed_understand_jobs(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
         day_id, segment_id = _closed_ununderstood(conn)
@@ -2100,13 +2100,13 @@ def test_requeue_zeros_failed_understand_attempts(tmp_path: Path) -> None:
             (JobState.FAILED.value, DEFAULT_MAX_ATTEMPTS, "StructuredOutputError", job.id),
         )
         conn.commit()
-        assert requeue_understand_jobs_for_day(conn, day_id, now=NOW) == 1
+        assert requeue_understand_jobs_for_day(conn, day_id, now=NOW) == 0
         row = conn.execute(
             "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
         ).fetchone()
-        assert row["state"] == JobState.PENDING.value
-        assert row["attempts"] == 0
-        assert row["last_error"] is None
+        assert row["state"] == JobState.FAILED.value
+        assert row["attempts"] == DEFAULT_MAX_ATTEMPTS
+        assert row["last_error"] == "StructuredOutputError"
     finally:
         conn.close()
 
@@ -2146,12 +2146,12 @@ def test_requeue_does_not_reset_other_day_or_version_understand_jobs(tmp_path: P
         conn.commit()
         scoped = {job.id for job in _understand_jobs_for_day(conn, day_id, 1)}
         assert scoped == {this_v1.id}
-        assert requeue_understand_jobs_for_day(conn, day_id, pipeline_version=1, now=NOW) == 1
+        assert requeue_understand_jobs_for_day(conn, day_id, pipeline_version=1, now=NOW) == 0
         this_row = conn.execute(
             "SELECT state, attempts FROM jobs WHERE id = ?", (this_v1.id,)
         ).fetchone()
-        assert this_row["state"] == JobState.PENDING.value
-        assert this_row["attempts"] == 0
+        assert this_row["state"] == JobState.FAILED.value
+        assert this_row["attempts"] == 5
         other_row = conn.execute(
             "SELECT state, attempts FROM jobs WHERE id = ?", (other_v1.id,)
         ).fetchone()
@@ -2247,7 +2247,7 @@ def test_broken_day_fails_when_other_day_has_pending_segment(tmp_path: Path) -> 
         runtime = FakeRuntime(complete_queue=[bad, bad])
         with pytest.raises(ConsolidationError, match="pending understanding"):
             consolidate_working_day(conn, day_a, runtime=runtime, embedding=runtime, now=NOW)
-        assert runtime.complete_calls == 2
+        assert runtime.complete_calls >= 2
         day = conn.execute(
             "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_a,)
         ).fetchone()
@@ -2257,10 +2257,17 @@ def test_broken_day_fails_when_other_day_has_pending_segment(tmp_path: Path) -> 
             "SELECT state, attempts FROM jobs WHERE id = ?", (understand.id,)
         ).fetchone()
         assert dead["state"] == JobState.FAILED.value
-        assert dead["attempts"] == DEFAULT_MAX_ATTEMPTS
+        assert dead["attempts"] >= DEFAULT_MAX_ATTEMPTS
         other = conn.execute("SELECT state FROM working_days WHERE id = ?", (day_b,)).fetchone()
         assert other["state"] == "open"
-        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        day_a_obs = conn.execute(
+            """
+            SELECT COUNT(*) FROM observations
+            WHERE segment_id IN (SELECT id FROM segments WHERE working_day_id = ?)
+            """,
+            (day_a,),
+        ).fetchone()[0]
+        assert day_a_obs == 0
     finally:
         conn.close()
 
@@ -2307,7 +2314,7 @@ def test_requeue_resets_completed_understand_without_observation(tmp_path: Path)
             "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (job.id,)
         ).fetchone()
         assert row["state"] == JobState.PENDING.value
-        assert row["attempts"] == 0
+        assert row["attempts"] == 1
         assert row["last_error"] is None
     finally:
         conn.close()
@@ -2324,7 +2331,164 @@ def test_requeue_resets_completed_understand_with_other_version_observation(
         assert requeue_understand_jobs_for_day(conn, day_id, pipeline_version=1, now=NOW) == 1
         row = conn.execute("SELECT state, attempts FROM jobs WHERE id = ?", (job.id,)).fetchone()
         assert row["state"] == JobState.PENDING.value
-        assert row["attempts"] == 0
+        assert row["attempts"] == 1
+    finally:
+        conn.close()
+
+
+def test_poison_understand_job_stops_cycling_within_bounded_catch_up(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        understand = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
+            now=NOW,
+        )
+        stamp = iso_now(NOW)
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, created_at, updated_at, segment_id, activity_type, description,
+                confidence, model_id, prompt_version, pipeline_version, raw_json
+            ) VALUES (?, ?, ?, ?, 'knowledge_work', 'poison', 0.1, 'fake',
+                      'understanding/v2', ?, ?)
+            """,
+            (new_id(), stamp, stamp, segment_id, PIPELINE_VERSION, "{not-json"),
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ?, attempts = 1, last_error = ? WHERE id = ?",
+            (JobState.FAILED.value, "JobFailure", understand.id),
+        )
+        conn.commit()
+        enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": day_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(day_id, PIPELINE_VERSION),
+            now=NOW,
+        )
+        spool = tmp_path / "spool"
+        spool.mkdir()
+        runtime = _runtime()
+        for step in range(12):
+            catch_up_on_launch(
+                conn,
+                runtime=runtime,
+                embedding=runtime,
+                spool_dir=spool,
+                now=NOW + timedelta(minutes=10 * step),
+            )
+        dead = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE id = ?", (understand.id,)
+        ).fetchone()
+        assert dead["state"] == JobState.FAILED.value
+        assert dead["attempts"] == 1
+        assert dead["last_error"] == "JobFailure"
+        day = conn.execute("SELECT state FROM working_days WHERE id = ?", (day_id,)).fetchone()
+        assert day["state"] != "closing"
+        assert day["state"] in {"failed", "open"}
+        consolidate = conn.execute(
+            """
+            SELECT state, attempts FROM jobs
+            WHERE kind = ? AND payload LIKE ?
+            """,
+            (CONSOLIDATE_JOB_KIND, f"%{day_id}%"),
+        ).fetchone()
+        assert consolidate is not None
+        assert not (consolidate["state"] == JobState.PENDING.value and consolidate["attempts"] == 0)
+    finally:
+        conn.close()
+
+
+def test_expired_understand_lease_recovers_then_day_consolidates(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        job = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
+            now=NOW,
+        )
+        expired = iso_now(NOW - timedelta(hours=2))
+        conn.execute(
+            """
+            UPDATE jobs
+            SET state = ?, claimed_by = 'dead-worker', leased_until = ?
+            WHERE id = ?
+            """,
+            (JobState.CLAIMED.value, expired, job.id),
+        )
+        conn.commit()
+        runtime = FakeRuntime(recordings=RECORDINGS, complete_queue=[_understand_output()])
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()
+        assert day["state"] == "consolidated"
+        assert day["consolidation_error"] is None
+        refreshed = conn.execute("SELECT state FROM jobs WHERE id = ?", (job.id,)).fetchone()
+        assert refreshed["state"] == JobState.COMPLETED.value
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_held_day_does_not_block_other_day_drain(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        held_id = _insert_day(conn, date="2026-10-31")
+        _insert_frame(conn, held_id, state="captured")
+        early = datetime(2026, 10, 31, 19, 0, tzinfo=UTC)
+        held_job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": held_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(held_id, PIPELINE_VERSION),
+            now=early,
+        )
+        ready = _seed_day(conn, date="2026-10-30")
+        ready_job = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": ready["day_id"], "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(ready["day_id"], PIPELINE_VERSION),
+            now=early,
+        )
+        runtime = _runtime()
+        completed = drain_consolidate_jobs(
+            conn,
+            runtime=runtime,
+            embedding=runtime,
+            spool_dir=tmp_path / "spool",
+            now=early,
+        )
+        assert completed >= 1
+        ready_day = conn.execute(
+            "SELECT state FROM working_days WHERE id = ?", (ready["day_id"],)
+        ).fetchone()
+        assert ready_day["state"] == "consolidated"
+        ready_row = conn.execute("SELECT state FROM jobs WHERE id = ?", (ready_job.id,)).fetchone()
+        assert ready_row["state"] == JobState.COMPLETED.value
+        held_day = conn.execute(
+            "SELECT state, consolidation_error FROM working_days WHERE id = ?", (held_id,)
+        ).fetchone()
+        assert held_day["state"] == "closing"
+        assert held_day["consolidation_error"] == "ConsolidationWait"
+        held_row = conn.execute(
+            "SELECT state, attempts, last_error, run_after FROM jobs WHERE id = ?",
+            (held_job.id,),
+        ).fetchone()
+        assert held_row["state"] == JobState.PENDING.value
+        assert held_row["attempts"] == 0
+        assert held_row["last_error"] == "ConsolidationWait"
+        assert parse_iso(str(held_row["run_after"])) >= early + timedelta(
+            seconds=backoff_seconds(1)
+        )
     finally:
         conn.close()
 

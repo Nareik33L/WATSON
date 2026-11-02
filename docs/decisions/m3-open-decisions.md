@@ -1,10 +1,10 @@
 # M3 open decisions — measurement stub (do not decide)
 
-**Status:** Open. This note lists the measurements required to decide plan §14 items that landed on M3. It does not pick a default.
+**Status:** #9 decided (Kieran, 2026-11-02, option A). #2, #7 and #10 remain open. This note lists the measurements required to decide the remaining plan §14 items that landed on M3.
 
 **Related:** §11.2, §11.4, §12 M0-A deferrals, §14 #2 #7 #9 #10, ADR 0001, `docs/eval.md`
 
-Run `watson eval --mode record --runtime ollama` on the 8 GB Mac as described in `docs/eval.md` before anyone fills the Decision rows.
+Run `watson eval --mode record --runtime ollama` on the 8 GB Mac as described in `docs/eval.md` before anyone fills the remaining Decision rows.
 
 ## §14 #2 — quality gate for provisional 8 GB models
 
@@ -35,14 +35,16 @@ Measurements needed:
 
 Decide whether V1 ships LLM consolidation or OCR + segments + rule-based summaries (LLM only for Ask WATSON).
 
-Measurements needed:
+**Decision (Kieran, 2026-11-02 16:41, option A; supersedes the 16:35 8 GB-only wording):** V1 keeps LLM consolidation. The model is the same on both hardware profiles.
 
-- Llama §11.2 table vs a rule-based baseline (no `complete()` on clustering / extract / summary; claims and titles only)
-- Unsupported completions on both paths
-- Consolidation wall time and peak RSS on the 8 GB Mac
-- Author judgement: are the LLM paragraphs worth the RSS and the hallucination risk?
+| Profile | Machine | Understanding p95 | Worker+model peak (`phys_footprint`) | Consolidation | Precision (decisions/commitments) |
+|---|---|---:|---:|---:|---:|
+| **primary** | 32 GB target laptop | < 20 s/segment | < 3 GB | < 15 min | ≥ 0.85 |
+| **min-spec** | 8 GB development Mac | < 35 s/segment | < 3.5 GB | < 15 min | ≥ 0.85 |
 
-**Decision:** _not taken_
+One model resident on both. The M3 gate is measured on the 8 GB Mac against the **min-spec** targets.
+
+Encoded in `src/watson/intelligence/eval/thresholds.json` → `profiles`. `watson eval --strict --measure-model` checks p95 latency and peak memory against the active profile. Auto-select: `min-spec` when installed RAM is < 16 GiB (covers ≤ 8 GB); `primary` otherwise. Override with `--profile primary` or `--profile min-spec`.
 
 ## §14 #10 — llama.cpp vs MLX (packaged in-process default)
 
@@ -67,5 +69,5 @@ Record Ollama version and model digests this time (`ollama list --digest`).
 | Three-runtime comparison | The table in §14 #10. Owner: Watson Lead. |
 | Per-model RSS | Model-process RSS + eval-process `peak_rss_bytes`, not the 56–62 MiB Python client from M0-A. |
 | 50 hand-scored frames | Score `tests/fixtures/day_acme_q4/sample50.txt` by hand; fill `scoring.csv`. Schema-valid JSON on 5 frames is not this. |
-| True understanding < 20 s/**segment** | Time `complete()` on merged segment text + retrieval, not the per-frame M0-A proxy. |
+| True understanding latency /segment | Time `complete()` on merged segment text + retrieval, not the per-frame M0-A proxy. Min-spec (8 GB) p95 < 35 s; primary (32 GB) p95 < 20 s (§14 #9). |
 | Ollama version and model digests | Persist in the next `run.json`. |

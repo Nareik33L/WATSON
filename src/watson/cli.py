@@ -171,6 +171,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Discover ollama/llama-server PIDs and sample phys_footprint with the worker",
     )
+    evaluate.add_argument(
+        "--profile",
+        choices=("auto", "primary", "min-spec"),
+        default="auto",
+        help="§11.4 profile (auto: min-spec when RAM < 16 GiB, else primary)",
+    )
     evaluate.set_defaults(handler=_cmd_eval)
 
     for name in _STUB_COMMANDS:
@@ -304,9 +310,11 @@ def _cmd_eval(args: argparse.Namespace) -> int:
         config=config,
         rss_pids=tuple(args.rss_pid or ()),
         measure_model=bool(args.measure_model),
+        profile=None if args.profile == "auto" else str(args.profile),
     )
     print(f"eval_mode: {report.mode}")
     print(f"eval_runtime: {report.runtime}")
+    print(f"eval_profile: {report.profile}")
     print(f"eval_passed: {report.passed}")
     print(f"eval_pipeline_passed: {report.pipeline_passed}")
     print(f"eval_wall_seconds: {report.wall_seconds:.3f}")

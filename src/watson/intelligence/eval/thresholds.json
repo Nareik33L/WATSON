@@ -10,5 +10,15 @@
   "duplicate_observation_rate": {"max_exclusive": 0.05, "jaccard_min": 0.5},
   "noise_non_work_rate": {"min": 0.9},
   "claims_with_evidence": {"min": 1.0},
-  "citations_resolvable": {"min": 1.0}
+  "citations_resolvable": {"min": 1.0},
+  "profiles": {
+    "primary": {
+      "understand_p95_s": {"max_exclusive": 20},
+      "worker_plus_model_peak_bytes": {"max_exclusive": 3221225472}
+    },
+    "min-spec": {
+      "understand_p95_s": {"max_exclusive": 35},
+      "worker_plus_model_peak_bytes": {"max_exclusive": 3758096384}
+    }
+  }
 }

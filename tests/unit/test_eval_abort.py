@@ -198,9 +198,12 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         "wall_seconds",
         "peak_rss_bytes",
         "worker_plus_model_peak_bytes",
+        "worker_peak_bytes",
         "failure_reason",
         "latency",
         "days",
+        "profile",
+        "profile_gate",
     }
     assert set(payload) <= allowed
     needle = P1_SENTINEL.encode("utf-8")

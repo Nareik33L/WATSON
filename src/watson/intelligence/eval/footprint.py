@@ -170,6 +170,7 @@ class FootprintSampler:
     measure_model: bool = False
     interval_s: float = 0.5
     peak_bytes: int = 0
+    worker_peak_bytes: int = 0
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
     _thread: threading.Thread | None = field(default=None, init=False)
 
@@ -192,7 +193,9 @@ class FootprintSampler:
             for pid in find_model_pids():
                 if pid not in pids:
                     pids.append(pid)
-        total = worker_rss_bytes()
+        worker = worker_rss_bytes()
+        self.worker_peak_bytes = max(self.worker_peak_bytes, worker)
+        total = worker
         for pid in pids:
             try:
                 total += pid_phys_footprint_bytes(pid)

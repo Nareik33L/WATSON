@@ -7,6 +7,8 @@
 
 **Changelog (2026-10-31):** M0-A bake-off (`docs/decisions/0001-m0a-8gb-runtime-and-models.md`) — §14 #1 is Ollama for V1.0 **dev**; llama.cpp-versus-MLX, per-model RSS and the 50 hand-scored frames move to M3 (Watson Lead); 16 GB fallback moves to V1.2 (§0.1). §7.1 package LLM class is ~3–4B on 8 GB (V1.0); ~7–9B is the V1.2 16 GB profile.
 
+**Changelog (2026-11-02):** §14 #9 option A (Kieran) — V1 keeps LLM consolidation. Two hardware profiles, same model: **primary** (32 GB target laptop) keeps original §11.4 understanding p95 < 20 s/segment and worker+model peak < 3 GB; **min-spec** (8 GB dev Mac) is p95 < 35 s and peak < 3.5 GB. Consolidation stays < 15 min on both. Strict decisions/commitments precision ≥ 0.85 on both. The M3 gate is measured on the 8 GB Mac against min-spec targets.
+
 This document keeps the product definition, principles and non-goals of v1.1 unchanged. It revises *how* WATSON is built. The changes fall into four groups:
 
 1. **Privacy exposure is reduced by an order of magnitude** — frames are deleted minutes after capture rather than at end of day, only the frontmost window is captured by default, and extracted text is itself tiered and expiring.
@@ -543,9 +545,12 @@ Thresholds are targets for the chosen model at M3; they are adjusted with eviden
 
 Per frame: OCR time, VLM time; per day: consolidation time, peak RSS of worker, database growth; capture helper CPU over an hour.
 
-Targets on the **8 GB V1 machine**: helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled; understanding < 20 s/segment; consolidation < 15 min; worker peak RSS < 3 GB with only one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day.
+Two hardware profiles, **same model** on both (§14 #9). Helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled in V1.0; one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day; consolidation < 15 min.
 
-Targets for the **16 GB V1.2 profile**: as above plus VLM < 15 s/frame when used; consolidation < 10 min; worker peak RSS < 6 GB.
+- **Primary** (32 GB target laptop): understanding p95 < 20 s/segment; peak memory (worker plus model server, Darwin `phys_footprint`) < 3 GB.
+- **Minimum-spec** (8 GB development Mac): understanding p95 < 35 s/segment; peak memory < 3.5 GB. The M3 gate is measured on the 8 GB Mac against these targets.
+
+Targets for the **16 GB V1.2 profile** (commercialisation, not the M3 eval profiles above): as the original 8 GB line plus VLM < 15 s/frame when used; consolidation < 10 min; worker peak RSS < 6 GB.
 
 ### 11.5 Manual dogfooding
 
@@ -652,7 +657,7 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 | 6 | Whether to request Accessibility permission for browser URLs in V1, or defer | M5 |
 | 7 | Tier-2 text default TTL (7 days proposed) | M3, after seeing re-consolidation needs |
 | 8 | Dashboard framework details (HTMX vs plain fetch) | M1 |
-| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask WATSON | M3, from the `8gb` bench profile and §11.2 results |
+| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask WATSON | **DECIDED (Kieran, 2026-11-02 16:41, option A)** — V1 keeps LLM consolidation; the model does not change between profiles. **Primary** (32 GB target laptop): original §11.4 understanding p95 < 20 s/segment, worker+model peak < 3 GB, one model resident, consolidation < 15 min. **Min-spec** (8 GB dev Mac): understanding p95 < 35 s/segment, peak < 3.5 GB, consolidation < 15 min. Strict decisions/commitments precision ≥ 0.85 on both. The M3 gate is measured on the 8 GB Mac against min-spec targets. |
 | 10 | Package runtime: llama.cpp vs MLX (in-process default, D6) | **M3**, owner Watson Lead — not measured at M0-A |
 
 ---

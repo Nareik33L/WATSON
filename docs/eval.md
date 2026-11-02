@@ -16,7 +16,7 @@ watson eval --mode replay --out /tmp/watson-eval
 
 Writes `/tmp/watson-eval/report.json` and `report.md`. Exit status is `1` if the pipeline gate fails (zero fixtures, missing/empty aggregate, hard 100%/0 regression, missing summary, empty/uncited narrative on a day with claims, or consolidation counts that change on a second run).
 
-`--strict` (and `--mode record`) also exit `1` when any §11.2 quality threshold is missed.
+`--strict` (and `--mode record`) also exit `1` when any §11.2 quality threshold is missed. With `--strict --measure-model`, understand p95 and worker+model peak are also checked against the active §11.4 profile (`--profile auto|primary|min-spec`; auto selects `min-spec` when installed RAM is < 16 GiB). The M3 gate on the 8 GB Mac uses min-spec. The model is the same on both profiles.
 
 Replay does not call Ollama and does not rewrite recordings after load.
 
@@ -47,7 +47,7 @@ The report is always written (`report.json` and `report.md`), including on abort
 | `understand_segment.per_segment_s` | one entry per segment that ran understanding |
 | `timeouts` | `/api/chat` or `/api/embed` calls that hit `intelligence.ollama.timeout_s` |
 
-§11.4 target: understanding < 20 s/segment.
+§11.4 profiles (option A, 2026-11-02): **min-spec** (8 GB) understanding p95 < 35 s/segment; **primary** (32 GB) understanding p95 < 20 s/segment. Same model on both.
 
 ### §11.4 worker peak RSS
 
@@ -59,7 +59,7 @@ watson eval --mode record --runtime ollama \
   --out /tmp/watson-eval-ollama
 ```
 
-`--measure-model` discovers `ollama` / `llama-server` PIDs and samples `phys_footprint` (via `footprint` on macOS, `VmRSS` on Linux) alongside the worker. `--rss-pid` adds an explicit PID (repeatable). The combined peak is `report.json` → `worker_plus_model_peak_bytes` (target < 3 GB). `peak_rss_bytes` remains the Python eval process `ru_maxrss`.
+`--measure-model` discovers `ollama` / `llama-server` PIDs and samples `phys_footprint` (via `footprint` on macOS, `VmRSS` on Linux) alongside the worker. `--rss-pid` adds an explicit PID (repeatable). The combined peak is `report.json` → `worker_plus_model_peak_bytes` (min-spec < 3.5 GB; primary < 3 GB). `worker_peak_bytes` is the eval/worker process alone. `peak_rss_bytes` remains the Python eval process `ru_maxrss`.
 
 Manual check on the V1 Mac while a run is in progress:
 

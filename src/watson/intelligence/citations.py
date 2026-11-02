@@ -61,10 +61,7 @@ def verify_narrative(
         row
         for row in day_claims
         if (working_day_id is None or str(row.get("working_day_id") or "") == working_day_id)
-        and (
-            pipeline_version is None
-            or int(row.get("pipeline_version") or 0) == pipeline_version
-        )
+        and (pipeline_version is None or int(row.get("pipeline_version") or 0) == pipeline_version)
     ]
     day_ids = {str(row["id"]) for row in scoped}
     kept_paragraphs: list[str] = []
@@ -90,11 +87,25 @@ def verify_narrative(
         for row in scoped
         if str(row["id"]) not in cited
     )
+    if not kept_paragraphs and scoped:
+        return _cited_fallback(scoped)
     return VerifiedNarrative(
         narrative_md="\n\n".join(kept_paragraphs),
         paragraphs=tuple(kept_paragraphs),
         claim_ids=tuple(sorted(cited)),
         unverified=unverified,
+    )
+
+
+def _cited_fallback(claims: list[dict[str, Any]]) -> VerifiedNarrative:
+    """When the model cites nothing, still emit a cited body so the day is not blank."""
+    parts = [f"{str(row['text']).rstrip('.')} [c:{row['id']}]." for row in claims]
+    body = " ".join(parts)
+    return VerifiedNarrative(
+        narrative_md=body,
+        paragraphs=(body,),
+        claim_ids=tuple(str(row["id"]) for row in claims),
+        unverified=(),
     )
 
 
