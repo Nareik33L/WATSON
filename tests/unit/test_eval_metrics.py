@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
+
 from watson.intelligence.eval.metrics import (
     completed_accuracy,
     duplicate_rate,
@@ -194,6 +199,56 @@ def test_duplicate_rate_paraphrase_with_rotated_verb_counts() -> None:
         _obs("2026-10-31T09:08:00Z", description=right, segment_id="b"),
     ]
     assert duplicate_rate(rows) == 0.5
+
+
+def _write_jaccard_config(tmp_path: Path, jaccard_min: float) -> Path:
+    path = tmp_path / "thresholds.json"
+    path.write_text(
+        json.dumps(
+            {
+                "duplicate_observation_rate": {
+                    "max_exclusive": 0.05,
+                    "jaccard_min": jaccard_min,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_duplicate_rate_uses_configured_jaccard_min(tmp_path: Path) -> None:
+    """A hardcoded 0.5 cutoff would still count a 0.6 pair under jaccard_min=0.8."""
+    left = "alpha beta gamma"
+    right = "alpha beta gamma delta epsilon"
+    assert token_jaccard(left, right) == 0.6
+    rows = [
+        _obs("2026-10-31T09:00:00Z", description=left, segment_id="a"),
+        _obs("2026-10-31T09:08:00Z", description=right, segment_id="b"),
+    ]
+    assert load_duplicate_jaccard_min() == 0.5
+    assert duplicate_rate(rows) == 0.5
+    strict = _write_jaccard_config(tmp_path, 0.8)
+    assert load_duplicate_jaccard_min(strict) == 0.8
+    assert duplicate_rate(rows, thresholds_path=strict) == 0.0
+
+
+def test_jaccard_min_zero_is_rejected(tmp_path: Path) -> None:
+    path = _write_jaccard_config(tmp_path, 0)
+    with pytest.raises(ValueError, match=r"\(0, 1\]"):
+        load_duplicate_jaccard_min(path)
+
+
+def test_jaccard_min_negative_is_rejected(tmp_path: Path) -> None:
+    path = _write_jaccard_config(tmp_path, -0.1)
+    with pytest.raises(ValueError, match=r"\(0, 1\]"):
+        load_duplicate_jaccard_min(path)
+
+
+def test_jaccard_min_above_one_is_rejected(tmp_path: Path) -> None:
+    path = _write_jaccard_config(tmp_path, 1.01)
+    with pytest.raises(ValueError, match=r"\(0, 1\]"):
+        load_duplicate_jaccard_min(path)
 
 
 def test_duplicate_jaccard_boundary_is_inclusive() -> None:

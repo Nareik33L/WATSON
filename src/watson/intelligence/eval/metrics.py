@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from watson.intelligence.eval.thresholds import load_duplicate_jaccard_min
 
@@ -96,7 +97,9 @@ def unsupported_count(predicted_completed: list[str], truth_completed: list[str]
     )
 
 
-def duplicate_rate(rows: Sequence[Mapping[str, str]]) -> float:
+def duplicate_rate(
+    rows: Sequence[Mapping[str, str]], *, thresholds_path: Path | None = None
+) -> float:
     """§11.2 duplicate observations: over-segmentation, including paraphrase.
 
     An observation is a duplicate when it immediately follows another
@@ -108,7 +111,7 @@ def duplicate_rate(rows: Sequence[Mapping[str, str]]) -> float:
     """
     if not rows:
         return 0.0
-    minimum = load_duplicate_jaccard_min()
+    minimum = load_duplicate_jaccard_min(thresholds_path)
     ordered = sorted(
         rows,
         key=lambda row: (str(row.get("started_at") or ""), str(row.get("segment_id") or "")),

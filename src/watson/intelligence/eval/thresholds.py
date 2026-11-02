@@ -46,7 +46,12 @@ def load_duplicate_jaccard_min(path: Path | None = None) -> float:
     spec = raw.get("duplicate_observation_rate")
     if not isinstance(spec, dict) or "jaccard_min" not in spec:
         raise ValueError("duplicate_observation_rate.jaccard_min is required")
-    return float(spec["jaccard_min"])
+    value = float(spec["jaccard_min"])
+    if not 0 < value <= 1:
+        raise ValueError(
+            f"duplicate_observation_rate.jaccard_min must be in (0, 1], got {value:g}"
+        )
+    return value
 
 
 def load_thresholds(path: Path | None = None) -> dict[str, Threshold]:
