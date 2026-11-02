@@ -6,9 +6,12 @@ import pytest
 
 from watson.intelligence.eval.run import DayEval, EvalReport
 from watson.intelligence.eval.thresholds import (
+    HEADROOM_PEAK_BYTES,
+    HEADROOM_UNDERSTAND_P95_S,
     MIN_SPEC_RAM_LIMIT_BYTES,
     gate_metrics,
     gate_profile,
+    headroom_status,
     load_profile_thresholds,
     load_thresholds,
     select_eval_profile,
@@ -16,6 +19,7 @@ from watson.intelligence.eval.thresholds import (
 
 GIB = 1024**3
 THREE_GB = 3 * GIB
+THREE_FIVE_GB = int(3.5 * GIB)
 THREE_THREE_GB = int(3.3 * GIB)
 OK_CONSOLIDATE_S = 1.0
 
@@ -69,14 +73,14 @@ def test_profile_override_wins_over_ram() -> None:
 
 def test_min_spec_p95_boundary() -> None:
     under = gate_profile(
-        understand_p95_s=29.999,
-        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        understand_p95_s=34.999,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
         consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
     at = gate_profile(
-        understand_p95_s=30.0,
-        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        understand_p95_s=35.0,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
         consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
@@ -88,13 +92,13 @@ def test_min_spec_p95_boundary() -> None:
 def test_min_spec_peak_memory_boundary() -> None:
     under = gate_profile(
         understand_p95_s=10.0,
-        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
         consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
     at = gate_profile(
         understand_p95_s=10.0,
-        worker_plus_model_peak_bytes=THREE_THREE_GB,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB,
         consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
@@ -143,8 +147,8 @@ def test_strict_measure_model_uses_profile_gate() -> None:
     metrics = _metrics()
     day = _day(metrics)
     profile_gate = gate_profile(
-        understand_p95_s=30.0,
-        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        understand_p95_s=35.0,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
         consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
@@ -174,7 +178,7 @@ def test_strict_measure_model_uses_profile_gate() -> None:
 
 
 def _ok_peak(profile: str) -> int:
-    return (THREE_GB if profile == "primary" else THREE_THREE_GB) - 1
+    return (THREE_GB if profile == "primary" else THREE_FIVE_GB) - 1
 
 
 @pytest.mark.parametrize("profile", ["primary", "min-spec"])
@@ -250,13 +254,16 @@ def test_strict_measure_model_fails_closed_on_missing_profile_gate() -> None:
 
 
 def test_profile_peak_caps_are_gib() -> None:
-    """Plan '3 GB' / '3.3 GiB' are binary GiB in thresholds.json, not decimal GB."""
+    """Plan '3 GB' / '3.5 GB' are 3 GiB / 3.5 GiB in thresholds.json, not decimal GB."""
     profiles = load_profile_thresholds()
     assert profiles["primary"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_GB
-    assert profiles["min-spec"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_THREE_GB
+    assert profiles["min-spec"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_FIVE_GB
     assert THREE_GB == 3 * 1024**3
     assert THREE_GB != 3 * 1000**3
+    assert THREE_FIVE_GB == 3758096384
     assert THREE_THREE_GB == 3543348019
+    assert HEADROOM_PEAK_BYTES == THREE_THREE_GB
+    assert HEADROOM_UNDERSTAND_P95_S == 30.0
 
 
 def test_unmeasured_consolidation_cap_fails_closed() -> None:
@@ -287,3 +294,51 @@ def test_consolidation_15_min_boundary() -> None:
     assert under["passed"] is True
     assert at["passed"] is False
     assert "consolidate_s" in at["failures"]
+
+
+def test_headroom_miss_does_not_fail_min_spec_gate() -> None:
+    """30 s / 3.3 GiB is engineering headroom, not the §14 #9 min-spec gate."""
+    gate = gate_profile(
+        understand_p95_s=34.0,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
+        profile="min-spec",
+    )
+    room = headroom_status(
+        understand_p95_s=34.0,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+    )
+    assert gate["passed"] is True
+    assert room["gating"] is False
+    assert room["understand_p95_s"]["within"] is False
+    assert room["worker_plus_model_peak_bytes"]["within"] is False
+    metrics = _metrics()
+    report = EvalReport(
+        mode="record",
+        runtime="ollama",
+        days=[_day(metrics)],
+        aggregate=metrics,
+        gate=gate_metrics(metrics),
+        profile="min-spec",
+        profile_gate=gate,
+        headroom=room,
+        measure_model=True,
+    )
+    assert report.passed is True
+
+
+def test_headroom_within_at_30s_and_3_3_gib() -> None:
+    room = headroom_status(
+        understand_p95_s=29.999,
+        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+    )
+    at = headroom_status(
+        understand_p95_s=30.0,
+        worker_plus_model_peak_bytes=THREE_THREE_GB,
+    )
+    assert room["understand_p95_s"]["max_exclusive"] == 30.0
+    assert room["worker_plus_model_peak_bytes"]["max_exclusive"] == THREE_THREE_GB
+    assert room["understand_p95_s"]["within"] is True
+    assert room["worker_plus_model_peak_bytes"]["within"] is True
+    assert at["understand_p95_s"]["within"] is False
+    assert at["worker_plus_model_peak_bytes"]["within"] is False

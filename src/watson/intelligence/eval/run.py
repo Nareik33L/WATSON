@@ -22,6 +22,7 @@ from watson.intelligence.eval.score import collect_predicted, load_truth, score_
 from watson.intelligence.eval.thresholds import (
     gate_metrics,
     gate_profile,
+    headroom_status,
     load_thresholds,
     select_eval_profile,
 )
@@ -103,6 +104,7 @@ class EvalReport:
     latency: dict[str, Any] = field(default_factory=dict)
     profile: str = "primary"
     profile_gate: dict[str, Any] = field(default_factory=dict)
+    headroom: dict[str, Any] = field(default_factory=dict)
     measure_model: bool = False
 
     @property
@@ -253,6 +255,12 @@ def run_eval(
                 ),
                 profile=active_profile,
             ),
+            headroom=headroom_status(
+                understand_p95_s=(
+                    understand_p95 if isinstance(understand_p95, int | float) else None
+                ),
+                worker_plus_model_peak_bytes=worker_plus_model,
+            ),
             measure_model=measure_model,
         )
         _write_reports(out_dir, report)
@@ -300,6 +308,16 @@ def render_markdown(report: EvalReport) -> str:
     if report.measure_model and report.profile_gate.get("failures"):
         names = ", ".join(report.profile_gate["failures"])
         lines.extend(["", f"profile_failures ({report.profile}): {names}"])
+    if report.headroom:
+        p95 = report.headroom.get("understand_p95_s") or {}
+        peak = report.headroom.get("worker_plus_model_peak_bytes") or {}
+        lines.extend(
+            [
+                "",
+                "headroom (non-gating 8 GB): "
+                f"p95_within={p95.get('within')} peak_within={peak.get('within')}",
+            ]
+        )
     latency = report.latency
     if latency:
         lines.extend(["", "## Latency", ""])
@@ -562,6 +580,7 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
         "latency": report.latency,
         "profile": report.profile,
         "profile_gate": report.profile_gate,
+        "headroom": report.headroom,
         "days": [
             {
                 "name": day.name,

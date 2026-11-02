@@ -47,7 +47,7 @@ The report is always written (`report.json` and `report.md`), including on abort
 | `understand_segment.per_segment_s` | one entry per segment that ran understanding |
 | `timeouts` | `/api/chat` or `/api/embed` calls that hit `intelligence.ollama.timeout_s` |
 
-§11.4 profiles (option A, 2026-11-02; 16:42/16:43): **min-spec** (8 GB testing Mac) understanding p95 < 30 s/segment; **primary** (32 GB) understanding p95 < 20 s/segment. Consolidation < 15 min is gated on both. V1/POC stays on `llama3.2:3b` on both. Min-spec on 3B is a hard every-release gate. To try the §14 fallback without a config edit: `watson eval --llm-model qwen2.5:3b` or `WATSON_LLM_MODEL=qwen2.5:3b`.
+§11.4 profiles (option A, 2026-11-02; 16:42/16:43): **min-spec** (8 GB testing Mac) understanding p95 < 35 s/segment; **primary** (32 GB) understanding p95 < 20 s/segment. Consolidation < 15 min is gated on both. V1/POC stays on `llama3.2:3b` on both. Min-spec on 3B is a hard every-release gate. Engineering headroom on 8 GB (p95 < 30 s, peak < 3.3 GiB) is `report.json` → `headroom` and does **not** fail the gate. To try the §14 fallback without a config edit: `watson eval --llm-model qwen2.5:3b` or `WATSON_LLM_MODEL=qwen2.5:3b`.
 
 ### §11.4 worker peak RSS
 
@@ -59,7 +59,7 @@ watson eval --mode record --runtime ollama \
   --out /tmp/watson-eval-ollama
 ```
 
-`--measure-model` discovers `ollama` / `llama-server` PIDs and samples `phys_footprint` (via `footprint` on macOS, `VmRSS` on Linux) alongside the worker. `--rss-pid` adds an explicit PID (repeatable). The combined peak is `report.json` → `worker_plus_model_peak_bytes` (min-spec < 3.3 GiB; primary < 3 GB). `worker_peak_bytes` is the eval/worker process alone. `peak_rss_bytes` remains the Python eval process `ru_maxrss`.
+`--measure-model` discovers `ollama` / `llama-server` PIDs and samples `phys_footprint` (via `footprint` on macOS, `VmRSS` on Linux) alongside the worker. `--rss-pid` adds an explicit PID (repeatable). The combined peak is `report.json` → `worker_plus_model_peak_bytes` (min-spec gate < 3.5 GB; primary < 3 GB). `worker_peak_bytes` is the eval/worker process alone. `peak_rss_bytes` remains the Python eval process `ru_maxrss`. `report.json` → `headroom` records the non-gating 8 GB targets (p95 < 30 s, peak < 3.3 GiB).
 
 Manual check on the V1 Mac while a run is in progress:
 

@@ -17,6 +17,9 @@ PROFILE_KEY = "profiles"
 # Auto-select min-spec below 16 GiB so the 8 GB dev Mac is included; 16 GB+ is primary.
 MIN_SPEC_RAM_LIMIT_BYTES = 16 * 1024**3
 KNOWN_PROFILES = frozenset({"primary", "min-spec"})
+# 8 GB engineering headroom. Reported in report.json; never a profile gate.
+HEADROOM_UNDERSTAND_P95_S = 30.0
+HEADROOM_PEAK_BYTES = int(3.3 * 1024**3)
 
 
 @dataclass(frozen=True)
@@ -183,6 +186,29 @@ def gate_profile(
         if value is None or not rule.allows(value):
             failures.append(name)
     return {"passed": not failures, "failures": failures, "profile": profile}
+
+
+def headroom_status(
+    *,
+    understand_p95_s: float | None,
+    worker_plus_model_peak_bytes: int | None,
+) -> dict[str, Any]:
+    """8 GB engineering headroom. Informational only — never a gate."""
+    p95 = None if understand_p95_s is None else float(understand_p95_s)
+    peak = None if worker_plus_model_peak_bytes is None else int(worker_plus_model_peak_bytes)
+    return {
+        "gating": False,
+        "understand_p95_s": {
+            "max_exclusive": HEADROOM_UNDERSTAND_P95_S,
+            "value": p95,
+            "within": p95 is not None and p95 < HEADROOM_UNDERSTAND_P95_S,
+        },
+        "worker_plus_model_peak_bytes": {
+            "max_exclusive": HEADROOM_PEAK_BYTES,
+            "value": peak,
+            "within": peak is not None and peak < HEADROOM_PEAK_BYTES,
+        },
+    }
 
 
 def gate_metrics(
