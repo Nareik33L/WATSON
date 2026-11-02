@@ -100,22 +100,51 @@ def test_threshold_minimum_is_not_maximum() -> None:
     assert inverted.allows(0.72) is False
 
 
-def test_duplicate_rate_counts_extras_not_uniques() -> None:
-    assert duplicate_rate(["seg-a", "seg-a", "seg-b"]) == 1 / 3
-    assert duplicate_rate(["seg-a", "seg-b", "seg-c"]) == 0.0
+def _obs(
+    started_at: str,
+    *,
+    bundle: str = "com.lumen.quill",
+    window: str = "acme q4 proposal — draft",
+    description: str = "Editing the Acme Q4 proposal draft.",
+    segment_id: str = "",
+) -> dict[str, str]:
+    return {
+        "started_at": started_at,
+        "bundle_id": bundle,
+        "window_title_norm": window,
+        "description": description,
+        "segment_id": segment_id or started_at,
+    }
+
+
+def test_duplicate_rate_oversegmentation_is_not_zero() -> None:
+    """Adjacent same-window same-description observations are extras."""
+    rows = [
+        _obs("2026-10-31T09:00:00Z", segment_id="a"),
+        _obs("2026-10-31T09:08:00Z", segment_id="b"),
+        _obs("2026-10-31T09:16:00Z", segment_id="c"),
+    ]
+    assert duplicate_rate(rows) == 2 / 3
+    assert duplicate_rate(rows) > 0.0
+
+
+def test_duplicate_rate_revisit_after_other_window_is_zero() -> None:
+    rows = [
+        _obs("2026-10-31T09:00:00Z", segment_id="draft-1"),
+        _obs(
+            "2026-10-31T10:40:00Z",
+            bundle="com.lumen.compass",
+            window="cedar daily — harbor ferry",
+            description="Reading civic news in Cedar Daily.",
+            segment_id="news",
+        ),
+        _obs("2026-10-31T10:46:00Z", segment_id="draft-2"),
+    ]
+    assert duplicate_rate(rows) == 0.0
+
+
+def test_duplicate_rate_empty_is_zero() -> None:
     assert duplicate_rate([]) == 0.0
-
-
-def test_duplicate_rate_is_per_segment_not_whole_day_description() -> None:
-    """§11.2 / D3: one observation per segment is not a duplicate.
-
-    Two revisits of the same window are two segments. Same description
-    across those ids must not raise the rate. Two rows on one segment must.
-    """
-    morning, afternoon = "seg-acme-morning", "seg-acme-afternoon"
-    assert duplicate_rate([morning, afternoon]) == 0.0
-    assert duplicate_rate([morning, morning]) == 0.5
-    assert duplicate_rate([morning, morning, afternoon]) == 1 / 3
 
 
 def test_parenthetical_people_match() -> None:

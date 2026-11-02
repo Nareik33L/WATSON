@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
+from collections.abc import Mapping, Sequence
 
 _PARENS = re.compile(r"\s*\([^)]*\)")
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -82,15 +82,36 @@ def unsupported_count(predicted_completed: list[str], truth_completed: list[str]
     )
 
 
-def duplicate_rate(segment_ids: list[str]) -> float:
-    """§11.2 duplicate observations: extras on the same activity segment.
+def duplicate_rate(rows: Sequence[Mapping[str, str]]) -> float:
+    """§11.2 duplicate observations: over-segmentation, not revisits.
 
-    Plan D3: one observation per segment. A later revisit of the same
-    window is a new segment and is not a duplicate. Whole-day description
-    equality is the wrong scope (it counts legitimate revisits).
+    An observation is a duplicate when it immediately follows another
+    observation whose segment is adjacent in time, shares the same
+    ``bundle_id`` + ``window_title_norm``, and has an equivalent
+    description. That is the segmenter splitting one activity into two
+    and the model repeating itself.
+
+    A later revisit of the same window after a different app/window
+    does not count. Per-segment extras are not the metric:
+    ``observations`` is ``UNIQUE(segment_id, pipeline_version)``, so
+    that rate is always 0.
     """
-    if not segment_ids:
+    if not rows:
         return 0.0
-    counts = Counter(segment_ids)
-    extra = sum(count - 1 for count in counts.values() if count > 1)
-    return extra / len(segment_ids)
+    ordered = sorted(
+        rows,
+        key=lambda row: (str(row.get("started_at") or ""), str(row.get("segment_id") or "")),
+    )
+    extras = 0
+    for index in range(1, len(ordered)):
+        prev, cur = ordered[index - 1], ordered[index]
+        same_app = str(prev.get("bundle_id") or "") == str(cur.get("bundle_id") or "")
+        same_window = str(prev.get("window_title_norm") or "") == str(
+            cur.get("window_title_norm") or ""
+        )
+        same_text = names_match(
+            str(prev.get("description") or ""), str(cur.get("description") or "")
+        )
+        if same_app and same_window and same_text:
+            extras += 1
+    return extras / len(ordered)

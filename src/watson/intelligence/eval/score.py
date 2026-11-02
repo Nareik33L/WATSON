@@ -60,7 +60,7 @@ def score_day(
         "commitments_recall": recall(predicted["commitments"], commitments),
         "commitments_precision": precision(predicted["commitments"], commitments),
         "unsupported_achievements": float(unsupported_count(predicted["completed"], completed)),
-        "duplicate_observation_rate": duplicate_rate(predicted["segment_ids"]),
+        "duplicate_observation_rate": duplicate_rate(predicted["observation_rows"]),
         "noise_non_work_rate": _noise_rate(predicted["noise_rows"], noise),
         "claims_with_evidence": predicted["claims_with_evidence"],
         "citations_resolvable": predicted["citations_resolvable"],
@@ -124,15 +124,22 @@ def collect_predicted(
         """,
         (working_day_id, pipeline_version, working_day_id, pipeline_version),
     )
-    segment_ids = [
-        str(row[0])
+    observation_rows = [
+        {
+            "segment_id": str(row[0]),
+            "started_at": str(row[1] or ""),
+            "bundle_id": str(row[2] or ""),
+            "window_title_norm": str(row[3] or ""),
+            "description": str(row[4] or ""),
+        }
         for row in conn.execute(
             """
-            SELECT o.segment_id
+            SELECT o.segment_id, s.started_at, s.bundle_id, s.window_title_norm,
+                   o.description
             FROM observations o
             JOIN segments s ON s.id = o.segment_id
             WHERE s.working_day_id = ? AND o.pipeline_version = ?
-            ORDER BY o.id
+            ORDER BY s.started_at, o.id
             """,
             (working_day_id, pipeline_version),
         )
@@ -198,7 +205,7 @@ def collect_predicted(
         "decisions": decisions,
         "commitments": commitments,
         "completed": completed,
-        "segment_ids": segment_ids,
+        "observation_rows": observation_rows,
         "noise_rows": noise_rows,
         "claims_with_evidence": 1.0 if claims == 0 else evidenced / claims,
         "citations_resolvable": resolvable,

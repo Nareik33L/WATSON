@@ -34,6 +34,73 @@ def _open(tmp_path: Path):
     return connect(path, TEST_KEY, load_vec=False)
 
 
+def _empty_day(conn: object) -> str:
+    day_id, stamp = new_id(), "2026-10-31T09:00:00Z"
+    conn.execute(
+        """
+        INSERT INTO working_days (
+            id, created_at, updated_at, date, started_at, ended_at,
+            state, consolidation_error, pipeline_version
+        ) VALUES (?, ?, ?, '2026-10-31', ?, NULL, 'consolidated', NULL, 1)
+        """,
+        (day_id, stamp, stamp, stamp),
+    )
+    conn.commit()
+    return day_id
+
+
+def _add_observation(
+    conn: object,
+    day_id: str,
+    *,
+    started_at: str,
+    bundle_id: str,
+    window: str,
+    description: str,
+) -> None:
+    frame_id, segment_id = new_id(), new_id()
+    conn.execute(
+        """
+        INSERT INTO frames (
+            id, created_at, updated_at, working_day_id, captured_at, bundle_id,
+            app_name, window_title_hash, window_title, url_domain, phash, state,
+            failure_count, deleted_at, deletion_verified
+        ) VALUES (?, ?, ?, ?, ?, ?, 'App', NULL, ?, NULL, 'abcd', 'extracted', 0, NULL, 0)
+        """,
+        (frame_id, started_at, started_at, day_id, started_at, bundle_id, window),
+    )
+    conn.execute(
+        """
+        INSERT INTO segments (
+            id, created_at, updated_at, working_day_id, bundle_id, window_title_norm,
+            url_domain, started_at, ended_at, frame_count, dwell_seconds, line_changes,
+            merged_text, state, expires_at, pipeline_version, start_frame_id
+        ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 1, 60, 1, ?, 'closed', NULL, 1, ?)
+        """,
+        (
+            segment_id,
+            started_at,
+            started_at,
+            day_id,
+            bundle_id,
+            window,
+            started_at,
+            started_at,
+            window,
+            frame_id,
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO observations (
+            id, created_at, updated_at, segment_id, activity_type, description,
+            confidence, model_id, prompt_version, pipeline_version, raw_json
+        ) VALUES (?, ?, ?, ?, 'knowledge_work', ?, 0.9, 'replay', 'understanding/v1', 1, '{}')
+        """,
+        (new_id(), started_at, started_at, segment_id, description),
+    )
+
+
 def _seed(conn: object) -> str:
     day_id, stamp = new_id(), "2026-10-31T09:00:00Z"
     conn.execute(
@@ -272,48 +339,66 @@ def test_score_day_imperfect_values_for_each_metric(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_score_day_duplicate_rate_ignores_same_description_revisits(tmp_path: Path) -> None:
+def test_score_day_oversegmented_duplicate_rate_is_not_hardcoded_zero(
+    tmp_path: Path,
+) -> None:
     conn = _open(tmp_path)
     try:
-        day_id = _seed(conn)
-        stamp = "2026-10-31T10:00:00Z"
-        frame_id = new_id()
-        conn.execute(
-            """
-            INSERT INTO frames (
-                id, created_at, updated_at, working_day_id, captured_at, bundle_id,
-                app_name, window_title_hash, window_title, url_domain, phash, state,
-                failure_count, deleted_at, deletion_verified
-            ) VALUES (?, ?, ?, ?, ?, 'com.lumen.quill', 'Quill', NULL,
-                      'Acme Q4 Proposal — Draft', NULL, 'ef01', 'extracted', 0, NULL, 0)
-            """,
-            (frame_id, stamp, stamp, day_id, stamp),
+        day_id = _empty_day(conn)
+        _add_observation(
+            conn,
+            day_id,
+            started_at="2026-10-31T09:00:00Z",
+            bundle_id="com.lumen.quill",
+            window="acme q4 proposal — draft",
+            description="Editing the Acme Q4 proposal draft.",
         )
-        segment_id = new_id()
-        conn.execute(
-            """
-            INSERT INTO segments (
-                id, created_at, updated_at, working_day_id, bundle_id, window_title_norm,
-                url_domain, started_at, ended_at, frame_count, dwell_seconds, line_changes,
-                merged_text, state, expires_at, pipeline_version, start_frame_id
-            ) VALUES (?, ?, ?, ?, 'com.lumen.quill', 'acme q4 proposal — draft', NULL,
-                      ?, ?, 1, 60, 1, 'draft', 'closed', NULL, 1, ?)
-            """,
-            (segment_id, stamp, stamp, day_id, stamp, stamp, frame_id),
-        )
-        conn.execute(
-            """
-            INSERT INTO observations (
-                id, created_at, updated_at, segment_id, activity_type, description,
-                confidence, model_id, prompt_version, pipeline_version, raw_json
-            ) VALUES (?, ?, ?, ?, 'knowledge_work', 'Cedar Daily glance', 0.9, 'replay',
-                      'understanding/v1', 1, '{}')
-            """,
-            (new_id(), stamp, stamp, segment_id),
+        _add_observation(
+            conn,
+            day_id,
+            started_at="2026-10-31T09:08:00Z",
+            bundle_id="com.lumen.quill",
+            window="acme q4 proposal — draft",
+            description="Editing the Acme Q4 proposal draft.",
         )
         conn.commit()
         metrics = score_day(conn, day_id, TRUTH)
-        # Same description on a later segment is a revisit, not a duplicate.
+        assert metrics["duplicate_observation_rate"] == 0.5
+        assert metrics["duplicate_observation_rate"] > 0.0
+    finally:
+        conn.close()
+
+
+def test_score_day_duplicate_rate_ignores_same_description_revisits(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _empty_day(conn)
+        _add_observation(
+            conn,
+            day_id,
+            started_at="2026-10-31T09:00:00Z",
+            bundle_id="com.lumen.quill",
+            window="acme q4 proposal — draft",
+            description="Editing the Acme Q4 proposal draft.",
+        )
+        _add_observation(
+            conn,
+            day_id,
+            started_at="2026-10-31T10:40:00Z",
+            bundle_id="com.lumen.compass",
+            window="cedar daily — harbor ferry",
+            description="Reading civic news in Cedar Daily.",
+        )
+        _add_observation(
+            conn,
+            day_id,
+            started_at="2026-10-31T10:46:00Z",
+            bundle_id="com.lumen.quill",
+            window="acme q4 proposal — draft",
+            description="Editing the Acme Q4 proposal draft.",
+        )
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
         assert metrics["duplicate_observation_rate"] == 0.0
     finally:
         conn.close()

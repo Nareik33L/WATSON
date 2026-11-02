@@ -49,4 +49,6 @@ The report includes **wall_seconds** and **peak_rss_bytes** of the Python eval p
 
 ## Thresholds
 
-One config: `src/watson/intelligence/eval/thresholds.json` (plan §11.2). Hard gates: unsupported achievements = 0; claims-with-evidence = 100%; citations-resolvable = 100% over a **non-empty** citation set when the day has claims. `duplicate_observation_rate` is extras on the same activity segment (D3 / one observation per segment), not same-description revisits later in the day. These numbers are not lowered to match replay.
+One config: `src/watson/intelligence/eval/thresholds.json` (plan §11.2). Hard gates: unsupported achievements = 0; claims-with-evidence = 100%; citations-resolvable = 100% over a **non-empty** citation set when the day has claims.
+
+`duplicate_observation_rate` measures **over-segmentation**, not per-segment extras (those are always 0: `observations` is `UNIQUE(segment_id, pipeline_version)`). An observation is a duplicate when it immediately follows an adjacent segment with the same `bundle_id` + `window_title_norm` and an equivalent description — the segmenter split one activity and the model repeated itself. A later revisit of the same window after a different app/window does not count. Threshold `< 0.05` is not lowered to match replay.
