@@ -530,7 +530,7 @@ def test_blank_normalized_achievement_key_is_skipped(tmp_path: Path) -> None:
             text="Section 3 published.",
             captured_at="2026-10-31T09:02:00Z",
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT claim_id, text FROM achievement_candidates").fetchall()
         assert len(rows) == 1
@@ -863,7 +863,7 @@ def test_project_bucket_matches_alias(tmp_path: Path) -> None:
             ).fetchone()[0]
         )
         assert _project_bucket(conn, raw) == entity_id
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
         assert len(rows) == 1
@@ -907,7 +907,7 @@ def test_project_bucket_malformed_json_is_null(tmp_path: Path) -> None:
             project_candidates=["Acme Q4 Proposal"],
             captured_at="2026-10-31T09:02:00Z",
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
         assert len(rows) == 2

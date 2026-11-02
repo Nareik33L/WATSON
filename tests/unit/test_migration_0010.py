@@ -288,6 +288,41 @@ def test_0010_empty_downgrade_preserves_user_aliases(tmp_path: Path) -> None:
         conn.close()
 
 
+@pytest.mark.parametrize("flag", ["0", "true", "yes", ""])
+def test_0010_downgrade_refuses_non_exact_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str
+) -> None:
+    monkeypatch.setenv("WATSON_ALLOW_DESTRUCTIVE_DOWNGRADE", flag)
+    path = tmp_path / f"flag-{flag or 'empty'}.db"
+    command.upgrade(alembic_config(path, TEST_KEY), HEAD)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        entity_id = _insert_entity_with_aliases(conn)
+        rename_entity(conn, entity_id, "Zebra Deal")
+        aliases = _alias_rows(conn)
+        corrections = int(conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0])
+        assert corrections == 1
+    finally:
+        conn.close()
+    with pytest.raises(RuntimeError, match="Refusing to downgrade migration 0010"):
+        command.downgrade(alembic_config(path, TEST_KEY), PREV)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        assert TABLE in _tables(conn)
+        assert int(conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0]) == corrections
+        assert _alias_rows(conn) == aliases
+        assert (
+            str(
+                conn.execute(
+                    "SELECT canonical_name FROM entities WHERE id = ?", (entity_id,)
+                ).fetchone()[0]
+            )
+            == "Zebra Deal"
+        )
+    finally:
+        conn.close()
+
+
 def test_0010_destructive_downgrade_override_drops_corrections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

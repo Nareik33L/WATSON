@@ -257,7 +257,7 @@ def test_memory_is_scoped_by_day_and_pipeline_version(data_dir: Path, key_provid
         older_obs = _insert_observation(conn, older_segment, description="older-day")
         latest_v1 = _insert_observation(conn, latest_segment, description="today-v1")
         latest_v2 = _insert_observation(
-            conn, latest_segment, description="today-v2", pipeline_version=2
+            conn, latest_segment, description="today-v2", pipeline_version=99
         )
         older_claim = _insert_claim(
             conn,
@@ -288,7 +288,7 @@ def test_memory_is_scoped_by_day_and_pipeline_version(data_dir: Path, key_provid
             kind="activity",
             assertion="observed",
             text="today-v2 leaked",
-            pipeline_version=2,
+            pipeline_version=99,
         )
     finally:
         conn.close()

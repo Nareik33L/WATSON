@@ -39,6 +39,7 @@ from watson.pipeline.consolidation import (
     _load_claims,
     consolidate_working_day,
 )
+from watson.pipeline.frames import PIPELINE_VERSION
 
 
 class _EchoSummary(FakeRuntime):
@@ -119,7 +120,9 @@ def test_correct_is_additive_and_keeps_evidence(tmp_path: Path) -> None:
         assert str(rows[0][1]) == "Appendix published"
         assert str(rows[0][2]) == seeded["claim_id"]
         overlayed = apply_claim_corrections(
-            conn, _load_claims(conn, seeded["day_id"], 1), working_day_id=seeded["day_id"]
+            conn,
+            _load_claims(conn, seeded["day_id"], PIPELINE_VERSION),
+            working_day_id=seeded["day_id"],
         )
         assert overlayed[0]["text"] == "Appendix published"
         assert overlayed[0]["assertion"] == "user_corrected"
@@ -134,20 +137,26 @@ def test_confirm_reject_not_work_and_confirm_after_correct(tmp_path: Path) -> No
         claim_id = seeded["claim_id"]
         record_claim_correction(conn, claim_id, "confirm")
         overlayed = apply_claim_corrections(
-            conn, _load_claims(conn, seeded["day_id"], 1), working_day_id=seeded["day_id"]
+            conn,
+            _load_claims(conn, seeded["day_id"], PIPELINE_VERSION),
+            working_day_id=seeded["day_id"],
         )
         assert overlayed[0]["assertion"] == "user_confirmed"
         assert overlayed[0]["text"] == "Appendix drafted"
         record_claim_correction(conn, claim_id, "correct", new_text="Appendix published")
         record_claim_correction(conn, claim_id, "confirm")
         overlayed = apply_claim_corrections(
-            conn, _load_claims(conn, seeded["day_id"], 1), working_day_id=seeded["day_id"]
+            conn,
+            _load_claims(conn, seeded["day_id"], PIPELINE_VERSION),
+            working_day_id=seeded["day_id"],
         )
         assert overlayed[0]["assertion"] == "user_confirmed"
         assert overlayed[0]["text"] == "Appendix published"
         record_claim_correction(conn, claim_id, "reject")
         overlayed = apply_claim_corrections(
-            conn, _load_claims(conn, seeded["day_id"], 1), working_day_id=seeded["day_id"]
+            conn,
+            _load_claims(conn, seeded["day_id"], PIPELINE_VERSION),
+            working_day_id=seeded["day_id"],
         )
         assert overlayed == []
         assert claim_id in rejected_claim_ids(conn, working_day_id=seeded["day_id"])
@@ -192,6 +201,7 @@ def test_correction_requires_text_and_known_claim(tmp_path: Path) -> None:
 
 
 def test_corrections_are_scoped_by_day_and_pipeline_version(tmp_path: Path) -> None:
+    other_version = 99
     conn = _open(tmp_path)
     try:
         first = _seed_claim(conn, text="day-one claim", date="2026-10-30")
@@ -199,7 +209,7 @@ def test_corrections_are_scoped_by_day_and_pipeline_version(tmp_path: Path) -> N
         frame_id = _insert_frame(conn, second_day)
         segment_id = _insert_segment(conn, second_day, frame_id)
         observation_id = _insert_observation(conn, segment_id)
-        v1 = _insert_claim(
+        current = _insert_claim(
             conn,
             observation_id,
             second_day,
@@ -207,9 +217,9 @@ def test_corrections_are_scoped_by_day_and_pipeline_version(tmp_path: Path) -> N
             frame_id,
             kind="activity",
             assertion="observed",
-            text="today-v1 claim",
+            text="today-current claim",
         )
-        v2 = _insert_claim(
+        other = _insert_claim(
             conn,
             observation_id,
             second_day,
@@ -217,32 +227,47 @@ def test_corrections_are_scoped_by_day_and_pipeline_version(tmp_path: Path) -> N
             frame_id,
             kind="activity",
             assertion="observed",
-            text="today-v2 claim",
-            pipeline_version=2,
+            text="today-other claim",
+            pipeline_version=other_version,
         )
         record_claim_correction(conn, first["claim_id"], "correct", new_text="day-one corrected")
-        record_claim_correction(conn, v1, "reject")
-        try:
-            record_claim_correction(conn, v2, "correct", new_text="v2 overlay", pipeline_version=1)
-        except CorrectionError as exc:
-            assert exc.status_code == 404
-        record_claim_correction(conn, v2, "correct", new_text="v2 overlay", pipeline_version=2)
+        record_claim_correction(conn, current, "reject")
+        with pytest.raises(CorrectionError) as missing:
+            record_claim_correction(
+                conn,
+                other,
+                "correct",
+                new_text="other overlay",
+                pipeline_version=PIPELINE_VERSION,
+            )
+        assert missing.value.status_code == 404
+        record_claim_correction(
+            conn,
+            other,
+            "correct",
+            new_text="other overlay",
+            pipeline_version=other_version,
+        )
         day1 = apply_claim_corrections(
-            conn, _load_claims(conn, first["day_id"], 1), working_day_id=first["day_id"]
+            conn,
+            _load_claims(conn, first["day_id"], PIPELINE_VERSION),
+            working_day_id=first["day_id"],
         )
         day2 = apply_claim_corrections(
-            conn, _load_claims(conn, second_day, 1), working_day_id=second_day
-        )
-        day2_v2 = apply_claim_corrections(
             conn,
-            _load_claims(conn, second_day, 2),
+            _load_claims(conn, second_day, PIPELINE_VERSION),
             working_day_id=second_day,
-            pipeline_version=2,
+        )
+        day2_other = apply_claim_corrections(
+            conn,
+            _load_claims(conn, second_day, other_version),
+            working_day_id=second_day,
+            pipeline_version=other_version,
         )
         assert day1[0]["text"] == "day-one corrected"
         assert day2 == []
-        assert day2_v2[0]["text"] == "v2 overlay"
-        assert v1 not in {row["id"] for row in day2_v2}
+        assert day2_other[0]["text"] == "other overlay"
+        assert current not in {row["id"] for row in day2_other}
     finally:
         conn.close()
 
@@ -262,7 +287,7 @@ def test_reject_excludes_claim_from_summary_and_achievements(tmp_path: Path) -> 
         assert "Appendix drafted" not in after
         assert seeded["claim_id"] not in after
         _insert_achievements(
-            conn, seeded["day_id"], pipeline_version=1, stamp="2026-10-31T18:30:00Z"
+            conn, seeded["day_id"], pipeline_version=PIPELINE_VERSION, stamp="2026-10-31T18:30:00Z"
         )
         conn.commit()
         assert conn.execute("SELECT COUNT(*) FROM achievement_candidates").fetchone()[0] == 0
