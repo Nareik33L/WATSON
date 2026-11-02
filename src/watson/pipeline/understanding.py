@@ -78,8 +78,8 @@ UNDERSTAND_LEASE_SECONDS = max(DEFAULT_LEASE_SECONDS, 3600)
 MERGED_TEXT_PROMPT_MAX = 3000
 SNIPPET_KIND_OCR = "ocr"
 _COMPLETION_RE = re.compile(
-    r"\b(done|sent|approved|agreed|merged|published|shipped|completed|"
-    r"submitted|deployed|closed|signed[- ]off|checked(?:\s+off)?)\b",
+    r"\b(done|sent|approved|merged|published|shipped|completed|"
+    r"submitted|deployed|signed[- ]off|checked(?:\s+off)?)\b",
     re.IGNORECASE,
 )
 _INTENTION_RE = re.compile(

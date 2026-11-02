@@ -39,6 +39,9 @@ def test_m3_replay_meets_section_11_2_and_acceptance(tmp_path: Path, key_provide
     assert all("skipped_understand" in day for day in payload["days"])
     assert payload["headroom"]["gating"] is False
     assert payload["headroom"]["understand_p95_s"]["max_exclusive"] == 30.0
+    assert payload["completed_without_kill"] == 1.0
+    assert "consolidate_s" not in (payload["profile_gate"].get("failures") or [])
+    assert payload["latency"]["consolidate"]["max_s"] is not None
     assert report.runtime == "replay"
     assert report.days, "eval produced no fixture days"
     assert {day.name for day in report.days} == set(V1_DAY_FIXTURES)

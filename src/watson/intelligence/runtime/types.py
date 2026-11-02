@@ -73,7 +73,10 @@ def end_runtime_phase(runtime: object) -> None:
 
 class LanguageRuntime(Protocol):
     def complete(
-        self, messages: Sequence[Message], schema: Mapping[str, Any]
+        self,
+        messages: Sequence[Message],
+        schema: Mapping[str, Any],
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Schema-constrained completion. Returns a JSON object."""
 
@@ -95,6 +98,4 @@ class DisabledVisionRuntime:
 
     def describe(self, image: bytes, schema: Mapping[str, Any]) -> dict[str, Any]:
         del image, schema
-        raise RuntimeUnavailable(
-            "VisionRuntime is disabled on 8 GB (ADR 0001). VLM stays off."
-        )
+        raise RuntimeUnavailable("VisionRuntime is disabled on 8 GB (ADR 0001). VLM stays off.")

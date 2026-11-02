@@ -24,8 +24,12 @@ from watson.pipeline.consolidation import (
     ConsolidationError,
     ConsolidationWait,
     _achievement_key,
+    _fallback_summary,
+    _grounded_for_kind,
     _insert_achievements,
     _project_bucket,
+    _record_understand_gaps,
+    _trim_numbered,
     _understand_jobs_for_day,
     catch_up_on_launch,
     consolidate_idempotency_key,
@@ -273,40 +277,77 @@ def _seed_day(conn: object, *, date: str = "2026-10-31") -> dict[str, str]:
         )
 
     observed = _claim(
-        obs_changed, changed, frame_id,
-        kind="outcome", assertion="observed", text="Appendix drafted",
+        obs_changed,
+        changed,
+        frame_id,
+        kind="outcome",
+        assertion="observed",
+        text="Appendix drafted",
     )
     inferred = _claim(
-        obs_changed, changed, frame_id,
-        kind="outcome", assertion="inferred", text="Probably finished",
+        obs_changed,
+        changed,
+        frame_id,
+        kind="outcome",
+        assertion="inferred",
+        text="Probably finished",
     )
     unconfirmed = _claim(
-        obs_changed, changed, frame_id,
-        kind="outcome", assertion="unconfirmed", text="Maybe shipped",
+        obs_changed,
+        changed,
+        frame_id,
+        kind="outcome",
+        assertion="unconfirmed",
+        text="Maybe shipped",
     )
     activity = _claim(
-        obs_changed, changed, frame_id,
-        kind="activity", assertion="observed", text="Editing",
+        obs_changed,
+        changed,
+        frame_id,
+        kind="activity",
+        assertion="observed",
+        text="Editing",
     )
     _claim(
-        obs_changed, changed, frame_id,
-        kind="decision", assertion="observed", text="Ship the appendix on Friday",
+        obs_changed,
+        changed,
+        frame_id,
+        kind="decision",
+        assertion="observed",
+        text="Ship the appendix on Friday",
     )
     _claim(
-        obs_changed, changed, frame_id,
-        kind="commitment", assertion="observed", text="Send Priya the draft",
+        obs_changed,
+        changed,
+        frame_id,
+        kind="commitment",
+        assertion="observed",
+        text="Send Priya the draft",
     )
     observed_achievement = _claim(
-        obs_changed, changed, frame_id,
-        kind="achievement", assertion="observed", text="Closed the pricing thread",
+        obs_changed,
+        changed,
+        frame_id,
+        kind="achievement",
+        assertion="observed",
+        text="Closed the pricing thread",
     )
     no_change = _claim(
-        obs_static, static, static_frame,
-        kind="outcome", assertion="observed", text="No new lines",
+        obs_static,
+        static,
+        static_frame,
+        kind="outcome",
+        assertion="observed",
+        text="No new lines",
     )
     no_evidence = _claim(
-        obs_changed, changed, frame_id,
-        kind="outcome", assertion="observed", text="Orphan outcome", evidence=False,
+        obs_changed,
+        changed,
+        frame_id,
+        kind="outcome",
+        assertion="observed",
+        text="Orphan outcome",
+        evidence=False,
     )
     entity_id = _insert_entity(
         conn, name="Acme Q4 Proposal" if date == "2026-10-31" else f"Acme {date}"
@@ -2451,8 +2492,7 @@ def test_poison_understand_does_not_block_catch_up_consolidation(tmp_path: Path)
         )
         conn.commit()
         assert (
-            ensure_consolidate_job(conn, day_id, pipeline_version=PIPELINE_VERSION, now=NOW)
-            is True
+            ensure_consolidate_job(conn, day_id, pipeline_version=PIPELINE_VERSION, now=NOW) is True
         )
         spool = tmp_path / "spool"
         spool.mkdir()
@@ -2659,9 +2699,10 @@ def test_completed_understand_jobs_do_not_block_fragmented_day(tmp_path: Path) -
         )
 
         class _FailCluster(FakeRuntime):
-            def complete(self, messages, schema):  # type: ignore[no-untyped-def]
-                blob = "\n".join(item["content"] for item in messages)
-                if "Cluster these observations" in blob:
+            def complete(self, messages, schema, **kwargs):  # type: ignore[no-untyped-def]
+                del kwargs
+                props = schema.get("properties") if isinstance(schema, dict) else None
+                if isinstance(props, dict) and "activities" in props:
                     from watson.intelligence.runtime.types import OutputParseError
 
                     raise OutputParseError("truncated clustering JSON")
@@ -2683,9 +2724,7 @@ def test_failed_understand_is_flagged_not_silent(tmp_path: Path) -> None:
     try:
         day_id, segment_id = _closed_ununderstood(conn)
         good_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T10:00:00Z")
-        good_segment = _insert_segment(
-            conn, day_id, good_frame, started_at="2026-10-31T10:00:00Z"
-        )
+        good_segment = _insert_segment(conn, day_id, good_frame, started_at="2026-10-31T10:00:00Z")
         _insert_observation(conn, good_segment, description="Editing Acme")
         good_job = enqueue(
             conn,
@@ -2752,11 +2791,68 @@ def test_extract_drops_decisions_not_grounded_in_decision_claims(tmp_path: Path)
                 ]
             }
         )
-        consolidate_working_day(
-            conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW
-        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
         counts = derived_counts(conn, seeded["day_id"])
         assert counts["decisions"] == 0
         assert counts["commitments"] == 0
     finally:
         conn.close()
+
+
+def test_understand_gap_token_is_replaced_not_appended(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _record_understand_gaps(conn, day_id, ["seg-a", "seg-b"], now=NOW)
+        _record_understand_gaps(conn, day_id, ["seg-a", "seg-b"], now=NOW)
+        gap = conn.execute(
+            "SELECT consolidation_gap FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()[0]
+        assert gap == "understand_failed=2"
+        _record_understand_gaps(conn, day_id, ["seg-a"], now=NOW)
+        gap = conn.execute(
+            "SELECT consolidation_gap FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()[0]
+        assert gap == "understand_failed=1"
+        conn.execute(
+            "UPDATE working_days SET consolidation_gap = ? WHERE id = ?",
+            ("captured=1", day_id),
+        )
+        conn.commit()
+        _record_understand_gaps(conn, day_id, ["seg-a"], now=NOW)
+        gap = conn.execute(
+            "SELECT consolidation_gap FROM working_days WHERE id = ?", (day_id,)
+        ).fetchone()[0]
+        assert gap == "captured=1,understand_failed=1"
+    finally:
+        conn.close()
+
+
+def test_grounded_for_kind_filters_and_recovers_text_overlap() -> None:
+    decision_id, outcome_id = "dec-1", "out-1"
+    claims = [
+        {"id": outcome_id, "kind": "outcome", "text": "Appendix drafted"},
+        {"id": decision_id, "kind": "decision", "text": "Ship the appendix on Friday"},
+    ]
+    mixed = _grounded_for_kind([1, 2], claims, "decision", text="Ship the appendix on Friday")
+    assert mixed == [decision_id]
+    recovered = _grounded_for_kind([1], claims, "decision", text="Ship the appendix on Friday")
+    assert recovered == [decision_id]
+    hallucinated = _grounded_for_kind([1], claims, "decision", text="hallucinated")
+    assert hallucinated == []
+
+
+def test_trim_numbered_caps_item_and_list() -> None:
+    items = ["word " * 40, "short", "never shown because the list is full"]
+    out = _trim_numbered(items, item_max=12, list_max=20)
+    assert len(out) <= 20
+    assert "…" in out
+    assert "never shown" not in out
+
+
+def test_fallback_summary_cites_first_claim() -> None:
+    empty = _fallback_summary([])
+    assert empty.paragraphs == []
+    out = _fallback_summary([{"id": "claim-1", "kind": "decision", "text": "Go"}])
+    assert out.paragraphs[0].claim_ids == ["claim-1"]
+    assert "[c:claim-1]" in out.paragraphs[0].text

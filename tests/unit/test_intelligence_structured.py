@@ -15,7 +15,7 @@ from watson.intelligence.runtime import (
     StructuredOutputError,
 )
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
-from watson.intelligence.structured import complete_structured
+from watson.intelligence.structured import REPAIR_NUM_PREDICT, complete_structured
 
 _VALID = {
     "activity_type": "communication",
@@ -72,13 +72,21 @@ def test_load_understanding_v3_records_cap_and_version() -> None:
 class _RecordingRuntime:
     def __init__(self) -> None:
         self.user_messages: list[str] = []
+        self.predicts: list[int | None] = []
+        self.histories: list[list[Message]] = []
         self._calls = 0
 
     def complete(
-        self, messages: Sequence[Message], schema: Mapping[str, Any]
+        self,
+        messages: Sequence[Message],
+        schema: Mapping[str, Any],
+        *,
+        num_predict: int | None = None,
     ) -> dict[str, Any]:
         del schema
         self._calls += 1
+        self.predicts.append(num_predict)
+        self.histories.append([dict(item) for item in messages])
         if self._calls == 1:
             return {"nope": True}
         self.user_messages.append(messages[-1]["content"])
@@ -109,6 +117,20 @@ def test_retry_message_includes_pydantic_validation_error() -> None:
     assert "failed validation" in retry
     assert "activity_type" in retry
     assert "Field required" in retry
+    assert runtime.predicts == [None, REPAIR_NUM_PREDICT]
+    ocr = "PLANTED_OCR_SENTINEL do not resend"
+    runtime = _RecordingRuntime()
+    complete_structured(
+        runtime,
+        [
+            {"role": "system", "content": "schema only"},
+            {"role": "user", "content": ocr},
+        ],
+        UnderstandingOutput,
+    )
+    repair_blob = "\n".join(item["content"] for item in runtime.histories[1])
+    assert ocr not in repair_blob
+    assert "schema only" in repair_blob
 
 
 def test_complete_structured_raises_typed_failure_after_retry() -> None:

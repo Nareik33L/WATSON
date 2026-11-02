@@ -82,13 +82,15 @@ class RecordingRuntime:
         if callable(end):
             end()
 
-    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
+    def complete(
+        self, messages: Sequence[Message], schema: Mapping[str, Any], **kwargs: Any
+    ) -> dict[str, Any]:
         self.complete_calls += 1
         blob = "\n".join(item["content"] for item in messages)
         if self.mode == "replay":
             return self._replay(blob)
         assert self.inner is not None
-        result = self.inner.complete(messages, schema)
+        result = self.inner.complete(messages, schema, **kwargs)
         if not isinstance(result, dict):
             raise TypeError("recorded complete() must return an object")
         self._recordings.setdefault("complete", []).append(

@@ -111,10 +111,12 @@ class TimingRuntime:
         if callable(end):
             end()
 
-    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
+    def complete(
+        self, messages: Sequence[Message], schema: Mapping[str, Any], **kwargs: Any
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         try:
-            result: dict[str, Any] = self._inner.complete(messages, schema)
+            result: dict[str, Any] = self._inner.complete(messages, schema, **kwargs)
             return result
         except Exception as exc:
             if _is_timeout(exc):

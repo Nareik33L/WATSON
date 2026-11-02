@@ -205,6 +205,7 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         "profile",
         "profile_gate",
         "headroom",
+        "completed_without_kill",
     }
     assert set(payload) <= allowed
     needle = P1_SENTINEL.encode("utf-8")

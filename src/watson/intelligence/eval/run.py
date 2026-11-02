@@ -106,6 +106,7 @@ class EvalReport:
     profile_gate: dict[str, Any] = field(default_factory=dict)
     headroom: dict[str, Any] = field(default_factory=dict)
     measure_model: bool = False
+    completed_without_kill: float = 0.0
 
     @property
     def pipeline_passed(self) -> bool:
@@ -232,6 +233,7 @@ def run_eval(
         understand_p95 = understand.get("p95_s") if isinstance(understand, dict) else None
         consolidate = latency.get("consolidate") if isinstance(latency, dict) else None
         consolidate_max = consolidate.get("max_s") if isinstance(consolidate, dict) else None
+        completed_without_kill = _completed_without_kill(names, days, failure_reason=failure_reason)
         report = EvalReport(
             mode=mode,
             runtime=getattr(runtime, "name", runtime_name) if runtime is not None else runtime_name,
@@ -245,6 +247,7 @@ def run_eval(
             failure_reason=failure_reason,
             latency=latency,
             profile=active_profile,
+            completed_without_kill=completed_without_kill,
             profile_gate=gate_profile(
                 understand_p95_s=(
                     understand_p95 if isinstance(understand_p95, int | float) else None
@@ -253,6 +256,7 @@ def run_eval(
                 consolidate_s=(
                     consolidate_max if isinstance(consolidate_max, int | float) else None
                 ),
+                completed_without_kill=completed_without_kill,
                 profile=active_profile,
             ),
             headroom=headroom_status(
@@ -278,6 +282,7 @@ def render_markdown(report: EvalReport) -> str:
         f"worker_plus_model_peak_bytes: {report.worker_plus_model_peak_bytes}  ",
         f"worker_peak_bytes: {report.worker_peak_bytes}  ",
         f"profile: `{report.profile}`  ",
+        f"completed_without_kill: {report.completed_without_kill}  ",
         f"passed: **{report.passed}**  ",
         f"pipeline_passed: **{report.pipeline_passed}**  ",
         "replay is a pipeline-only gate; quality F1 is measured, not a model claim.",
@@ -483,9 +488,7 @@ def _reconcile_understand_jobs(conn: sqlcipher.Connection, day_id: str) -> None:
     from watson.pipeline.consolidation import _understand_jobs_for_day
 
     jobs = _understand_jobs_for_day(conn, day_id, PIPELINE_VERSION)
-    unfinished = [
-        job for job in jobs if job.state in {JobState.PENDING, JobState.CLAIMED}
-    ]
+    unfinished = [job for job in jobs if job.state in {JobState.PENDING, JobState.CLAIMED}]
     if unfinished:
         raise ConsolidationWait("understanding held")
 
@@ -545,6 +548,22 @@ def _peak_rss_bytes() -> int:
     return rss * 1024
 
 
+def _completed_without_kill(
+    names: tuple[str, ...],
+    days: list[DayEval],
+    *,
+    failure_reason: str | None,
+) -> float:
+    """1.0 when every requested fixture day finished with no crash or connection loss."""
+    if failure_reason:
+        return 0.0
+    if not names or len(days) != len(names):
+        return 0.0
+    if any(day.error for day in days):
+        return 0.0
+    return 1.0
+
+
 def _format_failure(exc: BaseException) -> str:
     """Exception type only — never copy OCR, prompts, or window titles into reports."""
     return type(exc).__name__
@@ -581,6 +600,7 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
         "profile": report.profile,
         "profile_gate": report.profile_gate,
         "headroom": report.headroom,
+        "completed_without_kill": report.completed_without_kill,
         "days": [
             {
                 "name": day.name,

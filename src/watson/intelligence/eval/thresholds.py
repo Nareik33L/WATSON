@@ -168,8 +168,15 @@ def gate_profile(
     profile: str,
     path: Path | None = None,
     consolidate_s: float | None = None,
+    completed_without_kill: float | None = None,
 ) -> dict[str, Any]:
-    """Compare understand p95, consolidation, and worker+model peak to the §11.4 profile."""
+    """Compare measured profile metrics to the §11.4 profile.
+
+    Primary gates understand p95, worker+model peak, and consolidation.
+    Min-spec records p95 and peak but gates ``completed_without_kill``
+    (eval finished every fixture day with no crash, OOM kill, or connection
+    loss) plus consolidation < 15 min.
+    """
     if profile not in KNOWN_PROFILES:
         raise ValueError(f"unknown eval profile {profile!r}")
     rules = load_profile_thresholds(path)[profile]
@@ -179,6 +186,9 @@ def gate_profile(
             None if worker_plus_model_peak_bytes is None else float(worker_plus_model_peak_bytes)
         ),
         "consolidate_s": None if consolidate_s is None else float(consolidate_s),
+        "completed_without_kill": (
+            None if completed_without_kill is None else float(completed_without_kill)
+        ),
     }
     failures: list[str] = []
     for name, rule in rules.items():

@@ -578,7 +578,7 @@ def test_runtime_unavailable_mid_drain_holds_without_burning_attempts(tmp_path: 
 
 
 UNDERSTANDING_V1_SHA256 = "49af407570f2d90a1d9fe055d14a283a12011b5d54495f2489fa6d60b904e781"
-UNDERSTANDING_V3_SHA256 = "f1a8ebc5bfd6a5b45c2881ffd5c476a0780c684915d8d3277ccc67c93a998440"
+UNDERSTANDING_V3_SHA256 = "ec730fc17913ba76a1e446fc67eb99878310623659bd89b2cee7e6da8e002a47"
 
 
 def test_understanding_v1_prompt_bytes_are_pinned() -> None:
@@ -1372,7 +1372,10 @@ def test_has_completion_evidence_rejects_intentions() -> None:
     assert has_completion_evidence("Email sent to Priya") is True
     assert has_completion_evidence("PR merged on GitHub") is True
     assert has_completion_evidence("I will send the draft") is False
+    assert has_completion_evidence("I will finish the appendix") is False
     assert has_completion_evidence("Still editing the appendix") is False
+    assert has_completion_evidence("We agreed to use Harbor") is False
+    assert has_completion_evidence("The ticket is closed") is False
 
 
 def test_observed_achievement_without_completion_evidence_is_downgraded(tmp_path: Path) -> None:
@@ -1421,6 +1424,83 @@ def test_observed_achievement_without_completion_evidence_is_downgraded(tmp_path
         assert ("achievement", "unconfirmed") in kinds
         assert ("achievement", "observed") not in kinds
         assert not any(str(row["kind"]) == "decision" for row in rows)
+    finally:
+        conn.close()
+
+
+def test_keep_side_persists_supported_achievements_and_confirmed_decisions(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        sent = "Email sent to Priya"
+        decided = "We agreed to use Harbor"
+        committed = "I will send the draft by Friday"
+        segment_id = _closed_segment(conn, merged=f"{sent}\n{decided}\n{committed}")
+        segment = _load_segment(conn, segment_id)
+        assert segment is not None
+        output = UnderstandingOutput.model_validate(
+            {
+                "activity_type": "knowledge_work",
+                "description": "Mail and chat",
+                "confidence": 0.8,
+                "claims": [
+                    {
+                        "kind": "achievement",
+                        "text": "Sent Priya the pricing email",
+                        "assertion": "observed",
+                        "evidence": [{"snippet": sent, "line_start": 1, "line_end": 1}],
+                    },
+                    {
+                        "kind": "decision",
+                        "text": "Use Harbor",
+                        "assertion": "observed",
+                        "evidence": [{"snippet": decided, "line_start": 2, "line_end": 2}],
+                    },
+                    {
+                        "kind": "commitment",
+                        "text": "Send the draft by Friday",
+                        "assertion": "observed",
+                        "evidence": [{"snippet": committed, "line_start": 3, "line_end": 3}],
+                    },
+                    {
+                        "kind": "achievement",
+                        "text": "Will finish the appendix",
+                        "assertion": "observed",
+                        "evidence": [
+                            {
+                                "snippet": "I will finish the appendix",
+                                "line_start": 1,
+                                "line_end": 1,
+                            }
+                        ],
+                    },
+                ],
+                "project_candidates": [],
+                "people_candidates": [],
+            }
+        )
+        _persist_observation(
+            conn,
+            segment,
+            output,
+            prompt_version="understanding/v3",
+            pipeline_version=PIPELINE_VERSION,
+            model_id="fake",
+            stamp="2026-10-31T10:00:00Z",
+        )
+        conn.commit()
+        rows = conn.execute(
+            "SELECT kind, assertion, text FROM claims ORDER BY kind, text"
+        ).fetchall()
+        kinds = {(str(row["kind"]), str(row["assertion"]), str(row["text"])) for row in rows}
+        assert ("achievement", "observed", "Sent Priya the pricing email") in kinds
+        assert ("decision", "observed", "Use Harbor") in kinds
+        assert ("commitment", "observed", "Send the draft by Friday") in kinds
+        assert ("achievement", "observed", "Will finish the appendix") not in kinds
+        assert ("achievement", "unconfirmed", "Will finish the appendix") in kinds
     finally:
         conn.close()
 

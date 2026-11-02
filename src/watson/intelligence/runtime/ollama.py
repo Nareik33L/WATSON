@@ -51,7 +51,13 @@ class OllamaRuntime:
                 fetch_command=pulls,
             )
 
-    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
+    def complete(
+        self,
+        messages: Sequence[Message],
+        schema: Mapping[str, Any],
+        *,
+        num_predict: int | None = None,
+    ) -> dict[str, Any]:
         self._ensure_resident("chat")
         payload: dict[str, Any] = {
             "model": self.llm_model,
@@ -59,11 +65,7 @@ class OllamaRuntime:
             "stream": False,
             "format": dict(schema),
             "keep_alive": self._settings.keep_alive,
-            "options": {
-                "temperature": self._settings.temperature,
-                "num_ctx": self._settings.ollama_num_ctx(),
-                "num_predict": int(self._settings.ollama.num_predict),
-            },
+            "options": self._chat_options(num_predict=num_predict),
         }
         body = request_json(self.base_url, "POST", "/api/chat", payload, timeout=self._timeout())
         message = body.get("message") if isinstance(body, dict) else None
@@ -98,6 +100,15 @@ class OllamaRuntime:
     def _timeout(self) -> float:
         return float(self._settings.ollama.timeout_s)
 
+    def _chat_options(self, *, num_predict: int | None = None) -> dict[str, Any]:
+        """Same KV-cache size on every chat so Ollama does not reallocate."""
+        predict = int(self._settings.ollama.num_predict if num_predict is None else num_predict)
+        return {
+            "temperature": self._settings.temperature,
+            "num_ctx": self._settings.ollama_num_ctx(),
+            "num_predict": predict,
+        }
+
     def end_phase(self) -> None:
         """Unload models used in this sub-phase. No-op when unloading is disabled."""
         if not self._settings.ollama.unload_between_phases:
@@ -119,11 +130,19 @@ class OllamaRuntime:
 
     def _unload(self, model: str) -> None:
         """Drop a resident model (Ollama ``keep_alive: 0``)."""
+        options = self._chat_options()
         request_json(
             self.base_url,
             "POST",
             "/api/generate",
-            {"model": model, "keep_alive": 0},
+            {
+                "model": model,
+                "keep_alive": 0,
+                "options": {
+                    "num_ctx": options["num_ctx"],
+                    "num_predict": options["num_predict"],
+                },
+            },
             timeout=self._timeout(),
         )
 

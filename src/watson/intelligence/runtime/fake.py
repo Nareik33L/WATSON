@@ -43,8 +43,13 @@ class FakeRuntime:
     def end_phase(self) -> None:
         self.end_phase_count += 1
 
-    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
-        del schema
+    def complete(
+        self,
+        messages: Sequence[Message],
+        schema: Mapping[str, Any],
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        del schema, _kwargs
         self.complete_calls += 1
         if self._queue:
             item = self._queue.pop(0)

@@ -13,7 +13,7 @@ import pytest
 
 from tests.replay_support import TEST_KEY
 from watson.config import load_config
-from watson.config.schema import IntelligenceConfig, OllamaClientConfig
+from watson.config.schema import DEFAULT_LLM_MODEL, IntelligenceConfig, OllamaClientConfig
 from watson.intelligence.runtime import (
     UNDERSTAND_JOB_KIND,
     FakeRuntime,
@@ -113,7 +113,7 @@ def test_build_runtime_respects_config_and_env(
     )
     monkeypatch.setenv("WATSON_INTELLIGENCE_RUNTIME", "fake")
     config = load_config()
-    assert config.intelligence.llm_model == "llama3.2:3b"
+    assert config.intelligence.llm_model == DEFAULT_LLM_MODEL
     assert config.intelligence.vlm_enabled is False
     bundle = build_runtime(config)
     assert bundle.name == "fake"
@@ -125,7 +125,7 @@ def test_ollama_adapter_uses_format_schema(monkeypatch: pytest.MonkeyPatch) -> N
     opened = _install_transport(
         monkeypatch,
         {
-            "/api/tags": {"models": [{"name": "llama3.2:3b"}, {"name": "nomic-embed-text"}]},
+            "/api/tags": {"models": [{"name": DEFAULT_LLM_MODEL}, {"name": "nomic-embed-text"}]},
             "/api/chat": {"message": {"content": json.dumps(_STUB_CHAT)}},
             "/api/embed": {"embeddings": [[0.0, 1.0]]},
             "/api/generate": {},
@@ -142,7 +142,8 @@ def test_ollama_adapter_uses_format_schema(monkeypatch: pytest.MonkeyPatch) -> N
     assert runtime.embed(["a", "b"]) == [[0.0, 1.0]]
     chat = next(req for req in opened if req.full_url.endswith("/api/chat"))
     body = json.loads(chat.data or b"{}")
-    assert body["model"] == "llama3.2:3b" and body["format"] == UNDERSTANDING_JSON_SCHEMA
+    assert body["model"] == DEFAULT_LLM_MODEL and body["format"] == UNDERSTANDING_JSON_SCHEMA
+    assert body["keep_alive"] == "5m"
     assert body["options"]["temperature"] == 0.0
     assert body["options"]["num_ctx"] == 4096
     assert body["options"]["num_predict"] == 512
@@ -173,9 +174,9 @@ def test_ollama_refuses_remote_and_names_missing_model(
     with pytest.raises(RuntimeUnavailable, match="unsupported scheme"):
         canonical_ollama_url("ftp://127.0.0.1:11434")
     _install_transport(monkeypatch, {"/api/tags": {"models": [{"name": "nomic-embed-text"}]}})
-    with pytest.raises(RuntimeUnavailable, match="llama3.2:3b") as raised:
+    with pytest.raises(RuntimeUnavailable, match=DEFAULT_LLM_MODEL) as raised:
         _ollama().probe()
-    assert "ollama pull llama3.2:3b" in (raised.value.fetch_command or "")
+    assert f"ollama pull {DEFAULT_LLM_MODEL}" in (raised.value.fetch_command or "")
 
 
 def test_request_json_ignores_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,11 +266,19 @@ def test_ollama_unloads_other_model_before_switch(monkeypatch: pytest.MonkeyPatc
     runtime.embed(["a"])
     paths = [req.full_url.rsplit("/", 1)[-1] for req in opened]
     assert paths == ["chat", "generate", "embed"]
-    assert json.loads(opened[1].data or b"{}") == {"model": "llama3.2:3b", "keep_alive": 0}
+    assert json.loads(opened[1].data or b"{}") == {
+        "model": DEFAULT_LLM_MODEL,
+        "keep_alive": 0,
+        "options": {"num_ctx": 4096, "num_predict": 512},
+    }
     runtime.end_phase()
     paths = [req.full_url.rsplit("/", 1)[-1] for req in opened]
     assert paths == ["chat", "generate", "embed", "generate"]
-    assert json.loads(opened[3].data or b"{}") == {"model": "nomic-embed-text", "keep_alive": 0}
+    assert json.loads(opened[3].data or b"{}") == {
+        "model": "nomic-embed-text",
+        "keep_alive": 0,
+        "options": {"num_ctx": 4096, "num_predict": 512},
+    }
 
 
 def _apply_http(resident: set[str], req: Request) -> None:
@@ -278,7 +287,7 @@ def _apply_http(resident: set[str], req: Request) -> None:
         body = json.loads(req.data or b"{}")
         if body.get("keep_alive") == 0:
             model = str(body.get("model") or "")
-            if model == "llama3.2:3b":
+            if model == DEFAULT_LLM_MODEL:
                 resident.discard("chat")
             if model == "nomic-embed-text":
                 resident.discard("embed")
@@ -414,14 +423,22 @@ def test_end_phase_clears_used_so_next_phase_unloads_only_new_model(
     runtime.end_phase()
     after_chat = [req for req in opened if req.full_url.endswith("/api/generate")]
     assert len(after_chat) == 1
-    assert json.loads(after_chat[0].data or b"{}") == {"model": "llama3.2:3b", "keep_alive": 0}
+    assert json.loads(after_chat[0].data or b"{}") == {
+        "model": DEFAULT_LLM_MODEL,
+        "keep_alive": 0,
+        "options": {"num_ctx": 4096, "num_predict": 512},
+    }
     mark = len(opened)
     runtime.embed(["e1"])
     runtime.end_phase()
     new = opened[mark:]
     generates = [req for req in new if req.full_url.endswith("/api/generate")]
     assert len(generates) == 1
-    assert json.loads(generates[0].data or b"{}") == {"model": "nomic-embed-text", "keep_alive": 0}
+    assert json.loads(generates[0].data or b"{}") == {
+        "model": "nomic-embed-text",
+        "keep_alive": 0,
+        "options": {"num_ctx": 4096, "num_predict": 512},
+    }
 
 
 def test_ollama_skips_unload_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -533,6 +550,40 @@ def test_urlerror_timeout_is_a_call_error(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(http_mod, "direct_opener", lambda: opener)
     with pytest.raises(RuntimeCallError, match="timed out"):
         request_json("http://127.0.0.1:11434", "POST", "/api/chat", {}, timeout=0.1)
+
+
+def test_ollama_http_error_redacts_response_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Planted Ollama error bodies must not land in RuntimeCallError / last_error."""
+    import io
+    from email.message import EmailMessage
+
+    from watson.intelligence.runtime.types import format_job_error
+
+    opener = direct_opener()
+    sentinel = "PLANTED_SECRET_TOKEN_do_not_store"
+
+    def boom(req: Request, timeout: float | None = None) -> _MemResponse:
+        del timeout
+        raise urllib.error.HTTPError(
+            req.full_url,
+            500,
+            "Internal Server Error",
+            EmailMessage(),
+            io.BytesIO(f'{{"error":"{sentinel}"}}'.encode()),
+        )
+
+    monkeypatch.setattr(opener, "open", boom)
+    monkeypatch.setattr(http_mod, "direct_opener", lambda: opener)
+    with pytest.raises(RuntimeCallError) as raised:
+        request_json("http://127.0.0.1:11434", "POST", "/api/chat", {}, timeout=0.1)
+    text = str(raised.value)
+    assert sentinel not in text
+    assert '{"error"' not in text
+    assert "500" in text
+    assert "Internal Server Error" in text
+    stored = format_job_error(raised.value)
+    assert sentinel not in stored
+    assert stored.startswith("RuntimeCallError:")
 
 
 def test_format_job_error_is_type_plus_truncated_message() -> None:

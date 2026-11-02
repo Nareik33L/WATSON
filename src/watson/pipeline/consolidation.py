@@ -102,6 +102,9 @@ _CLUSTER_ITEM_MAX = 120
 _EXTRACT_CLAIM_MAX = 160
 _SUMMARY_CLAIM_MAX = 120
 _PROMPT_LIST_MAX = 3000
+_UNDERSTAND_FAILED_RE = re.compile(r"understand_failed=\d+")
+_GROUND_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
+_GROUND_OVERLAP_MIN = 0.4
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
 )
@@ -765,9 +768,7 @@ def _cluster_observations(
             "content": f"Cluster these observations into activities.\n\n{numbered}",
         },
     ]
-    result = _structured(
-        language, messages, ClusteringOutput, CLUSTERING_JSON_SCHEMA, "clustering"
-    )
+    result = _structured(language, messages, ClusteringOutput, CLUSTERING_JSON_SCHEMA, "clustering")
     if result is None:
         return _fallback_clustering(observations)
     return result
@@ -941,7 +942,7 @@ def _insert_extract(
             ),
         )
     for item in extract.decisions:
-        grounded = _grounded_for_kind(item.claim_indexes, claims, "decision")
+        grounded = _grounded_for_kind(item.claim_indexes, claims, "decision", text=item.text)
         if not grounded:
             continue
         conn.execute(
@@ -963,7 +964,7 @@ def _insert_extract(
             ),
         )
     for item in extract.commitments:
-        grounded = _grounded_for_kind(item.claim_indexes, claims, "commitment")
+        grounded = _grounded_for_kind(item.claim_indexes, claims, "commitment", text=item.text)
         if not grounded:
             continue
         status = item.status or "open"
@@ -1517,7 +1518,12 @@ def _record_understand_gaps(
         "SELECT consolidation_gap FROM working_days WHERE id = ?", (working_day_id,)
     ).fetchone()
     existing = str(row[0]) if row is not None and row[0] else ""
-    value = gap if not existing else f"{existing},{gap}"
+    if _UNDERSTAND_FAILED_RE.search(existing):
+        value = _UNDERSTAND_FAILED_RE.sub(gap, existing, count=1)
+    elif existing:
+        value = f"{existing},{gap}"
+    else:
+        value = gap
     conn.execute(
         "UPDATE working_days SET consolidation_gap = ?, updated_at = ? WHERE id = ?",
         (value, stamp, working_day_id),
@@ -1566,15 +1572,44 @@ def _fallback_summary(claims: list[dict[str, Any]]) -> DailySummaryOutput:
     )
 
 
+def _ground_tokens(text: str) -> set[str]:
+    return {match.group(0) for match in _GROUND_TOKEN_RE.finditer(text.casefold())}
+
+
+def _text_overlap(left: str, right: str) -> float:
+    a, b = _ground_tokens(left), _ground_tokens(right)
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 def _grounded_for_kind(
-    indexes: list[int], claims: list[dict[str, Any]], kind: str
+    indexes: list[int],
+    claims: list[dict[str, Any]],
+    kind: str,
+    *,
+    text: str = "",
 ) -> list[str]:
-    claim_ids = [str(row["id"]) for row in claims]
-    matching = {str(row["id"]) for row in claims if str(row["kind"]) == kind}
-    grounded = _pick_indexes(indexes, claim_ids)
-    if not matching or not any(cid in matching for cid in grounded):
+    matching = [row for row in claims if str(row["kind"]) == kind]
+    if not matching:
         return []
-    return grounded
+    matching_ids = {str(row["id"]) for row in matching}
+    claim_ids = [str(row["id"]) for row in claims]
+    cited = _pick_indexes(indexes, claim_ids)
+    chosen = [cid for cid in cited if cid in matching_ids]
+    if chosen:
+        return chosen
+    by_id = {str(row["id"]): row for row in claims}
+    needles = [text, *[str(by_id[cid].get("text") or "") for cid in cited if cid in by_id]]
+    needles = [blob for blob in needles if blob.strip()]
+    if not needles:
+        return []
+    recovered: list[str] = []
+    for row in matching:
+        hay = str(row.get("text") or "")
+        if any(_text_overlap(needle, hay) >= _GROUND_OVERLAP_MIN for needle in needles):
+            recovered.append(str(row["id"]))
+    return recovered
 
 
 def _pick_indexes(indexes: list[int], items: list[str]) -> list[str]:
