@@ -1373,8 +1373,12 @@ def test_sigkill_mid_drain_holds_consolidation_until_lease_recovered(tmp_path: P
 def test_has_completion_evidence_rejects_intentions() -> None:
     assert has_completion_evidence("Email sent to Priya") is True
     assert has_completion_evidence("PR merged on GitHub") is True
+    assert has_completion_evidence("shipped the appendix") is True
     assert has_completion_evidence("I will send the draft") is False
     assert has_completion_evidence("I will finish the appendix") is False
+    assert has_completion_evidence("plan to ship Friday") is False
+    assert has_completion_evidence("I will get it signed off") is False
+    assert has_completion_evidence("Need to get it checked off") is False
     assert has_completion_evidence("Still editing the appendix") is False
     assert has_completion_evidence("We agreed to use Harbor") is False
     assert has_completion_evidence("The ticket is closed") is False
@@ -1426,6 +1430,51 @@ def test_observed_achievement_without_completion_evidence_is_downgraded(tmp_path
         assert ("achievement", "unconfirmed") in kinds
         assert ("achievement", "observed") not in kinds
         assert ("decision", "unconfirmed") in kinds
+    finally:
+        conn.close()
+
+
+def test_intention_signed_off_is_not_observed_achievement(tmp_path: Path) -> None:
+    """G7: 'will … signed off' hits the intention branch; disabling it would keep observed."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        snippet = "I will get it signed off"
+        segment_id = _closed_segment(conn, merged=snippet)
+        segment = _load_segment(conn, segment_id)
+        assert segment is not None
+        output = UnderstandingOutput.model_validate(
+            {
+                "activity_type": "knowledge_work",
+                "description": "Waiting on a signature",
+                "confidence": 0.7,
+                "claims": [
+                    {
+                        "kind": "achievement",
+                        "text": "Got the appendix signed off",
+                        "assertion": "observed",
+                        "evidence": [{"snippet": snippet, "line_start": 1, "line_end": 1}],
+                    }
+                ],
+                "project_candidates": [],
+                "people_candidates": [],
+            }
+        )
+        _persist_observation(
+            conn,
+            segment,
+            output,
+            prompt_version="understanding/v3",
+            pipeline_version=PIPELINE_VERSION,
+            model_id="fake",
+            stamp="2026-10-31T10:00:00Z",
+        )
+        conn.commit()
+        rows = conn.execute("SELECT kind, assertion, text FROM claims").fetchall()
+        kinds = {(str(row["kind"]), str(row["assertion"])) for row in rows}
+        assert ("achievement", "unconfirmed") in kinds
+        assert ("achievement", "observed") not in kinds
     finally:
         conn.close()
 

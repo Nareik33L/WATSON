@@ -32,6 +32,7 @@ from watson.intelligence.runtime.http import (
 )
 from watson.intelligence.runtime.stats import InferenceStats, TimingRuntime
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
+from watson.intelligence.structured import REPAIR_NUM_PREDICT, complete_structured
 from watson.memory.db import connect
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.jobs import JobState, enqueue, get_job
@@ -152,6 +153,66 @@ def test_ollama_adapter_uses_format_schema(monkeypatch: pytest.MonkeyPatch) -> N
     assert json.loads(embed.data or b"{}")["model"] == "nomic-embed-text"
     assert json.loads(embed.data or b"{}")["input"] == ["a", "b"]
     assert embed._timeout == 300.0
+
+
+def test_ollama_complete_honours_num_predict_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """NC7: the adapter must send the override, not the config default 512."""
+    opened = _install_transport(
+        monkeypatch,
+        {
+            "/api/chat": {"message": {"content": json.dumps(_STUB_CHAT)}},
+            "/api/generate": {},
+        },
+    )
+    runtime = _ollama()
+    runtime.complete(
+        [{"role": "user", "content": "x"}],
+        UNDERSTANDING_JSON_SCHEMA,
+        num_predict=256,
+    )
+    chat = next(req for req in opened if req.full_url.endswith("/api/chat"))
+    body = json.loads(chat.data or b"{}")
+    assert body["options"]["num_predict"] == 256
+    assert body["options"]["num_predict"] != 512
+
+
+def test_ollama_repair_retry_sends_num_predict_256(monkeypatch: pytest.MonkeyPatch) -> None:
+    """NC7: compact repair must land on Ollama options.num_predict=256."""
+    opened: list[Request] = []
+    chats = {"n": 0}
+    opener = direct_opener()
+
+    def fake_open(req: Request, timeout: float | None = None) -> _MemResponse:
+        setattr(req, "_timeout", timeout)
+        opened.append(req)
+        url = req.full_url
+        host = urlparse(url).hostname or ""
+        assert host in {"127.0.0.1", "localhost", "::1"}, url
+        if url.endswith("/api/chat"):
+            chats["n"] += 1
+            payload = {"nope": True} if chats["n"] == 1 else _STUB_CHAT
+            return _MemResponse({"message": {"content": json.dumps(payload)}})
+        if url.endswith("/api/generate"):
+            return _MemResponse({})
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr(opener, "open", fake_open)
+    monkeypatch.setattr(http_mod, "direct_opener", lambda: opener)
+    runtime = _ollama()
+    out = complete_structured(
+        runtime,
+        [{"role": "user", "content": "segment"}],
+        UnderstandingOutput,
+        schema=UNDERSTANDING_JSON_SCHEMA,
+    )
+    assert out.activity_type.value == "knowledge_work"
+    chat_bodies = [
+        json.loads(req.data or b"{}") for req in opened if req.full_url.endswith("/api/chat")
+    ]
+    assert len(chat_bodies) == 2
+    assert chat_bodies[0]["options"]["num_predict"] == 512
+    assert chat_bodies[1]["options"]["num_predict"] == REPAIR_NUM_PREDICT
+    assert chat_bodies[1]["options"]["num_predict"] == 256
 
 
 @pytest.mark.parametrize(

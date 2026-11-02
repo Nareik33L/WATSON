@@ -11,8 +11,10 @@ import pytest
 from tests.replay_support import TEST_KEY
 from watson.intelligence.eval.recordings import RecordingRuntime
 from watson.intelligence.eval.run import DayEval, run_eval
-from watson.intelligence.runtime.types import RuntimeUnavailable
+from watson.intelligence.runtime.types import OutputParseError, RuntimeUnavailable
+from watson.memory.db import connect
 from watson.pipeline.consolidation import ConsolidationWait
+from watson.pipeline.jobs import JobState
 from watson.pipeline.redaction import redact_ocr_text
 
 REPO = Path(__file__).resolve().parents[2]
@@ -221,3 +223,237 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         if not path.is_file():
             continue
         assert needle not in path.read_bytes(), path
+
+
+def test_run_eval_passes_measured_consolidate_s_into_profile_gate(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """C4: hardcoding consolidate_s=0.0 or dropping it must fail this test."""
+    from watson.intelligence.eval import run as run_mod
+
+    captured: dict[str, object] = {}
+    real_gate = run_mod.gate_profile
+
+    def spy_gate(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_gate(**kwargs)
+
+    real_record = run_mod.record_consolidate
+
+    def fake_record(_latency_s: float) -> None:
+        real_record(77.7)
+
+    monkeypatch.setattr(run_mod, "gate_profile", spy_gate)
+    monkeypatch.setattr(run_mod, "record_consolidate", fake_record)
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=RECORDINGS,
+        out_dir=tmp_path / "c4",
+        key=TEST_KEY,
+        profile="min-spec",
+    )
+    measured = report.latency["consolidate"]["max_s"]
+    assert report.latency["consolidate"]["n"] >= 1
+    assert measured == 77.7
+    assert captured.get("consolidate_s") == 77.7
+    assert captured["consolidate_s"] is not None
+    assert "consolidate_s" not in (report.profile_gate.get("failures") or [])
+
+
+def test_run_eval_min_spec_gate_fails_when_measured_consolidate_exceeds_15_min(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """C4: the 15-min cap is the measured max, not a constant 0."""
+    from watson.intelligence.eval import run as run_mod
+
+    captured: dict[str, object] = {}
+    real_gate = run_mod.gate_profile
+
+    def spy_gate(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_gate(**kwargs)
+
+    real_record = run_mod.record_consolidate
+
+    def fake_record(_latency_s: float) -> None:
+        real_record(901.0)
+
+    monkeypatch.setattr(run_mod, "gate_profile", spy_gate)
+    monkeypatch.setattr(run_mod, "record_consolidate", fake_record)
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=RECORDINGS,
+        out_dir=tmp_path / "c4-over",
+        key=TEST_KEY,
+        profile="min-spec",
+    )
+    assert captured.get("consolidate_s") == 901.0
+    assert report.profile_gate["passed"] is False
+    assert "consolidate_s" in report.profile_gate["failures"]
+
+
+def test_run_eval_min_spec_gate_fails_when_runtime_aborts(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """K6: a killed/unavailable runtime must not hardcode completed_without_kill=1.0."""
+    from watson.intelligence.eval import run as run_mod
+
+    captured: dict[str, object] = {}
+    real_gate = run_mod.gate_profile
+
+    def spy_gate(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_gate(**kwargs)
+
+    def boom(**_kwargs: object) -> object:
+        raise RuntimeUnavailable("Ollama runner killed")
+
+    monkeypatch.setattr(run_mod, "gate_profile", spy_gate)
+    monkeypatch.setattr(run_mod, "build_eval_runtime", boom)
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_acme_q4",),
+        mode="record",
+        runtime_name="ollama",
+        recordings=tmp_path / "k6-abort" / "recordings.json",
+        out_dir=tmp_path / "k6-abort",
+        key=TEST_KEY,
+        profile="min-spec",
+    )
+    assert report.days == []
+    assert report.failure_reason is not None
+    assert report.completed_without_kill == 0.0
+    assert captured.get("completed_without_kill") == 0.0
+    assert report.profile_gate["passed"] is False
+    assert "completed_without_kill" in report.profile_gate["failures"]
+
+
+def test_run_eval_min_spec_gate_fails_when_a_fixture_day_errors(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """K6: incomplete days fail the min-spec completes-without-kill gate."""
+    from watson.intelligence.eval import run as run_mod
+
+    captured: dict[str, object] = {}
+    real_gate = run_mod.gate_profile
+
+    def spy_gate(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_gate(**kwargs)
+
+    def fake_one(fixture: Path, **_kwargs: object) -> DayEval:
+        if fixture.name == "day_acme_q4":
+            return DayEval(
+                name="day_acme_q4",
+                date="2026-10-31",
+                metrics={"project_f1": 0.5},
+                derived_first={"summaries": 1},
+                derived_second={"summaries": 1},
+                summary_present=True,
+                identical_counts=True,
+                narrative_nonempty=True,
+                citation_count=1,
+                claims=1,
+            )
+        raise ConsolidationWait("day did not finish")
+
+    monkeypatch.setattr(run_mod, "gate_profile", spy_gate)
+    monkeypatch.setattr(run_mod, "_eval_one", fake_one)
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_acme_q4", "day_near_empty"),
+        mode="replay",
+        runtime_name="replay",
+        recordings=RECORDINGS,
+        out_dir=tmp_path / "k6-incomplete",
+        key=TEST_KEY,
+        profile="min-spec",
+    )
+    assert report.completed_without_kill == 0.0
+    assert any(day.error for day in report.days)
+    assert captured.get("completed_without_kill") == 0.0
+    assert report.profile_gate["passed"] is False
+    assert "completed_without_kill" in report.profile_gate["failures"]
+
+
+class _FailFirstUnderstand:
+    """Two parse errors → one terminal understand job; then replay as normal."""
+
+    def __init__(self, inner: RecordingRuntime) -> None:
+        self.inner = inner
+        self.name = getattr(inner, "name", "replay")
+        self._fails_left = 2
+
+    def complete(
+        self,
+        messages: object,
+        schema: object,
+        *,
+        num_predict: int | None = None,
+    ) -> dict[str, object]:
+        if self._fails_left > 0:
+            self._fails_left -= 1
+            raise OutputParseError("truncated JSON")
+        return self.inner.complete(messages, schema, num_predict=num_predict)
+
+    def embed(self, texts: object) -> list[list[float]]:
+        return self.inner.embed(texts)
+
+    def end_phase(self) -> None:
+        end = getattr(self.inner, "end_phase", None)
+        if callable(end):
+            end()
+
+    def probe(self) -> None:
+        probe = getattr(self.inner, "probe", None)
+        if callable(probe):
+            probe()
+
+
+def test_eval_terminally_failed_understand_job_is_flagged_not_blocking(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """R1: FAILED understand jobs are skipped and flagged, not treated as unfinished."""
+    from watson.intelligence.eval import run as run_mod
+
+    def fake_build(**_kwargs: object) -> _FailFirstUnderstand:
+        return _FailFirstUnderstand(RecordingRuntime(path=RECORDINGS, mode="replay"))
+
+    monkeypatch.setattr(run_mod, "build_eval_runtime", fake_build)
+    out = tmp_path / "r1"
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=RECORDINGS,
+        out_dir=out,
+        key=TEST_KEY,
+        profile="min-spec",
+    )
+    assert report.days
+    day = report.days[0]
+    assert day.error is None
+    assert day.skipped_understand >= 1
+    assert day.summary_present is True
+    payload = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    assert payload["days"][0]["skipped_understand"] >= 1
+    assert payload["days"][0]["error"] is None
+    conn = connect(out / "day_near_empty" / "watson.db", TEST_KEY, load_vec=False)
+    try:
+        failed = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE kind = 'understand' AND state = ?",
+            (JobState.FAILED.value,),
+        ).fetchone()
+        assert int(failed[0]) >= 1
+        row = conn.execute("SELECT state, consolidation_gap FROM working_days").fetchone()
+        assert row["state"] == "consolidated"
+        assert "understand_failed=" in str(row["consolidation_gap"] or "")
+    finally:
+        conn.close()
