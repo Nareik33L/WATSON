@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
@@ -370,6 +370,7 @@ def close_open_segments(
     *,
     working_day_id: str | None = None,
     close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+    now: datetime | None = None,
 ) -> int:
     """Force-close open segments so understanding can run (plan §3.7 step 2)."""
     if working_day_id is None:
@@ -391,7 +392,7 @@ def close_open_segments(
     conn.commit()
     from watson.pipeline.understanding import enqueue_eligible_understand_jobs
 
-    enqueue_eligible_understand_jobs(conn, close_after_seconds=close_after_seconds)
+    enqueue_eligible_understand_jobs(conn, close_after_seconds=close_after_seconds, now=now)
     return len(ids)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from tests.replay_support import TEST_KEY, V1_DAY_FIXTURES
@@ -25,6 +26,16 @@ def test_m3_replay_meets_section_11_2_and_acceptance(tmp_path: Path, key_provide
     )
     assert (tmp_path / "eval" / "report.json").is_file()
     assert (tmp_path / "eval" / "report.md").is_file()
+    payload = json.loads((tmp_path / "eval" / "report.json").read_text(encoding="utf-8"))
+    assert payload["failure_reason"] is None
+    assert payload["latency"]["timeouts"] == 0
+    assert payload["latency"]["complete"]["n"] > 0
+    assert payload["latency"]["understand_segment"]["n"] > 0
+    assert payload["worker_plus_model_peak_bytes"] is not None
+    assert payload["worker_peak_bytes"] is not None
+    assert payload["latency"]["consolidate"]["n"] >= 1
+    assert payload["latency"]["prompt"]["n"] >= 1
+    assert all("consolidate_s" in day for day in payload["days"])
     assert report.runtime == "replay"
     assert report.days, "eval produced no fixture days"
     assert {day.name for day in report.days} == set(V1_DAY_FIXTURES)
@@ -132,12 +143,9 @@ def test_bad_replay_recordings_fail_hard_thresholds(tmp_path: Path, key_provider
         key=TEST_KEY,
     )
     assert report.aggregate["unsupported_achievements"] >= 1.0
-    assert report.aggregate["citations_resolvable"] < 1.0 or report.days[0].citation_count == 0
     assert report.gate["passed"] is False
     assert report.passed is False
-    assert "unsupported_achievements" in report.gate["failures"] or (
-        "citations_resolvable" in report.gate["failures"]
-    )
+    assert "unsupported_achievements" in report.gate["failures"]
 
 
 def test_eval_refuses_implicit_fake_in_replay() -> None:

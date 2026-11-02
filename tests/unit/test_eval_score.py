@@ -9,6 +9,7 @@ from watson.intelligence.eval.score import collect_predicted, score_day
 from watson.memory.db import connect
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
+from watson.pipeline.frames import PIPELINE_VERSION
 
 TRUTH = {
     "projects": ["Acme Q4 Proposal", "Internal Onboarding Guide"],
@@ -95,9 +96,9 @@ def _add_observation(
         INSERT INTO observations (
             id, created_at, updated_at, segment_id, activity_type, description,
             confidence, model_id, prompt_version, pipeline_version, raw_json
-        ) VALUES (?, ?, ?, ?, 'knowledge_work', ?, 0.9, 'replay', 'understanding/v1', 1, '{}')
+        ) VALUES (?, ?, ?, ?, 'knowledge_work', ?, 0.9, 'replay', 'understanding/v1', ?, '{}')
         """,
-        (new_id(), started_at, started_at, segment_id, description),
+        (new_id(), started_at, started_at, segment_id, description, PIPELINE_VERSION),
     )
 
 
@@ -143,9 +144,9 @@ def _seed(conn: object) -> str:
             id, created_at, updated_at, segment_id, activity_type, description,
             confidence, model_id, prompt_version, pipeline_version, raw_json
         ) VALUES (?, ?, ?, ?, 'non_work', 'Cedar Daily glance', 0.9, 'replay',
-                  'understanding/v1', 1, '{}')
+                  'understanding/v1', ?, '{}')
         """,
-        (observation_id, stamp, stamp, segment_id),
+        (observation_id, stamp, stamp, segment_id, PIPELINE_VERSION),
     )
     for typ, name in (
         ("project", "Acme Q4 Proposal"),
@@ -178,9 +179,9 @@ def _seed(conn: object) -> str:
             INSERT INTO claims (
                 id, created_at, updated_at, observation_id, working_day_id, kind, text,
                 assertion, confidence, status, due_hint, pipeline_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'observed', 0.8, NULL, NULL, 1)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'observed', 0.8, NULL, NULL, ?)
             """,
-            (claim_id, stamp, stamp, observation_id, day_id, kind, text),
+            (claim_id, stamp, stamp, observation_id, day_id, kind, text, PIPELINE_VERSION),
         )
         conn.execute(
             """
@@ -196,9 +197,9 @@ def _seed(conn: object) -> str:
         INSERT INTO daily_summaries (
             id, created_at, updated_at, working_day_id, narrative_md, sections_json,
             claim_ids, prompt_version, pipeline_version
-        ) VALUES (?, ?, ?, ?, ?, '{}', '[]', 'daily_summary/v1', 1)
+        ) VALUES (?, ?, ?, ?, ?, '{}', '[]', 'daily_summary/v1', ?)
         """,
-        (new_id(), stamp, stamp, day_id, f"Work continued [c:{first_claim}]."),
+        (new_id(), stamp, stamp, day_id, f"Work continued [c:{first_claim}].", PIPELINE_VERSION),
     )
     conn.commit()
     return day_id
@@ -275,9 +276,9 @@ def test_noise_rate_ignores_cedar_daily_nav_in_merged_text(tmp_path: Path) -> No
                 id, created_at, updated_at, segment_id, activity_type, description,
                 confidence, model_id, prompt_version, pipeline_version, raw_json
             ) VALUES (?, ?, ?, ?, 'knowledge_work', 'Onboarding Guide section 3',
-                      0.9, 'replay', 'understanding/v1', 1, '{}')
+                      0.9, 'replay', 'understanding/v1', ?, '{}')
             """,
-            (new_id(), stamp, stamp, segment_id),
+            (new_id(), stamp, stamp, segment_id, PIPELINE_VERSION),
         )
         conn.commit()
         metrics = score_day(

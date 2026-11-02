@@ -49,6 +49,13 @@ def test_load_understanding_v1_returns_prompt_version() -> None:
         load_prompt("understanding", "../v1")
 
 
+def test_load_understanding_v2_records_cap_and_version() -> None:
+    prompt = load_prompt("understanding", "v2")
+    assert prompt.prompt_version == "understanding/v2"
+    assert "capped at 4000" in prompt.text
+    assert "visible completion evidence" in prompt.text.casefold()
+
+
 class _RecordingRuntime:
     def __init__(self) -> None:
         self.user_messages: list[str] = []

@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from pydantic import ValidationError
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from watson.config.schema import (
@@ -36,23 +38,41 @@ from watson.intelligence.runtime import (
     RuntimeUnavailable,
     StructuredOutputError,
     build_runtime,
+    end_runtime_phase,
     hold_if_unavailable,
     hold_understanding_jobs,
 )
 from watson.intelligence.runtime.fake import FakeRuntime
+from watson.intelligence.runtime.stats import record_understand_prompt, record_understand_segment
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
 from watson.intelligence.structured import complete_structured
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
-from watson.pipeline.jobs import Job, JobLeaseError, JobState, claim, complete, enqueue, fail
+from watson.pipeline.jobs import (
+    DEFAULT_LEASE_SECONDS,
+    DEFAULT_MAX_ATTEMPTS,
+    Job,
+    JobLeaseError,
+    JobState,
+    claim,
+    complete,
+    enqueue,
+    fail,
+)
+from watson.privacy.logging import ContentField
 
 log = logging.getLogger("watson.pipeline.understanding")
 
 WORKER_ID = "watson-understand"
 PROMPT_TASK = "understanding"
-PROMPT_VERSION = "v1"
-MERGED_TEXT_PROMPT_MAX = 8000
+PROMPT_VERSION = "v2"
+# Chat + deferred embed for a day's segments can exceed the default 60s lease.
+UNDERSTAND_LEASE_SECONDS = max(DEFAULT_LEASE_SECONDS, 3600)
+# Numbered merged OCR in the understanding user message. 4000 characters is
+# ~1000 tokens; with the v2 system prompt, retrieved aliases, JSON schema,
+# and num_predict=768 this fits the default 4096-token Ollama context.
+MERGED_TEXT_PROMPT_MAX = 4000
 SNIPPET_KIND_OCR = "ocr"
 
 
@@ -86,6 +106,15 @@ class UnderstandSettings:
             entity_similarity_threshold=float(intel.entity_similarity_threshold),
             model_id=model_id or intel.llm_model,
         )
+
+
+@dataclass(frozen=True)
+class _PendingResolve:
+    """Chat persisted; resolver embeddings run after the LLM is unloaded."""
+
+    output: UnderstandingOutput
+    segment: dict[str, Any]
+    settings: UnderstandSettings
 
 
 def understand_idempotency_key(segment_id: str, pipeline_version: int = PIPELINE_VERSION) -> str:
@@ -163,7 +192,16 @@ def drain_understand_jobs(
 ) -> int:
     """Claim and complete at most ``limit`` understand jobs.
 
-    A missing runtime leaves jobs ``pending`` with a reason and returns 0.
+    Chat completions run first with only the LLM loaded. Resolver embeddings
+    are a deferred batch after that sub-phase unloads (§11.4). A job is
+    marked completed only after that batch commits. Chat-done work stays
+    claimed until then; a caught crash parks it ``pending`` so a rerun
+    resolves from ``observations.raw_json`` without calling the LLM.
+    ``SIGKILL`` leaves jobs ``claimed`` for the lease; consolidation must
+    not mark that day consolidated while any of those jobs are claimed,
+    pending, or unresolved. Poison ``raw_json`` fails that job and the
+    drain continues. A missing runtime leaves jobs ``pending`` with a
+    reason and returns 0.
     """
     if limit < 1:
         raise ValueError("understand batch limit must be >= 1")
@@ -173,27 +211,68 @@ def drain_understand_jobs(
     if language is None or embedder is None:
         return 0
     completed = 0
-    while completed < limit:
-        job = claim(conn, worker_id=worker_id, kind=UNDERSTAND_JOB_KIND, now=now)
-        if job is None:
-            break
-        try:
-            understand_job(conn, job, language, embedder, settings=settings, now=now)
+    pending: list[tuple[str, UnderstandSettings]] = []
+    held: list[Job] = []
+    try:
+        while len(held) < limit:
+            job = claim(
+                conn,
+                worker_id=worker_id,
+                kind=UNDERSTAND_JOB_KIND,
+                lease_seconds=UNDERSTAND_LEASE_SECONDS,
+                now=now,
+            )
+            if job is None:
+                break
+            try:
+                work = understand_job(
+                    conn, job, language, embedder, settings=settings, now=now, defer_resolve=True
+                )
+                if isinstance(work, _PendingResolve):
+                    pending.append((str(work.segment["id"]), work.settings))
+                held.append(job)
+            except JobLeaseError:
+                raise
+            except RuntimeUnavailable as exc:
+                _hold_claimed_understand_job(conn, job, worker_id, exc, now=now)
+                break
+            except JobFailure as exc:
+                fail(
+                    conn,
+                    job.id,
+                    type(exc).__name__,
+                    worker_id=worker_id,
+                    now=now,
+                    max_attempts=1 if not exc.retryable else DEFAULT_MAX_ATTEMPTS,
+                )
+                if not exc.retryable:
+                    continue
+                break
+            except (OSError, ValueError, RuntimeError, sqlcipher.DatabaseError) as exc:
+                fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
+                raise
+        if pending:
+            # Chat sub-phase done. Unload the LLM before any resolver embeddings.
+            # Reload from raw_json so the day's outputs are not held in RAM.
+            _end_phase(language, embedder)
+            for segment_id, job_settings in pending:
+                _resolve_stored_observation(conn, embedder, segment_id, job_settings)
+            conn.commit()
+        remaining = list(held)
+        for job in remaining:
             complete(conn, job.id, worker_id=worker_id, now=now)
+            held.remove(job)
             completed += 1
-        except JobLeaseError:
-            raise
-        except RuntimeUnavailable as exc:
-            _hold_claimed_understand_job(conn, job, worker_id, exc, now=now)
-            break
-        except JobFailure as exc:
-            fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
-            if not exc.retryable:
-                continue
-            break
-        except (OSError, ValueError, RuntimeError, sqlcipher.DatabaseError) as exc:
-            fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
-            raise
+    except Exception:
+        try:
+            conn.rollback()
+        except sqlcipher.DatabaseError:
+            pass
+        for job in held:
+            _park_claimed_understand_job(conn, job, worker_id, now=now)
+        raise
+    finally:
+        _end_phase(language, embedder)
     if completed:
         log.info("drained understand jobs", extra={"completed": completed, "limit": limit})
     return completed
@@ -207,27 +286,30 @@ def understand_job(
     *,
     settings: UnderstandSettings | None = None,
     now: datetime | None = None,
-) -> str | None:
-    """Run one understand job. Returns the observation id, or None if skipped."""
+    defer_resolve: bool = False,
+) -> str | _PendingResolve | None:
+    """Run one understand job. Returns pending resolver work when chat persisted."""
     cfg = settings or UnderstandSettings()
     segment_id = str(job.payload.get("segment_id") or "")
     if not segment_id:
         raise JobFailure("understand job is missing segment_id", retryable=False)
     pipeline_version = int(job.payload.get("pipeline_version") or cfg.pipeline_version)
+    job_settings = UnderstandSettings(
+        pipeline_version=pipeline_version,
+        close_after_seconds=cfg.close_after_seconds,
+        retrieve_top_k=cfg.retrieve_top_k,
+        entity_similarity_threshold=cfg.entity_similarity_threshold,
+        merged_text_max_chars=cfg.merged_text_max_chars,
+        model_id=cfg.model_id,
+    )
     return understand_segment(
         conn,
         segment_id,
         language,
         embedding,
-        settings=UnderstandSettings(
-            pipeline_version=pipeline_version,
-            close_after_seconds=cfg.close_after_seconds,
-            retrieve_top_k=cfg.retrieve_top_k,
-            entity_similarity_threshold=cfg.entity_similarity_threshold,
-            merged_text_max_chars=cfg.merged_text_max_chars,
-            model_id=cfg.model_id,
-        ),
+        settings=job_settings,
         now=now,
+        defer_resolve=defer_resolve,
     )
 
 
@@ -239,25 +321,58 @@ def understand_segment(
     *,
     settings: UnderstandSettings | None = None,
     now: datetime | None = None,
-) -> str | None:
+    defer_resolve: bool = False,
+) -> str | _PendingResolve | None:
     """Build input, call the LLM, persist observation/claims/evidence, resolve entities."""
     cfg = settings or UnderstandSettings()
     existing = conn.execute(
-        "SELECT id FROM observations WHERE segment_id = ? AND pipeline_version = ?",
+        "SELECT id, raw_json FROM observations WHERE segment_id = ? AND pipeline_version = ?",
         (segment_id, cfg.pipeline_version),
     ).fetchone()
     if existing is not None:
+        if defer_resolve:
+            return _pending_from_stored(conn, segment_id, str(existing["raw_json"]), cfg=cfg)
         return str(existing["id"])
 
+    started = time.perf_counter()
+    try:
+        return _understand_segment_body(
+            conn,
+            segment_id,
+            language,
+            embedding,
+            cfg=cfg,
+            now=now,
+            defer_resolve=defer_resolve,
+        )
+    finally:
+        record_understand_segment(time.perf_counter() - started)
+
+
+def _understand_segment_body(
+    conn: sqlcipher.Connection,
+    segment_id: str,
+    language: LanguageRuntime,
+    embedding: EmbeddingRuntime,
+    *,
+    cfg: UnderstandSettings,
+    now: datetime | None,
+    defer_resolve: bool,
+) -> str | _PendingResolve | None:
     segment = _load_segment(conn, segment_id)
     if segment is None:
         raise JobFailure(f"understand job refers to missing segment {segment_id}", retryable=False)
 
+    log.info(
+        "understand segment",
+        extra={"merged_text": ContentField(str(segment.get("merged_text") or ""))},
+    )
     prompt = load_prompt(PROMPT_TASK, PROMPT_VERSION)
     memory = retrieve_entity_context(conn, str(segment["merged_text"]), top_k=cfg.retrieve_top_k)
     user = build_understand_user_message(
         segment, memory_block=format_retrieved_context(memory), max_chars=cfg.merged_text_max_chars
     )
+    record_understand_prompt(len(user))
     messages: list[Message] = [
         {"role": "system", "content": prompt.text},
         {"role": "user", "content": user},
@@ -286,6 +401,27 @@ def understand_segment(
             model_id=cfg.model_id,
             stamp=stamp,
         )
+        conn.commit()
+    except sqlcipher.IntegrityError:
+        conn.rollback()
+        row = conn.execute(
+            "SELECT id, raw_json FROM observations WHERE segment_id = ? AND pipeline_version = ?",
+            (segment_id, cfg.pipeline_version),
+        ).fetchone()
+        if row is None:
+            raise
+        if defer_resolve:
+            return _pending_from_stored(conn, segment_id, str(row["raw_json"]), cfg=cfg)
+        return str(row["id"])
+    except Exception:
+        conn.rollback()
+        raise
+
+    if defer_resolve:
+        return _PendingResolve(output=output, segment=segment, settings=cfg)
+
+    try:
+        _end_phase(language, embedding)
         resolve_candidates(
             conn,
             embedding,
@@ -295,19 +431,12 @@ def understand_segment(
             seen_at=str(segment["ended_at"]),
         )
         conn.commit()
-    except sqlcipher.IntegrityError:
-        conn.rollback()
-        row = conn.execute(
-            "SELECT id FROM observations WHERE segment_id = ? AND pipeline_version = ?",
-            (segment_id, cfg.pipeline_version),
-        ).fetchone()
-        if row is None:
-            raise
-        return str(row["id"])
+        return observation_id
     except Exception:
         conn.rollback()
         raise
-    return observation_id
+    finally:
+        _end_phase(language, embedding)
 
 
 def build_understand_user_message(
@@ -326,25 +455,35 @@ def build_understand_user_message(
         f"Dwell: {int(segment.get('dwell_seconds') or 0)}s\n"
         f"Frames: {int(segment.get('frame_count') or 0)}\n"
         f"Line changes: {int(segment.get('line_changes') or 0)}\n"
-        f"\nMerged text:\n{numbered}\n"
+        f"\nMerged text (capped at {max_chars} characters):\n{numbered}\n"
         f"\nRetrieved context:\n{memory_block}\n"
     )
 
 
 def number_merged_text(text: str, *, max_chars: int) -> str:
+    """Number non-empty OCR lines and stop before ``max_chars`` (default 4000)."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     numbered = [f"{index}. {line}" for index, line in enumerate(lines, start=1)]
     if not numbered:
         return "(empty)"
     out: list[str] = []
     used = 0
+    truncated = False
     for line in numbered:
         extra = len(line) + (1 if out else 0)
         if used + extra > max_chars:
+            truncated = True
             break
         out.append(line)
         used += extra
-    return "\n".join(out) if out else numbered[0][:max_chars]
+    if not out:
+        body = numbered[0][:max_chars]
+        truncated = len(numbered[0]) > max_chars or len(numbered) > 1
+    else:
+        body = "\n".join(out)
+    if truncated:
+        return f"{body}\n(truncated)"
+    return body
 
 
 def _resolve_adapters(
@@ -381,6 +520,81 @@ def _as_embedder(runtime: LanguageRuntime) -> EmbeddingRuntime:
     if callable(embed):
         return runtime  # type: ignore[return-value]
     return FakeRuntime()
+
+
+def _end_phase(language: LanguageRuntime, embedder: EmbeddingRuntime) -> None:
+    """Unload at a sub-phase boundary. Same object is only ended once."""
+    end_runtime_phase(language)
+    if id(embedder) != id(language):
+        end_runtime_phase(embedder)
+
+
+def _resolve_stored_observation(
+    conn: sqlcipher.Connection,
+    embedder: EmbeddingRuntime,
+    segment_id: str,
+    cfg: UnderstandSettings,
+) -> None:
+    row = conn.execute(
+        "SELECT raw_json FROM observations WHERE segment_id = ? AND pipeline_version = ?",
+        (segment_id, cfg.pipeline_version),
+    ).fetchone()
+    if row is None:
+        raise JobFailure(
+            f"understand job refers to missing observation for {segment_id}", retryable=False
+        )
+    item = _pending_from_stored(conn, segment_id, str(row["raw_json"]), cfg=cfg)
+    resolve_candidates(
+        conn,
+        embedder,
+        project_candidates=item.output.project_candidates,
+        people_candidates=item.output.people_candidates,
+        threshold=item.settings.entity_similarity_threshold,
+        seen_at=str(item.segment["ended_at"]),
+    )
+
+
+def _pending_from_stored(
+    conn: sqlcipher.Connection,
+    segment_id: str,
+    raw_json: str,
+    *,
+    cfg: UnderstandSettings,
+) -> _PendingResolve:
+    """Rebuild resolver work from a persisted observation. No chat call."""
+    segment = _load_segment(conn, segment_id)
+    if segment is None:
+        raise JobFailure(f"understand job refers to missing segment {segment_id}", retryable=False)
+    try:
+        payload = json.loads(raw_json)
+        output = UnderstandingOutput.model_validate(payload)
+    except (ValueError, TypeError, ValidationError) as exc:
+        log.warning(
+            "poison observation raw_json",
+            extra={"segment_id": segment_id, "error": type(exc).__name__},
+        )
+        raise JobFailure("observation raw_json is invalid", retryable=False) from exc
+    return _PendingResolve(output=output, segment=segment, settings=cfg)
+
+
+def _park_claimed_understand_job(
+    conn: sqlcipher.Connection,
+    job: Job,
+    worker_id: str,
+    *,
+    now: datetime | None,
+) -> None:
+    """Return a chat-done claim to pending without burning attempts or completing."""
+    stamp = iso_now(now)
+    conn.execute(
+        """
+        UPDATE jobs
+        SET state = ?, claimed_by = NULL, leased_until = NULL, updated_at = ?
+        WHERE id = ? AND claimed_by = ? AND state = ?
+        """,
+        (JobState.PENDING.value, stamp, job.id, worker_id, JobState.CLAIMED.value),
+    )
+    conn.commit()
 
 
 def _load_segment(conn: sqlcipher.Connection, segment_id: str) -> dict[str, Any] | None:

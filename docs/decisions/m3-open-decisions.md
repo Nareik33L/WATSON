@@ -1,23 +1,23 @@
 # M3 open decisions — measurement stub (do not decide)
 
-**Status:** Open. This note lists the measurements required to decide plan §14 items that landed on M3. It does not pick a default.
+**Status:** #9 decided (Kieran, 2026-11-02, option A; 16:42 hard 8 GB gate; 16:43 `llama3.2:3b` on both profiles). #2 partial (V1/POC LLM is `llama3.2:3b`; embeddings still provisional). #7 and #10 remain open. This note lists the measurements required to decide the remaining plan §14 items that landed on M3.
 
-**Related:** §11.2, §11.4, §12 M0-A deferrals, §14 #2 #7 #9 #10, ADR 0001, `docs/eval.md`
+**Related:** §11.2, §11.4, §12 M0-A deferrals, §14 #2 #7 #9 #10, ADR 0001, `docs/eval.md`, `docs/ROADMAP.md`
 
-Run `watson eval --mode record --runtime ollama` on the 8 GB Mac as described in `docs/eval.md` before anyone fills the Decision rows.
+Run `watson eval --mode record --runtime ollama` on the 8 GB Mac as described in `docs/eval.md` before anyone fills the remaining Decision rows. The 8 GB Mac is the testing laptop; min-spec on 3B is a hard every-release gate (16:42).
 
 ## §14 #2 — quality gate for provisional 8 GB models
 
-ADR 0001 left `llama3.2:3b` and `nomic-embed-text` **provisional**. Decide only after a recorded Ollama eval on the five V1 day fixtures.
+ADR 0001 left `llama3.2:3b` and `nomic-embed-text` **provisional**. **16:43 (Kieran):** V1/POC stays on `llama3.2:3b` on both hardware profiles. Embeddings remain provisional. A larger model for the 32 GB primary profile is parked post-POC (`docs/ROADMAP.md`). Quality numbers are still measured on the five V1 day fixtures; they do not reopen a larger-model choice for V1/POC.
 
-Measurements needed:
+Measurements still owed:
 
 - Per-metric table from `report.json` against `src/watson/intelligence/eval/thresholds.json`
 - Unsupported achievement / observed-completion count (must be 0 under §7.2 / §11.2)
-- Whether `qwen2.5:3b` (Plan B in ADR 0001) clears the same gate if Llama misses it
+- Whether `qwen2.5:3b` (Plan B in ADR 0001) clears the same 3B-class gate if Llama misses quality numbers — Plan B is still a 3B model, not a 32 GB-only larger model
 - Schema-invalid / structured-output retry rate
 
-**Decision:** _not taken_
+**Decision (Kieran, 2026-11-02 16:43, partial):** V1/POC LLM is `llama3.2:3b` on both profiles. Embeddings remain provisional (_not taken_). Larger 32 GB model parked post-POC.
 
 ## §14 #7 — tier-2 text TTL (7 days proposed)
 
@@ -35,14 +35,18 @@ Measurements needed:
 
 Decide whether V1 ships LLM consolidation or OCR + segments + rule-based summaries (LLM only for Ask WATSON).
 
-Measurements needed:
+**Decision (Kieran, 2026-11-02 16:41, option A; 16:42; 16:43; 16:41 supersedes the 16:35 8 GB-only wording):** V1 keeps LLM consolidation.
 
-- Llama §11.2 table vs a rule-based baseline (no `complete()` on clustering / extract / summary; claims and titles only)
-- Unsupported completions on both paths
-- Consolidation wall time and peak RSS on the 8 GB Mac
-- Author judgement: are the LLM paragraphs worth the RSS and the hallucination risk?
+| Profile | Machine | Understanding p95 | Worker+model peak (`phys_footprint`) | Consolidation | Precision (decisions/commitments) |
+|---|---|---:|---:|---:|---:|
+| **primary** | 32 GB target laptop | < 20 s/segment | < 3 GB | < 15 min | ≥ 0.85 |
+| **min-spec** | 8 GB testing Mac | < 35 s/segment | < 3.5 GB | < 15 min | ≥ 0.85 |
 
-**Decision:** _not taken_
+One model resident on both. Encoded in `src/watson/intelligence/eval/thresholds.json` → `profiles`. `watson eval --strict --measure-model` checks p95 latency and peak memory against the active profile. Auto-select: `min-spec` when installed RAM is < 16 GiB (covers ≤ 8 GB); `primary` otherwise. Override with `--profile primary` or `--profile min-spec`.
+
+**16:42:** the 8 GB Mac is the testing laptop. WATSON must fit and run on it on the 3B model (`llama3.2:3b`) within the min-spec targets. That is a **hard compatibility gate for every release**, whatever model is later chosen for 32 GB, not optional. The M3 gate is measured on the 8 GB Mac against min-spec.
+
+**16:43:** V1/POC stays on `llama3.2:3b` on both profiles. A larger model for the 32 GB primary profile is parked post-POC (`docs/ROADMAP.md`). Any future model must still pass the 8 GB min-spec gate on 3B.
 
 ## §14 #10 — llama.cpp vs MLX (packaged in-process default)
 
@@ -67,5 +71,5 @@ Record Ollama version and model digests this time (`ollama list --digest`).
 | Three-runtime comparison | The table in §14 #10. Owner: Watson Lead. |
 | Per-model RSS | Model-process RSS + eval-process `peak_rss_bytes`, not the 56–62 MiB Python client from M0-A. |
 | 50 hand-scored frames | Score `tests/fixtures/day_acme_q4/sample50.txt` by hand; fill `scoring.csv`. Schema-valid JSON on 5 frames is not this. |
-| True understanding < 20 s/**segment** | Time `complete()` on merged segment text + retrieval, not the per-frame M0-A proxy. |
+| True understanding latency /segment | Time `complete()` on merged segment text + retrieval, not the per-frame M0-A proxy. Min-spec (8 GB) p95 < 35 s; primary (32 GB) p95 < 20 s (§14 #9). |
 | Ollama version and model digests | Persist in the next `run.json`. |

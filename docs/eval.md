@@ -16,7 +16,7 @@ watson eval --mode replay --out /tmp/watson-eval
 
 Writes `/tmp/watson-eval/report.json` and `report.md`. Exit status is `1` if the pipeline gate fails (zero fixtures, missing/empty aggregate, hard 100%/0 regression, missing summary, empty/uncited narrative on a day with claims, or consolidation counts that change on a second run).
 
-`--strict` (and `--mode record`) also exit `1` when any §11.2 quality threshold is missed.
+`--strict` (and `--mode record`) also exit `1` when any §11.2 quality threshold is missed. With `--strict --measure-model`, understand p95 and worker+model peak are also checked against the active §11.4 profile (`--profile auto|primary|min-spec`; auto selects `min-spec` when installed RAM is < 16 GiB). The 8 GB Mac is the testing laptop; min-spec on `llama3.2:3b` is a **hard compatibility gate for every release** (Kieran 16:42). V1/POC stays on `llama3.2:3b` on both profiles (16:43). The M3 gate on the 8 GB Mac uses min-spec.
 
 Replay does not call Ollama and does not rewrite recordings after load.
 
@@ -35,17 +35,42 @@ cat /tmp/watson-eval-ollama/report.md
 
 `--mode record` writes recordings under `--out` (`recordings.json`) unless `--recordings` is set. It will not overwrite `tests/fixtures/eval/recordings.json` by default.
 
-The report includes **wall_seconds** and **peak_rss_bytes** of the Python eval process. That is client RSS, not Ollama model weights. Record both:
+The report is always written (`report.json` and `report.md`), including on abort, hold (`ConsolidationWait`), or a missing runtime. Partial per-day rows stay in `days` with `error` set; `failure_reason` names the exception.
 
-| Measurement | Where |
+### Latency
+
+`report.json` → `latency`:
+
+| Field | Meaning |
 |---|---|
-| Eval process wall time | `report.json` → `wall_seconds` |
-| Eval process peak RSS | `report.json` → `peak_rss_bytes` |
-| Ollama model RSS | Activity Monitor / `sample` on `ollama` while the run is in progress |
-| Combined worker+model RSS | sum of the two, against §11.4 worker peak RSS < 3 GB |
-| Understanding latency per segment | time `watson eval --only day_acme_q4` and divide by segment count |
+| `complete` / `embed` | per-call n, p50/p95/max seconds |
+| `understand_segment.per_segment_s` | one entry per segment that ran understanding |
+| `timeouts` | `/api/chat` or `/api/embed` calls that hit `intelligence.ollama.timeout_s` |
+
+§11.4 profiles (option A, 2026-11-02; 16:42/16:43): **min-spec** (8 GB testing Mac) understanding p95 < 35 s/segment; **primary** (32 GB) understanding p95 < 20 s/segment. V1/POC stays on `llama3.2:3b` on both. Min-spec on 3B is a hard every-release gate.
+
+### §11.4 worker peak RSS
+
+**Worker peak RSS** is the eval/worker process **plus** the resident model server, measured by Darwin **`phys_footprint`** (includes Metal/GPU allocations). Client `ru_maxrss` alone is not that number.
+
+```bash
+watson eval --mode record --runtime ollama \
+  --measure-model \
+  --out /tmp/watson-eval-ollama
+```
+
+`--measure-model` discovers `ollama` / `llama-server` PIDs and samples `phys_footprint` (via `footprint` on macOS, `VmRSS` on Linux) alongside the worker. `--rss-pid` adds an explicit PID (repeatable). The combined peak is `report.json` → `worker_plus_model_peak_bytes` (min-spec < 3.5 GB; primary < 3 GB). `worker_peak_bytes` is the eval/worker process alone. `peak_rss_bytes` remains the Python eval process `ru_maxrss`.
+
+Manual check on the V1 Mac while a run is in progress:
+
+```bash
+# llama-server / Ollama runner PID from Activity Monitor
+footprint -p <pid>    # look for phys_footprint
+```
 
 `intelligence.runtime` must stay `ollama`. Do not set `intelligence.runtime = "fake"` for this path.
+
+8 GB Ollama defaults: `context_window = 4096`, `intelligence.ollama.timeout_s = 300`, `num_predict = 768`, `unload_between_phases = true` (unload at understanding-chat → understanding-embed → consolidation → summary; one model resident). The understanding **v2** OCR cap is 4000 characters and new rows record `prompt_version = understanding/v2` with `pipeline_version = 2` (see `docs/config.md`). `report.json` holds metrics, ids, counts, timings, and hashes — never raw OCR, prompt bodies, or window titles.
 
 ## Thresholds
 

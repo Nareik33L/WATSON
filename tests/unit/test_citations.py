@@ -101,14 +101,31 @@ def test_verifier_scopes_to_day_and_pipeline_version() -> None:
             "claim_ids": [DAY_A, DAY_B, other_version["id"]],
         }
     ]
-    verified = verify_narrative(
-        paragraphs, scoped, working_day_id="day-a", pipeline_version=1
-    )
+    verified = verify_narrative(paragraphs, scoped, working_day_id="day-a", pipeline_version=1)
     assert f"[c:{DAY_A}]" in verified.narrative_md
     assert DAY_B not in verified.narrative_md
     assert other_version["id"] not in verified.narrative_md
     assert verified.claim_ids == (DAY_A,)
     assert verified.unverified == ()
+
+
+def test_all_uncited_narrative_falls_back_to_cited_claims() -> None:
+    paragraphs = [{"text": "The model cited nothing at all.", "claim_ids": []}]
+    verified = verify_narrative(paragraphs, list(CLAIMS))
+    assert verified.narrative_md
+    assert f"[c:{DAY_A}]" in verified.narrative_md
+    assert f"[c:{CLAIMS[1]['id']}]" in verified.narrative_md
+    assert citations_resolvable(verified.narrative_md, {DAY_A, CLAIMS[1]["id"]})
+    assert verified.unverified == ()
+
+
+def test_empty_narrative_without_claims_does_not_fallback() -> None:
+    """Fallback must not mint a body when the day has no claims (non-vacuous empty)."""
+    verified = verify_narrative([{"text": "", "claim_ids": []}], [])
+    assert verified.narrative_md == ""
+    assert verified.paragraphs == ()
+    assert verified.claim_ids == ()
+    assert citations_resolvable(verified.narrative_md, set()) is True
 
 
 def test_uncited_claims_go_to_unverified() -> None:

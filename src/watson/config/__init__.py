@@ -15,6 +15,7 @@ from watson.config.schema import (
     CaptureConfig,
     ExclusionsConfig,
     IntelligenceConfig,
+    OllamaClientConfig,
     RetentionConfig,
     WatsonConfig,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "ConfigError",
     "ExclusionsConfig",
     "IntelligenceConfig",
+    "OllamaClientConfig",
     "RetentionConfig",
     "WatsonConfig",
     "default_data_dir",

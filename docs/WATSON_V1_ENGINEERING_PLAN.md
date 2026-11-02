@@ -7,6 +7,8 @@
 
 **Changelog (2026-10-31):** M0-A bake-off (`docs/decisions/0001-m0a-8gb-runtime-and-models.md`) — §14 #1 is Ollama for V1.0 **dev**; llama.cpp-versus-MLX, per-model RSS and the 50 hand-scored frames move to M3 (Watson Lead); 16 GB fallback moves to V1.2 (§0.1). §7.1 package LLM class is ~3–4B on 8 GB (V1.0); ~7–9B is the V1.2 16 GB profile.
 
+**Changelog (2026-11-02):** §14 #9 option A (Kieran) — V1 keeps LLM consolidation. Two hardware profiles, same model: **primary** (32 GB target laptop) keeps original §11.4 understanding p95 < 20 s/segment and worker+model peak < 3 GB; **min-spec** (8 GB dev Mac) is p95 < 35 s and peak < 3.5 GB. Consolidation stays < 15 min on both. Strict decisions/commitments precision ≥ 0.85 on both. **16:42:** the 8 GB Mac is the testing laptop; WATSON must fit and run on it on the 3B model within min-spec targets. That is a **hard compatibility gate for every release**, whatever model is later chosen for 32 GB, not optional. **16:43:** V1/POC stays on `llama3.2:3b` on both profiles. A larger model for the 32 GB primary profile is parked post-POC (`docs/ROADMAP.md`).
+
 This document keeps the product definition, principles and non-goals of v1.1 unchanged. It revises *how* WATSON is built. The changes fall into four groups:
 
 1. **Privacy exposure is reduced by an order of magnitude** — frames are deleted minutes after capture rather than at end of day, only the frontmost window is captured by default, and extracted text is itself tiered and expiring.
@@ -391,7 +393,7 @@ Structured JSON logs. A `ContentField` wrapper marks any value derived from scre
 |---|---|---|---|
 | OCR | Swift Vision in helper | — | — |
 | Visual description | `VisionRuntime.describe(image, schema)` | Ollama (off on 8 GB, §0.1 / ADR 0001) | llama.cpp or MLX VLM, ~2–8B class (16 GB V1.2 profile) |
-| Understanding / consolidation / reports / Q&A | `LanguageRuntime.complete(messages, schema)` | Ollama, `llama3.2:3b` provisional (ADR 0001) | llama.cpp or MLX LLM; **~3–4B Q4** on 8 GB (V1.0, §0.1); ~7–9B Q4–Q5 is the 16 GB V1.2 profile |
+| Understanding / consolidation / reports / Q&A | `LanguageRuntime.complete(messages, schema)` | Ollama, `llama3.2:3b` on both profiles (Kieran 16:43; ADR 0001) | llama.cpp or MLX LLM; **~3–4B Q4** on 8 GB (V1.0, §0.1). A larger 32 GB model is parked post-POC. ~7–9B Q4–Q5 remains the 16 GB V1.2 profile. |
 | Embeddings | `EmbeddingRuntime.embed(texts)` | Ollama, `nomic-embed-text` (ADR 0001) | in-process small embedding model (≤ 0.5B on 8 GB) |
 
 The table names the current defaults from the M0-A bake-off (ADR 0001). Identifiers remain configuration because the local-model landscape still changes faster than this document.
@@ -543,9 +545,12 @@ Thresholds are targets for the chosen model at M3; they are adjusted with eviden
 
 Per frame: OCR time, VLM time; per day: consolidation time, peak RSS of worker, database growth; capture helper CPU over an hour.
 
-Targets on the **8 GB V1 machine**: helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled; understanding < 20 s/segment; consolidation < 15 min; worker peak RSS < 3 GB with only one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day.
+Two hardware profiles, **same model** on both (§14 #9). Helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled in V1.0; one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day; consolidation < 15 min.
 
-Targets for the **16 GB V1.2 profile**: as above plus VLM < 15 s/frame when used; consolidation < 10 min; worker peak RSS < 6 GB.
+- **Primary** (32 GB target laptop): understanding p95 < 20 s/segment; peak memory (worker plus model server, Darwin `phys_footprint`) < 3 GB.
+- **Minimum-spec** (8 GB development / testing Mac): understanding p95 < 35 s/segment; peak memory < 3.5 GB. The 8 GB Mac is the testing laptop. Fitting and running on it on the 3B model (`llama3.2:3b`) within these targets is a **hard compatibility gate for every release** (Kieran, 16:42), whatever model is later chosen for 32 GB. V1/POC stays on `llama3.2:3b` on both profiles (16:43). The M3 gate is measured on the 8 GB Mac against min-spec.
+
+Targets for the **16 GB V1.2 profile** (commercialisation, not the M3 eval profiles above): as the original 8 GB line plus VLM < 15 s/frame when used; consolidation < 10 min; worker peak RSS < 6 GB.
 
 ### 11.5 Manual dogfooding
 
@@ -645,14 +650,14 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 | # | Decision | Decide at |
 |---|---|---|
 | 1 | V1.0 **dev** runtime: Ollama | **Decided M0-A** — ADR 0001 |
-| 2 | Default VLM/LLM/embedding models and quantisations (8 GB) | **Provisional M0-A** — ADR 0001; quality gate M3 (§14 #9) |
+| 2 | Default VLM/LLM/embedding models and quantisations (8 GB) | **Partial (Kieran, 2026-11-02 16:43)** — V1/POC LLM is `llama3.2:3b` on both profiles (also §14 #9). Embeddings remain ADR 0001 provisional (`nomic-embed-text`); quality still measured at M3. A larger model for the 32 GB primary profile is parked post-POC. |
 | 3 | Swift helper vs PyObjC fallback | **DECIDED (Watson Lead, M0-B)** — Swift helper with ScreenCaptureKit + Vision, built with `swiftc` under Command Line Tools only (no Xcode), self-signed `WATSON Dev` identity; TCC grant stable across rebuilds. [`docs/results/m0b-capture-spike.md`](results/m0b-capture-spike.md), [`docs/results/m0b/artefacts.md`](results/m0b/artefacts.md) |
 | 4 | SQLCipher vs application-level column encryption | M1 |
 | 5 | Minimum macOS version (SCK screenshot API availability suggests 14+) | **DECIDED** — minimum macOS 14 (tested on 14.5); no required APIs missing. [`docs/results/m0b-capture-spike.md`](results/m0b-capture-spike.md), [`docs/results/m0b/artefacts.md`](results/m0b/artefacts.md) |
 | 6 | Whether to request Accessibility permission for browser URLs in V1, or defer | M5 |
 | 7 | Tier-2 text default TTL (7 days proposed) | M3, after seeing re-consolidation needs |
 | 8 | Dashboard framework details (HTMX vs plain fetch) | M1 |
-| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask WATSON | M3, from the `8gb` bench profile and §11.2 results |
+| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask WATSON | **DECIDED (Kieran, 2026-11-02 16:41, option A; 16:42; 16:43)** — V1 keeps LLM consolidation. **16:41:** two hardware profiles, same model. **Primary** (32 GB target laptop): original §11.4 understanding p95 < 20 s/segment, worker+model peak < 3 GB, one model resident, consolidation < 15 min. **Min-spec** (8 GB testing Mac): understanding p95 < 35 s/segment, peak < 3.5 GB, consolidation < 15 min. Strict decisions/commitments precision ≥ 0.85 on both. **16:42:** the 8 GB Mac is the testing laptop; WATSON must fit and run on it on the 3B model within min-spec. That is a **hard compatibility gate for every release**, whatever model is later chosen for 32 GB, not optional. **16:43:** V1/POC stays on `llama3.2:3b` on both profiles. A larger model for the 32 GB primary profile is parked post-POC. |
 | 10 | Package runtime: llama.cpp vs MLX (in-process default, D6) | **M3**, owner Watson Lead — not measured at M0-A |
 
 ---

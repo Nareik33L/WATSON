@@ -63,6 +63,7 @@ dev = [
     "httpx>=0.28.1",
     "mypy>=1.13",
     "pytest>=8.0",
+    "pytest-timeout>=2.4",
     "ruff>=0.8",
     "types-jsonschema>=4.26.0.20261006",
     {include-group = "bench"},
@@ -72,6 +73,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tools/bench", "tools/fixture_gen", "."]
+timeout = 120
 markers = [
     "fixture_regen: regenerate a fixture with Playwright Chromium and diff sidecars/truth",
 ]
@@ -88,6 +90,7 @@ packages = ["src/watson"]
 "tools/fixture_gen/watson_fixturegen" = "watson_fixturegen"
 "schemas/sidecar.schema.json" = "watson/data/sidecar.schema.json"
 "src/watson/intelligence/prompts/understanding/v1.md" = "watson/intelligence/prompts/understanding/v1.md"
+"src/watson/intelligence/prompts/understanding/v2.md" = "watson/intelligence/prompts/understanding/v2.md"
 "src/watson/intelligence/prompts/clustering/v1.md" = "watson/intelligence/prompts/clustering/v1.md"
 "src/watson/intelligence/prompts/day_extract/v1.md" = "watson/intelligence/prompts/day_extract/v1.md"
 "src/watson/intelligence/prompts/daily_summary/v1.md" = "watson/intelligence/prompts/daily_summary/v1.md"

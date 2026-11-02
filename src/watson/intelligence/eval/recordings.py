@@ -77,6 +77,11 @@ class RecordingRuntime:
         if callable(probe):
             probe()
 
+    def end_phase(self) -> None:
+        end = getattr(self.inner, "end_phase", None)
+        if callable(end):
+            end()
+
     def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
         self.complete_calls += 1
         blob = "\n".join(item["content"] for item in messages)
