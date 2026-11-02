@@ -7,7 +7,7 @@
   "commitments_recall": {"min": 0.7},
   "commitments_precision": {"min": 0.85},
   "unsupported_achievements": {"max": 0},
-  "duplicate_observation_rate": {"max_exclusive": 0.05},
+  "duplicate_observation_rate": {"max_exclusive": 0.05, "jaccard_min": 0.5},
   "noise_non_work_rate": {"min": 0.9},
   "claims_with_evidence": {"min": 1.0},
   "citations_resolvable": {"min": 1.0}

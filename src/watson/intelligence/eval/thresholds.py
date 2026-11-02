@@ -38,6 +38,17 @@ class Threshold:
         return "any"
 
 
+def load_duplicate_jaccard_min(path: Path | None = None) -> float:
+    """Minimum token-set Jaccard for a paraphrased adjacent duplicate."""
+    raw = json.loads((path or THRESHOLDS_PATH).read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("thresholds config must be a JSON object")
+    spec = raw.get("duplicate_observation_rate")
+    if not isinstance(spec, dict) or "jaccard_min" not in spec:
+        raise ValueError("duplicate_observation_rate.jaccard_min is required")
+    return float(spec["jaccard_min"])
+
+
 def load_thresholds(path: Path | None = None) -> dict[str, Threshold]:
     raw = json.loads((path or THRESHOLDS_PATH).read_text(encoding="utf-8"))
     if not isinstance(raw, dict):

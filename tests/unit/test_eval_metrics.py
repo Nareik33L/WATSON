@@ -8,10 +8,16 @@ from watson.intelligence.eval.metrics import (
     f1_score,
     precision,
     recall,
+    token_jaccard,
     unsupported_count,
 )
 from watson.intelligence.eval.run import DayEval, EvalReport, _aggregate
-from watson.intelligence.eval.thresholds import Threshold, gate_metrics, load_thresholds
+from watson.intelligence.eval.thresholds import (
+    Threshold,
+    gate_metrics,
+    load_duplicate_jaccard_min,
+    load_thresholds,
+)
 
 
 def test_empty_sets_score_perfect() -> None:
@@ -145,6 +151,75 @@ def test_duplicate_rate_revisit_after_other_window_is_zero() -> None:
 
 def test_duplicate_rate_empty_is_zero() -> None:
     assert duplicate_rate([]) == 0.0
+
+
+def test_duplicate_rate_ignores_different_app() -> None:
+    rows = [
+        _obs("2026-10-31T09:00:00Z", segment_id="a"),
+        _obs("2026-10-31T09:08:00Z", bundle="com.lumen.mail", segment_id="b"),
+    ]
+    assert duplicate_rate(rows) == 0.0
+
+
+def test_duplicate_rate_ignores_different_window() -> None:
+    rows = [
+        _obs("2026-10-31T09:00:00Z", segment_id="a"),
+        _obs(
+            "2026-10-31T09:08:00Z",
+            window="acme q4 proposal — notes",
+            segment_id="b",
+        ),
+    ]
+    assert duplicate_rate(rows) == 0.0
+
+
+def test_duplicate_rate_ignores_unrelated_text() -> None:
+    left = "Editing the Acme Q4 proposal draft."
+    right = "Checking the Lumen Desk inbox."
+    assert token_jaccard(left, right) < 0.5
+    rows = [
+        _obs("2026-10-31T09:00:00Z", description=left, segment_id="a"),
+        _obs("2026-10-31T09:08:00Z", description=right, segment_id="b"),
+    ]
+    assert duplicate_rate(rows) == 0.0
+
+
+def test_duplicate_rate_paraphrase_with_rotated_verb_counts() -> None:
+    left = "Editing the Acme Q4 proposal draft."
+    right = "Drafting the Acme Q4 proposal."
+    assert token_jaccard(left, right) >= 0.5
+    assert left.casefold().split()[0] != right.casefold().split()[0]
+    rows = [
+        _obs("2026-10-31T09:00:00Z", description=left, segment_id="a"),
+        _obs("2026-10-31T09:08:00Z", description=right, segment_id="b"),
+    ]
+    assert duplicate_rate(rows) == 0.5
+
+
+def test_duplicate_jaccard_boundary_is_inclusive() -> None:
+    assert load_duplicate_jaccard_min() == 0.5
+    at = ("alpha beta", "alpha beta gamma delta")
+    below = ("one two three four five", "one two three six seven")
+    assert token_jaccard(*at) == 0.5
+    assert token_jaccard(*below) < 0.5
+    assert (
+        duplicate_rate(
+            [
+                _obs("2026-10-31T09:00:00Z", description=at[0], segment_id="a"),
+                _obs("2026-10-31T09:08:00Z", description=at[1], segment_id="b"),
+            ]
+        )
+        == 0.5
+    )
+    assert (
+        duplicate_rate(
+            [
+                _obs("2026-10-31T09:00:00Z", description=below[0], segment_id="a"),
+                _obs("2026-10-31T09:08:00Z", description=below[1], segment_id="b"),
+            ]
+        )
+        == 0.0
+    )
 
 
 def test_parenthetical_people_match() -> None:

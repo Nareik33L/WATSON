@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 
+from watson.intelligence.eval.thresholds import load_duplicate_jaccard_min
+
 _PARENS = re.compile(r"\s*\([^)]*\)")
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
@@ -12,6 +14,18 @@ _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 def normalize(text: str) -> str:
     stripped = _PARENS.sub(" ", text.casefold())
     return " ".join(_NON_ALNUM.sub(" ", stripped).split())
+
+
+def token_set(text: str) -> set[str]:
+    return {part for part in normalize(text).split() if part}
+
+
+def token_jaccard(left: str, right: str) -> float:
+    """Token-set Jaccard after case/punctuation normalize. Empty vs empty is 0."""
+    first, second = token_set(left), token_set(right)
+    if not first or not second:
+        return 0.0
+    return len(first & second) / len(first | second)
 
 
 def names_match(predicted: str, truth: str) -> bool:
@@ -83,21 +97,18 @@ def unsupported_count(predicted_completed: list[str], truth_completed: list[str]
 
 
 def duplicate_rate(rows: Sequence[Mapping[str, str]]) -> float:
-    """§11.2 duplicate observations: over-segmentation, not revisits.
+    """§11.2 duplicate observations: over-segmentation, including paraphrase.
 
     An observation is a duplicate when it immediately follows another
     observation whose segment is adjacent in time, shares the same
-    ``bundle_id`` + ``window_title_norm``, and has an equivalent
-    description. That is the segmenter splitting one activity into two
-    and the model repeating itself.
-
-    A later revisit of the same window after a different app/window
-    does not count. Per-segment extras are not the metric:
-    ``observations`` is ``UNIQUE(segment_id, pipeline_version)``, so
-    that rate is always 0.
+    ``bundle_id`` AND ``window_title_norm``, AND has token-set Jaccard
+    >= ``duplicate_observation_rate.jaccard_min`` (0.5 in thresholds.json)
+    against the previous description. Rotating the first verb still
+    counts. A later revisit after a different app or window does not.
     """
     if not rows:
         return 0.0
+    minimum = load_duplicate_jaccard_min()
     ordered = sorted(
         rows,
         key=lambda row: (str(row.get("started_at") or ""), str(row.get("segment_id") or "")),
@@ -109,9 +120,9 @@ def duplicate_rate(rows: Sequence[Mapping[str, str]]) -> float:
         same_window = str(prev.get("window_title_norm") or "") == str(
             cur.get("window_title_norm") or ""
         )
-        same_text = names_match(
+        similar = token_jaccard(
             str(prev.get("description") or ""), str(cur.get("description") or "")
         )
-        if same_app and same_window and same_text:
+        if same_app and same_window and similar >= minimum:
             extras += 1
     return extras / len(ordered)
