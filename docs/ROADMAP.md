@@ -19,6 +19,13 @@ Each release has one question it must answer. Scope that does not help answer th
 5. Evidence-based: every statement WATSON repeats cites a claim with evidence.
 6. Nothing in a later release weakens a privacy guarantee made in an earlier one.
 7. Personal is bought once and never depends on a server to run or to read its own data.
+8. **8 GB min-spec is a hard compatibility gate for every release** (Kieran, 2026-11-02 16:42). The 8 GB Mac is the testing laptop. WATSON must fit and run on it on the 3B model (`llama3.2:3b`) within the min-spec §11.4 targets. This is not optional, whatever model is later chosen for the 32 GB primary profile.
+
+## Parked (post-POC)
+
+| Item | Notes |
+|---|---|
+| **Parked: larger model for 32 GB primary profile (post-POC)** | V1/POC stays on `llama3.2:3b` on both hardware profiles (plan §14 #9, Kieran 16:43). A larger model for the 32 GB primary profile is out of POC scope. Any future model must still pass the 8 GB min-spec gate on 3B (16:42). |
 
 ## Numbering note
 

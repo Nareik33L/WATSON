@@ -16,7 +16,7 @@ watson eval --mode replay --out /tmp/watson-eval
 
 Writes `/tmp/watson-eval/report.json` and `report.md`. Exit status is `1` if the pipeline gate fails (zero fixtures, missing/empty aggregate, hard 100%/0 regression, missing summary, empty/uncited narrative on a day with claims, or consolidation counts that change on a second run).
 
-`--strict` (and `--mode record`) also exit `1` when any §11.2 quality threshold is missed. With `--strict --measure-model`, understand p95 and worker+model peak are also checked against the active §11.4 profile (`--profile auto|primary|min-spec`; auto selects `min-spec` when installed RAM is < 16 GiB). The M3 gate on the 8 GB Mac uses min-spec. The model is the same on both profiles.
+`--strict` (and `--mode record`) also exit `1` when any §11.2 quality threshold is missed. With `--strict --measure-model`, understand p95 and worker+model peak are also checked against the active §11.4 profile (`--profile auto|primary|min-spec`; auto selects `min-spec` when installed RAM is < 16 GiB). The 8 GB Mac is the testing laptop; min-spec on `llama3.2:3b` is a **hard compatibility gate for every release** (Kieran 16:42). V1/POC stays on `llama3.2:3b` on both profiles (16:43). The M3 gate on the 8 GB Mac uses min-spec.
 
 Replay does not call Ollama and does not rewrite recordings after load.
 
@@ -47,7 +47,7 @@ The report is always written (`report.json` and `report.md`), including on abort
 | `understand_segment.per_segment_s` | one entry per segment that ran understanding |
 | `timeouts` | `/api/chat` or `/api/embed` calls that hit `intelligence.ollama.timeout_s` |
 
-§11.4 profiles (option A, 2026-11-02): **min-spec** (8 GB) understanding p95 < 35 s/segment; **primary** (32 GB) understanding p95 < 20 s/segment. Same model on both.
+§11.4 profiles (option A, 2026-11-02; 16:42/16:43): **min-spec** (8 GB testing Mac) understanding p95 < 35 s/segment; **primary** (32 GB) understanding p95 < 20 s/segment. V1/POC stays on `llama3.2:3b` on both. Min-spec on 3B is a hard every-release gate.
 
 ### §11.4 worker peak RSS
 

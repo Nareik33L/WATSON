@@ -263,6 +263,8 @@ Worker scheduling and memory governance with the LLM (sequential loading on 8 GB
 | 4 | Diarization in V2.0 and acceptable licensing/offline constraints | after V1.1 |
 | 5 | Supported maximum duration/size defaults | A1 benchmarks |
 
+**Parked: larger model for 32 GB primary profile (post-POC)** — not meetings scope; recorded here because it is a V1.1-era roadmap item. V1/POC stays on `llama3.2:3b` on both hardware profiles (plan §14 #9, Kieran 16:43). A larger model for the 32 GB primary profile is out of POC and out of V1.1. Any future model must still pass the 8 GB min-spec gate on 3B (16:42). Canonical entry: `docs/ROADMAP.md`.
+
 ## 12. Immediate next steps
 
 1. Add `meetings`, `meeting_participants`, `meeting_transcript_segments`, `meeting_summaries` and the `source_type`/`owner`/`start_ms` columns to the Rev 2 migration plan so screen and meeting sources share one schema from the start.
