@@ -55,6 +55,12 @@ class _ObservationCandidates:
 
 
 @dataclass(frozen=True)
+class EntityMergeTarget:
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
 class EntityDetail:
     id: str
     name: str
@@ -64,6 +70,7 @@ class EntityDetail:
     aliases: tuple[str, ...]
     claims: tuple[EntityClaimView, ...]
     deltas: tuple[EntityDeltaView, ...]
+    merge_targets: tuple[EntityMergeTarget, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,6 +116,9 @@ class EntityPage:
                 ],
                 "deltas": [
                     {"date": delta.date, "text": delta.text} for delta in self.selected.deltas
+                ],
+                "merge_targets": [
+                    {"id": item.id, "name": item.name} for item in self.selected.merge_targets
                 ],
             },
         }
@@ -162,6 +172,23 @@ def collect_entities(
             )
         )
     selected = details.get(entity_id) if entity_id else None
+    if selected is not None:
+        targets = tuple(
+            EntityMergeTarget(id=item.id, name=item.name)
+            for item in items
+            if item.id != selected.id
+        )
+        selected = EntityDetail(
+            id=selected.id,
+            name=selected.name,
+            entity_type=selected.entity_type,
+            description=selected.description,
+            provisional=selected.provisional,
+            aliases=selected.aliases,
+            claims=selected.claims,
+            deltas=selected.deltas,
+            merge_targets=targets,
+        )
     return EntityPage(
         entity_type=entity_type,
         heading=heading,

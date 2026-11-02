@@ -61,6 +61,7 @@ from watson.intelligence.schemas.consolidation import (
     DayExtractOutput,
 )
 from watson.intelligence.structured import complete_structured
+from watson.memory.corrections import apply_claim_corrections, rejected_claim_ids
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
@@ -649,7 +650,12 @@ def _replace_derived(
     now: datetime,
 ) -> dict[str, int]:
     observations = _load_observations(conn, working_day_id, settings.pipeline_version)
-    claims = _load_claims(conn, working_day_id, settings.pipeline_version)
+    claims = apply_claim_corrections(
+        conn,
+        _load_claims(conn, working_day_id, settings.pipeline_version),
+        working_day_id=working_day_id,
+        pipeline_version=settings.pipeline_version,
+    )
     cluster_prompt = load_prompt(CLUSTER_PROMPT_TASK, PROMPT_VERSION)
     extract_prompt = load_prompt(EXTRACT_PROMPT_TASK, PROMPT_VERSION)
     summary_prompt = load_prompt(SUMMARY_PROMPT_TASK, PROMPT_VERSION)
@@ -999,7 +1005,12 @@ def _insert_achievements(
     groups: dict[tuple[str | None, str], list[Any]] = {}
     order: list[tuple[str | None, str]] = []
     buckets: dict[str, str | None] = {}
+    skipped = rejected_claim_ids(
+        conn, working_day_id=working_day_id, pipeline_version=pipeline_version
+    )
     for row in rows:
+        if str(row["id"]) in skipped:
+            continue
         folded = _achievement_key(str(row["text"]))
         if not folded:
             continue

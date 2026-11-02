@@ -8,6 +8,7 @@ from tests.replay_support import TEST_KEY
 from watson.intelligence.resolver import cosine_similarity, normalize_alias, resolve_candidates
 from watson.intelligence.retrieve import retrieve_entity_context
 from watson.intelligence.runtime.fake import FakeRuntime
+from watson.memory.corrections import merge_entities
 from watson.memory.db import connect
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
@@ -212,6 +213,69 @@ def test_embedding_threshold_below_equals_and_tie_order(tmp_path: Path) -> None:
         )
         assert winner[0].entity_id == alpha
         assert winner[0].canonical_name == "Alpha"
+    finally:
+        conn.close()
+
+
+def _aliases(conn: object, entity_id: str) -> set[str]:
+    return {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT alias FROM entity_aliases WHERE entity_id = ?", (entity_id,)
+        )
+    }
+
+
+def test_resolver_skips_merged_source_and_does_not_attach(tmp_path: Path) -> None:
+    conn = _db(tmp_path)
+    try:
+        dest = _seed_entity(conn, typ="project", name="Zebra Deal")
+        source = _seed_entity(conn, typ="project", name="Acme", alias="OldAcme")
+        merge_entities(conn, source, dest)
+        source_aliases = _aliases(conn, source)
+        evidence_before = int(conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0])
+        runtime = FakeRuntime()
+        rows = resolve_candidates(
+            conn,
+            runtime,
+            project_candidates=["Acme", "OldAcme"],
+            people_candidates=[],
+        )
+        assert {row.entity_id for row in rows} == {dest}
+        assert all(row.created is False for row in rows)
+        cased = resolve_candidates(
+            conn,
+            runtime,
+            project_candidates=["ACME"],
+            people_candidates=[],
+        )
+        assert len(cased) == 1
+        assert cased[0].entity_id == dest
+        assert "ACME" not in _aliases(conn, source)
+        assert _aliases(conn, source) == source_aliases
+        assert {"Acme", "OldAcme"} <= _aliases(conn, dest)
+        embed = FakeRuntime(
+            recordings={
+                "embeddings": {
+                    "Acme": [1.0, 0.0, 0.0, 0.0],
+                    "Zebra Deal": [0.0, 1.0, 0.0, 0.0],
+                    "Almost Acme": [0.99, 0.01, 0.0, 0.0],
+                }
+            }
+        )
+        almost = resolve_candidates(
+            conn,
+            embed,
+            project_candidates=["Almost Acme"],
+            people_candidates=[],
+            threshold=0.8,
+        )
+        assert almost[0].entity_id != source
+        assert "Almost Acme" not in _aliases(conn, source)
+        assert (
+            int(conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0])
+            == evidence_before
+        )
     finally:
         conn.close()
 

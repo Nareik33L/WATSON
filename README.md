@@ -12,6 +12,7 @@ Requires Python 3.12 and [uv](https://docs.astral.sh/uv/).
 uv sync --group dev
 uv run watson --version
 uv run ruff check .
+uv run ruff format --check .
 uv run mypy src/watson
 uv run pytest
 ```

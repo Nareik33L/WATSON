@@ -139,6 +139,7 @@ def test_dashboard_pages_fit_1280px(data_dir: Path, key_provider: object) -> Non
         "/projects",
         f"/projects/{project_id}",
         "/people",
+        "/memory",
         "/days?date=2026-10-31",
     )
     for path in paths:

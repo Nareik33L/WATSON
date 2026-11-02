@@ -39,6 +39,27 @@
     none
     {% endif %}
   </p>
+  <div class="claim-actions">
+    <form method="post" action="/entities/{{ entities.selected.id }}/rename" class="correct-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="text" name="new_text" maxlength="2000" aria-label="new name" value="{{ entities.selected.name }}">
+      <button type="submit">Rename</button>
+    </form>
+    {% if entities.selected.merge_targets %}
+    <form method="post" action="/entities/{{ entities.selected.id }}/merge" class="correct-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        <span class="label">merge into</span>
+        <select name="into_id">
+          {% for target in entities.selected.merge_targets %}
+          <option value="{{ target.id }}">{{ target.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Merge</button>
+    </form>
+    {% endif %}
+  </div>
 </section>
 
 {% if entities.selected.deltas %}

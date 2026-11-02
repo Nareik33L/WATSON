@@ -1,0 +1,65 @@
+<section>
+  <h2>Memory</h2>
+  {% if memory is none or memory.date is none %}
+  <p>no claims</p>
+  {% else %}
+  <form method="get" action="/memory" class="day-picker">
+    <label>
+      <span class="label">date</span>
+      <select name="date" hx-get="/memory" hx-target="#memory-root" hx-swap="innerHTML" hx-push-url="true">
+        {% for choice in memory.choices %}
+        <option value="{{ choice.date }}" {% if choice.date == memory.date %}selected{% endif %}>
+          {{ choice.date }} ({{ choice.state }})
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  {% if not memory.claims %}
+  <p>no claims</p>
+  {% else %}
+  <ul class="claims">
+    {% for item in memory.claims %}
+    <li id="claim-{{ item.id }}">
+      <p>
+        <a href="/days?date={{ item.date }}">{{ item.date }}</a>
+        <span class="mono">[c:{{ item.id }}]</span>
+        {{ item.kind }}/<span class="badge badge-{{ item.assertion }}">{{ item.assertion }}</span>
+        — {{ item.text }}
+      </p>
+      {% if item.text != item.original_text %}
+      <p><span class="label">original</span> {{ item.original_text }}</p>
+      {% endif %}
+      {% if item.quotes %}
+      <ul>
+        {% for quote in item.quotes %}
+        <li>{{ quote }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <div class="claim-actions">
+        <form method="post" action="/claims/{{ item.id }}/feedback">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" name="action" value="confirm">Confirm</button>
+        </form>
+        <form method="post" action="/claims/{{ item.id }}/feedback">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" name="action" value="reject">Reject</button>
+        </form>
+        <form method="post" action="/claims/{{ item.id }}/feedback">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" name="action" value="not_work">not work</button>
+        </form>
+        <form method="post" action="/claims/{{ item.id }}/feedback" class="correct-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="correct">
+          <input type="text" name="new_text" maxlength="2000" aria-label="corrected text" value="{{ item.text }}">
+          <button type="submit">Correct</button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endif %}
+</section>

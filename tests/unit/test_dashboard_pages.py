@@ -204,7 +204,7 @@ def _db_fingerprint(conn: object) -> dict[str, tuple[int, str]]:
 def test_new_pages_require_auth() -> None:
     app = create_app(token=INSTALL_TOKEN, config=load_config(), port=8000)
     client = TestClient(app, base_url=ORIGIN)
-    for path in ("/history", "/projects", "/people"):
+    for path in ("/history", "/projects", "/people", "/memory"):
         page = client.get(path, follow_redirects=False)
         assert page.status_code == 303, path
         assert page.headers["location"] == "/auth"
@@ -216,6 +216,7 @@ def test_css_is_usable_at_1280px() -> None:
     assert "flex-wrap: wrap" in CSS
     assert ".table-wrap" in CSS
     assert "table-layout: fixed" in CSS
+    assert ".claim-actions" in CSS
 
 
 def test_today_shows_observations_and_summary(data_dir: Path, key_provider: object) -> None:
@@ -382,9 +383,11 @@ def test_projects_and_people_are_separate_read_only(data_dir: Path, key_provider
     unknown = client.get("/people/no-such-person")
     assert unknown.status_code == 404
     assert "not found" in unknown.text
-    assert 'method="post"' not in detail.text.lower()
-    assert 'method="post"' not in person.text.lower()
+    assert 'method="post"' in detail.text.lower()
+    assert "/entities/" in detail.text
+    assert 'method="post"' in person.text.lower()
     assert 'method="post"' not in people.text.lower()
+    assert 'method="post"' not in projects.text.lower()
 
 
 def test_entity_links_ignore_other_pipeline_version(data_dir: Path, key_provider: object) -> None:
@@ -517,6 +520,7 @@ def test_pages_escape_hostile_text(data_dir: Path, key_provider: object) -> None
         client.get("/history").text,
         client.get("/projects").text,
         client.get(f"/projects/{project_id}").text,
+        client.get("/memory").text,
     ]
     joined = "\n".join(bodies)
     assert "<script>" not in joined
@@ -544,10 +548,12 @@ def test_nav_lists_m4a_pages(data_dir: Path, key_provider: object) -> None:
     assert 'href="/projects"' in page.text
     assert 'href="/people"' in page.text
     assert 'href="/today"' in page.text
+    assert 'href="/memory"' in page.text
     assert "no working days" in client.get("/history").text
     assert "no projects" in client.get("/projects").text
     assert "no people" in client.get("/people").text
     assert "no working day" in client.get("/today").text
+    assert "no claims" in client.get("/memory").text
     assert "capture-state" in page.text
 
 
@@ -574,15 +580,30 @@ def test_m4a_gets_do_not_write_and_mutations_are_405(data_dir: Path, key_provide
             assertion="observed",
             text="Edited the Acme draft",
         )
-        _insert_entity(conn, name="Acme Q4 Proposal", typ="project")
-        _insert_entity(conn, name="Priya Natarajan", typ="person")
+        project_id = _insert_entity(conn, name="Acme Q4 Proposal", typ="project")
+        person_id = _insert_entity(conn, name="Priya Natarajan", typ="person")
         before = _db_fingerprint(conn)
     finally:
         conn.close()
 
     client = _client()
     csrf = _csrf(client.get("/today").text)
-    paths = ("/today", "/history", "/projects", "/people")
+    paths = (
+        "/today",
+        "/history",
+        "/projects",
+        "/people",
+        f"/projects/{project_id}",
+        f"/people/{person_id}",
+        "/api/status",
+        "/api/today",
+        "/api/history",
+        "/api/entities?type=project",
+        "/api/entities?type=person",
+        f"/api/entities?type=project&id={project_id}",
+        "/memory",
+        "/api/claims",
+    )
     for path in paths:
         page = client.get(path)
         assert page.status_code == 200, path

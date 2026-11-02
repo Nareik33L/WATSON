@@ -6,6 +6,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -31,11 +32,19 @@ from watson.dashboard.auth import (
     tokens_equal,
 )
 from watson.dashboard.bind import DEFAULT_PORT
+from watson.memory.corrections import (
+    CorrectionError,
+    merge_entities,
+    record_claim_correction,
+    rename_entity,
+)
 from watson.memory.db import DatabaseError, connect
 from watson.memory.keys import KeyProviderError, get_key_provider
 from watson.pipeline.day_page import DayPage, collect_day_page
 from watson.pipeline.entities_page import EntityPage, EntityType, collect_entities
+from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.history import HistoryPage, collect_history
+from watson.pipeline.memory_page import MemoryPage, collect_memory, memory_claim
 from watson.pipeline.status import StatusReport, collect_status
 from watson.pipeline.today import TodayReport, collect_today
 
@@ -83,11 +92,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if origin is None or origin == "":
                 return _secure(HTMLResponse("missing origin", status_code=400))
-            form_csrf = await _form_csrf(request)
-            if not csrf_matches(request, session) and not (
-                form_csrf is not None and tokens_equal(form_csrf, session.csrf)
-            ):
-                return _secure(HTMLResponse("csrf", status_code=403))
+            if not csrf_matches(request, session):
+                form_csrf = await _form_csrf(request)
+                if form_csrf is None or not tokens_equal(form_csrf, session.csrf):
+                    return _secure(HTMLResponse("csrf", status_code=403))
 
         request.state.session = session
         return _secure(await call_next(request))
@@ -200,6 +208,47 @@ def create_app(
     async def people_page(request: Request, entity_id: str | None = None) -> Response:
         return _render(request, "entities.html", entity_type="person", entity_id=entity_id)
 
+    @app.get("/memory", response_class=HTMLResponse)
+    async def memory_page(request: Request, date: str | None = None) -> Response:
+        return _render(request, "memory.html", date=date)
+
+    @app.get("/memory/partial", response_class=HTMLResponse)
+    async def memory_partial(request: Request, date: str | None = None) -> Response:
+        return _render(request, "memory_partial.html", date=date)
+
+    @app.post("/claims/{claim_id}/feedback", response_class=HTMLResponse)
+    async def claim_feedback(request: Request, claim_id: str) -> Response:
+        try:
+            date = await _claim_feedback(request, claim_id)
+        except CorrectionError as exc:
+            return HTMLResponse(str(exc), status_code=exc.status_code)
+        if _is_htmx(request):
+            return _render(request, "memory_partial.html", date=date)
+        target = f"/memory?date={date}" if date else "/memory"
+        return RedirectResponse(target, status_code=303)
+
+    @app.post("/entities/{entity_id}/rename", response_class=HTMLResponse)
+    async def entity_rename(request: Request, entity_id: str) -> Response:
+        try:
+            dest = await _entity_rename(request, entity_id)
+        except CorrectionError as exc:
+            return HTMLResponse(str(exc), status_code=exc.status_code)
+        path = _entity_path(dest[0])
+        if _is_htmx(request):
+            return _render(request, "entities.html", entity_type=dest[0], entity_id=dest[1])
+        return RedirectResponse(f"/{path}/{dest[1]}", status_code=303)
+
+    @app.post("/entities/{entity_id}/merge", response_class=HTMLResponse)
+    async def entity_merge(request: Request, entity_id: str) -> Response:
+        try:
+            dest = await _entity_merge(request, entity_id)
+        except CorrectionError as exc:
+            return HTMLResponse(str(exc), status_code=exc.status_code)
+        path = _entity_path(dest[0])
+        if _is_htmx(request):
+            return _render(request, "entities.html", entity_type=dest[0], entity_id=dest[1])
+        return RedirectResponse(f"/{path}/{dest[1]}", status_code=303)
+
     @app.get("/api/status")
     async def api_status(request: Request) -> JSONResponse:
         return JSONResponse(_report(request).as_dict())
@@ -222,6 +271,43 @@ def create_app(
             return JSONResponse({"error": "type must be project or person"}, status_code=400)
         return JSONResponse(_entities(request, entity_type, entity_id).as_dict())
 
+    @app.get("/api/claims")
+    async def api_claims(
+        request: Request,
+        date: str | None = None,
+        claim_id: str | None = Query(None, alias="id"),
+    ) -> JSONResponse:
+        if claim_id:
+            item = _one_claim(request, claim_id)
+            if item is None:
+                return JSONResponse({"error": "claim not found"}, status_code=404)
+            return JSONResponse(item)
+        return JSONResponse(_memory(request, date).as_dict())
+
+    @app.post("/api/claims/{claim_id}/feedback")
+    async def api_claim_feedback(request: Request, claim_id: str) -> JSONResponse:
+        try:
+            date = await _claim_feedback(request, claim_id, json_body=True)
+        except CorrectionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+        return JSONResponse({"ok": True, "date": date})
+
+    @app.post("/api/entities/{entity_id}/rename")
+    async def api_entity_rename(request: Request, entity_id: str) -> JSONResponse:
+        try:
+            dest = await _entity_rename(request, entity_id, json_body=True)
+        except CorrectionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+        return JSONResponse({"ok": True, "id": dest[1], "type": dest[0]})
+
+    @app.post("/api/entities/{entity_id}/merge")
+    async def api_entity_merge(request: Request, entity_id: str) -> JSONResponse:
+        try:
+            dest = await _entity_merge(request, entity_id, json_body=True)
+        except CorrectionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+        return JSONResponse({"ok": True, "id": dest[1], "type": dest[0]})
+
     return app
 
 
@@ -238,6 +324,7 @@ def _render(
     today = _today(request) if "today" in template_name else None
     day = _day(request, date) if "days" in template_name else None
     history = _history(request) if "history" in template_name else None
+    memory = _memory(request, date) if "memory" in template_name else None
     entities = (
         _entities(request, entity_type, entity_id) if entity_type in {"project", "person"} else None
     )
@@ -252,6 +339,7 @@ def _render(
             "today": today,
             "day": day,
             "history": history,
+            "memory": memory,
             "entities": entities,
             "entity_id": entity_id,
             "csrf_token": session.csrf,
@@ -419,6 +507,151 @@ def _entities(request: Request, entity_type: str | None, entity_id: str | None) 
         conn.close()
 
 
+def _memory(request: Request, date: str | None) -> MemoryPage:
+    conn = _conn(request)
+    if conn is None:
+        return MemoryPage(date=date, working_day_id=None, choices=(), claims=())
+    try:
+        return collect_memory(conn, date=date)
+    except (DatabaseError, sqlcipher.DatabaseError):
+        return MemoryPage(date=date, working_day_id=None, choices=(), claims=())
+    finally:
+        conn.close()
+
+
+def _one_claim(request: Request, claim_id: str) -> dict[str, Any] | None:
+    conn = _conn(request)
+    if conn is None:
+        return None
+    try:
+        item = memory_claim(conn, claim_id)
+        if item is None:
+            return None
+        return {
+            "id": item.id,
+            "date": item.date,
+            "kind": item.kind,
+            "original_assertion": item.original_assertion,
+            "assertion": item.assertion,
+            "original_text": item.original_text,
+            "text": item.text,
+            "quotes": list(item.quotes),
+            "action": item.action,
+        }
+    except (DatabaseError, sqlcipher.DatabaseError):
+        return None
+    finally:
+        conn.close()
+
+
+async def _claim_feedback(
+    request: Request, claim_id: str, *, json_body: bool = False
+) -> str | None:
+    action, new_text = await _mutation_fields(request, json_body=json_body)
+    conn = _conn(request)
+    if conn is None:
+        raise CorrectionError("database unavailable")
+    try:
+        correction = record_claim_correction(
+            conn,
+            claim_id,
+            action,
+            new_text=new_text,
+            pipeline_version=PIPELINE_VERSION,
+        )
+        if correction.working_day_id is None:
+            return None
+        return _date_for_day(conn, correction.working_day_id)
+    except (DatabaseError, sqlcipher.DatabaseError) as exc:
+        raise CorrectionError("database unavailable") from exc
+    finally:
+        conn.close()
+
+
+async def _entity_rename(
+    request: Request, entity_id: str, *, json_body: bool = False
+) -> tuple[str, str]:
+    _action, new_text = await _mutation_fields(request, json_body=json_body, name="new_text")
+    conn = _conn(request)
+    if conn is None:
+        raise CorrectionError("database unavailable")
+    try:
+        rename_entity(conn, entity_id, new_text or "", pipeline_version=PIPELINE_VERSION)
+        return _entity_type_and_id(conn, entity_id)
+    except (DatabaseError, sqlcipher.DatabaseError) as exc:
+        raise CorrectionError("database unavailable") from exc
+    finally:
+        conn.close()
+
+
+async def _entity_merge(
+    request: Request, entity_id: str, *, json_body: bool = False
+) -> tuple[str, str]:
+    _action, into_id = await _mutation_fields(request, json_body=json_body, name="into_id")
+    if not into_id:
+        raise CorrectionError("merge requires into_id")
+    conn = _conn(request)
+    if conn is None:
+        raise CorrectionError("database unavailable")
+    try:
+        merge_entities(conn, entity_id, into_id, pipeline_version=PIPELINE_VERSION)
+        return _entity_type_and_id(conn, into_id)
+    except (DatabaseError, sqlcipher.DatabaseError) as exc:
+        raise CorrectionError("database unavailable") from exc
+    finally:
+        conn.close()
+
+
+async def _mutation_fields(
+    request: Request,
+    *,
+    json_body: bool,
+    name: str = "new_text",
+) -> tuple[str, str | None]:
+    if json_body:
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise CorrectionError("invalid json") from exc
+        if not isinstance(payload, dict):
+            raise CorrectionError("invalid json")
+        action = str(payload.get("action") or "")
+        raw = payload.get(name)
+        if raw is None and name == "new_text":
+            raw = payload.get("new_text")
+        if raw is None and name == "into_id":
+            raw = payload.get("into_id") or payload.get("new_text")
+        text = None if raw is None else str(raw)
+        return action, text
+    cached = request.scope.get("watson_form")
+    form = cached if cached is not None else await request.form()
+    action = str(form.get("action") or "")
+    raw = form.get(name)
+    if raw is None and name == "into_id":
+        raw = form.get("into_id")
+    text = raw if isinstance(raw, str) else None
+    return action, text
+
+
+def _date_for_day(conn: sqlcipher.Connection, working_day_id: str) -> str | None:
+    row = conn.execute("SELECT date FROM working_days WHERE id = ?", (working_day_id,)).fetchone()
+    return None if row is None else str(row["date"])
+
+
+def _entity_type_and_id(conn: sqlcipher.Connection, entity_id: str) -> tuple[str, str]:
+    row = conn.execute("SELECT type FROM entities WHERE id = ?", (entity_id,)).fetchone()
+    if row is None:
+        raise CorrectionError("entity not found", status_code=404)
+    kind = str(row["type"])
+    if kind not in {"project", "person"}:
+        raise CorrectionError("entity not found", status_code=404)
+    return kind, entity_id
+
+
+def _entity_path(entity_type: str) -> str:
+    return "people" if entity_type == "person" else "projects"
+
+
 def _conn(request: Request) -> sqlcipher.Connection | None:
     config = getattr(request.app.state, "config", None)
     if config is None or not config.db_path.is_file():
@@ -447,6 +680,7 @@ async def _form_csrf(request: Request) -> str | None:
     if not content_type.startswith("application/x-www-form-urlencoded"):
         return None
     form = await request.form()
+    request.scope["watson_form"] = form
     value = form.get(CSRF_FORM_FIELD)
     return value if isinstance(value, str) else None
 
