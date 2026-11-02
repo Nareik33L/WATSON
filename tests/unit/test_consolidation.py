@@ -25,6 +25,7 @@ from watson.pipeline.consolidation import (
     ConsolidationWait,
     _achievement_key,
     _insert_achievements,
+    _project_bucket,
     _understand_jobs_for_day,
     catch_up_on_launch,
     consolidate_idempotency_key,
@@ -178,8 +179,9 @@ def _insert_claim(
     evidence: bool = True,
     pipeline_version: int = 1,
     snippet: str = "Still editing: Acme proposal appendix",
+    created_at: str = "2026-10-31T10:00:00Z",
 ) -> str:
-    claim_id, stamp = new_id(), "2026-10-31T10:00:00Z"
+    claim_id, stamp = new_id(), created_at
     conn.execute(
         """
         INSERT INTO claims (
@@ -471,6 +473,7 @@ def _insert_eligible_achievement(
         text=text,
         pipeline_version=pipeline_version,
         snippet=snippet or text,
+        created_at=captured_at,
     )
 
 
@@ -607,6 +610,202 @@ def test_same_text_in_same_project_merges(tmp_path: Path) -> None:
         rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
         assert len(rows) == 1
         assert _candidate_links(conn, str(rows[0]["id"])) == {first, second}
+    finally:
+        conn.close()
+
+
+def _null_and_resolved_same_text(conn: object, *, null_first: bool) -> tuple[str, str, str]:
+    day_id = _insert_day(conn)
+    _insert_entity(conn, name="Acme Q4 Proposal")
+    text = "Section 3 published."
+    null_at = "2026-10-31T09:00:00Z" if null_first else "2026-10-31T09:01:00Z"
+    project_at = "2026-10-31T09:01:00Z" if null_first else "2026-10-31T09:00:00Z"
+    null_id = _insert_eligible_achievement(conn, day_id, text=text, captured_at=null_at)
+    project_id = _insert_eligible_achievement(
+        conn,
+        day_id,
+        text=text,
+        project_candidates=["Acme Q4 Proposal"],
+        captured_at=project_at,
+    )
+    _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+    conn.commit()
+    return null_id, project_id, day_id
+
+
+def _assert_separate_candidates(conn: object, *claim_ids: str) -> None:
+    rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
+    assert len(rows) == len(claim_ids)
+    link_sets = {frozenset(_candidate_links(conn, str(row["id"]))) for row in rows}
+    assert link_sets == {frozenset({claim_id}) for claim_id in claim_ids}
+
+
+def test_null_then_resolved_project_same_text_does_not_merge(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        null_id, project_id, _ = _null_and_resolved_same_text(conn, null_first=True)
+        _assert_separate_candidates(conn, null_id, project_id)
+    finally:
+        conn.close()
+
+
+def test_resolved_then_null_project_same_text_does_not_merge(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        null_id, project_id, _ = _null_and_resolved_same_text(conn, null_first=False)
+        _assert_separate_candidates(conn, null_id, project_id)
+    finally:
+        conn.close()
+
+
+def test_unresolved_project_name_falls_back_to_null_bucket(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _insert_entity(conn, name="Acme Q4 Proposal")
+        text = "Section 3 published."
+        unresolved = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Ghost Project"],
+            captured_at="2026-10-31T09:00:00Z",
+        )
+        null_bucket = _insert_eligible_achievement(
+            conn, day_id, text=text, captured_at="2026-10-31T09:01:00Z"
+        )
+        other_unresolved = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Also Missing"],
+            captured_at="2026-10-31T09:02:00Z",
+        )
+        resolved = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:03:00Z",
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
+        assert len(rows) == 2
+        link_sets = {frozenset(_candidate_links(conn, str(row["id"]))) for row in rows}
+        assert link_sets == {
+            frozenset({unresolved, null_bucket, other_unresolved}),
+            frozenset({resolved}),
+        }
+    finally:
+        conn.close()
+
+
+def test_first_resolved_project_wins_not_the_last(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _insert_entity(conn, name="Acme Q4 Proposal")
+        _insert_entity(conn, name="Onboarding Guide")
+        text = "Section 3 published."
+        both = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal", "Onboarding Guide"],
+            captured_at="2026-10-31T09:00:00Z",
+        )
+        first_only = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:01:00Z",
+        )
+        last_only = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Onboarding Guide"],
+            captured_at="2026-10-31T09:02:00Z",
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
+        assert len(rows) == 2
+        link_sets = {frozenset(_candidate_links(conn, str(row["id"]))) for row in rows}
+        assert link_sets == {frozenset({both, first_only}), frozenset({last_only})}
+    finally:
+        conn.close()
+
+
+def test_later_resolved_project_used_when_first_name_is_unresolved(
+    tmp_path: Path,
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _insert_entity(conn, name="Acme Q4 Proposal")
+        text = "Section 3 published."
+        skipped_then_acme = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Ghost Project", "Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:00:00Z",
+        )
+        acme_only = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:01:00Z",
+        )
+        null_bucket = _insert_eligible_achievement(
+            conn, day_id, text=text, captured_at="2026-10-31T09:02:00Z"
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
+        assert len(rows) == 2
+        link_sets = {frozenset(_candidate_links(conn, str(row["id"]))) for row in rows}
+        assert link_sets == {
+            frozenset({skipped_then_acme, acme_only}),
+            frozenset({null_bucket}),
+        }
+    finally:
+        conn.close()
+
+
+def test_project_bucket_first_resolved_else_null(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        acme = _insert_entity(conn, name="Acme Q4 Proposal")
+        onboarding = _insert_entity(conn, name="Onboarding Guide")
+        assert _project_bucket(conn, "{}") is None
+        assert _project_bucket(conn, json.dumps({"project_candidates": []})) is None
+        assert _project_bucket(conn, json.dumps({"project_candidates": ["Ghost Project"]})) is None
+        assert (
+            _project_bucket(
+                conn,
+                json.dumps({"project_candidates": ["Acme Q4 Proposal", "Onboarding Guide"]}),
+            )
+            == acme
+        )
+        assert (
+            _project_bucket(
+                conn,
+                json.dumps({"project_candidates": ["Onboarding Guide", "Acme Q4 Proposal"]}),
+            )
+            == onboarding
+        )
+        assert (
+            _project_bucket(
+                conn,
+                json.dumps({"project_candidates": ["Ghost Project", "Acme Q4 Proposal"]}),
+            )
+            == acme
+        )
     finally:
         conn.close()
 
