@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
-from watson.intelligence.eval.run import DayEval, EvalReport
+from watson.intelligence.eval.run import DayEval, EvalReport, _completed_without_kill
 from watson.intelligence.eval.thresholds import (
+    HEADROOM_PEAK_BYTES,
+    HEADROOM_UNDERSTAND_P95_S,
     MIN_SPEC_RAM_LIMIT_BYTES,
-    THRESHOLDS_PATH,
     gate_metrics,
     gate_profile,
+    headroom_status,
     load_profile_thresholds,
     load_thresholds,
     select_eval_profile,
@@ -21,6 +20,8 @@ from watson.intelligence.eval.thresholds import (
 GIB = 1024**3
 THREE_GB = 3 * GIB
 THREE_FIVE_GB = int(3.5 * GIB)
+THREE_THREE_GB = int(3.3 * GIB)
+OK_CONSOLIDATE_S = 1.0
 
 
 def _metrics() -> dict[str, float]:
@@ -70,47 +71,62 @@ def test_profile_override_wins_over_ram() -> None:
     assert select_eval_profile("min-spec", ram_bytes=32 * GIB) == "min-spec"
 
 
-def test_min_spec_p95_boundary() -> None:
-    under = gate_profile(
-        understand_p95_s=34.999,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+def test_min_spec_records_p95_and_peak_without_gating() -> None:
+    """Min-spec p95 / peak are reported, not gated (Kieran 21:53)."""
+    slow = gate_profile(
+        understand_p95_s=120.0,
+        worker_plus_model_peak_bytes=8 * GIB,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
         profile="min-spec",
     )
-    at = gate_profile(
-        understand_p95_s=35.0,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
-        profile="min-spec",
-    )
-    assert under["passed"] is True
-    assert at["passed"] is False
-    assert "understand_p95_s" in at["failures"]
+    assert slow["passed"] is True
+    assert slow["failures"] == []
+    assert "understand_p95_s" not in load_profile_thresholds()["min-spec"]
+    assert "worker_plus_model_peak_bytes" not in load_profile_thresholds()["min-spec"]
 
 
-def test_min_spec_peak_memory_boundary() -> None:
-    under = gate_profile(
+def test_min_spec_completed_without_kill_gate() -> None:
+    ok = gate_profile(
+        understand_p95_s=40.0,
+        worker_plus_model_peak_bytes=8 * GIB,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
+        profile="min-spec",
+    )
+    dead = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=0.0,
         profile="min-spec",
     )
-    at = gate_profile(
+    missing = gate_profile(
         understand_p95_s=10.0,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
-    assert under["passed"] is True
-    assert at["passed"] is False
-    assert "worker_plus_model_peak_bytes" in at["failures"]
+    assert ok["passed"] is True
+    assert dead["passed"] is False
+    assert "completed_without_kill" in dead["failures"]
+    assert missing["passed"] is False
+    assert "completed_without_kill" in missing["failures"]
 
 
 def test_primary_p95_boundary() -> None:
     under = gate_profile(
         understand_p95_s=19.999,
         worker_plus_model_peak_bytes=THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
         profile="primary",
     )
     at = gate_profile(
         understand_p95_s=20.0,
         worker_plus_model_peak_bytes=THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
         profile="primary",
     )
     assert under["passed"] is True
@@ -122,11 +138,15 @@ def test_primary_peak_memory_boundary() -> None:
     under = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
         profile="primary",
     )
     at = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=THREE_GB,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
         profile="primary",
     )
     assert under["passed"] is True
@@ -140,6 +160,8 @@ def test_strict_measure_model_uses_profile_gate() -> None:
     profile_gate = gate_profile(
         understand_p95_s=35.0,
         worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=0.0,
         profile="min-spec",
     )
     report = EvalReport(
@@ -171,28 +193,46 @@ def _ok_peak(profile: str) -> int:
     return (THREE_GB if profile == "primary" else THREE_FIVE_GB) - 1
 
 
-@pytest.mark.parametrize("profile", ["primary", "min-spec"])
-def test_profile_gate_fails_closed_on_missing_p95(profile: str) -> None:
-    """PR5: None / missing understand p95 must fail the gate, never pass."""
+def test_profile_gate_fails_closed_on_missing_p95() -> None:
+    """Primary still fail-closes on missing understand p95. Min-spec does not gate it."""
     none = gate_profile(
         understand_p95_s=None,
-        worker_plus_model_peak_bytes=_ok_peak(profile),
-        profile=profile,
+        worker_plus_model_peak_bytes=_ok_peak("primary"),
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
+        profile="primary",
     )
     assert none["passed"] is False
     assert "understand_p95_s" in none["failures"]
+    min_spec = gate_profile(
+        understand_p95_s=None,
+        worker_plus_model_peak_bytes=_ok_peak("min-spec"),
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
+        profile="min-spec",
+    )
+    assert min_spec["passed"] is True
 
 
-@pytest.mark.parametrize("profile", ["primary", "min-spec"])
-def test_profile_gate_fails_closed_on_missing_peak_memory(profile: str) -> None:
-    """PR5: None / missing worker+model peak must fail the gate, never pass."""
+def test_profile_gate_fails_closed_on_missing_peak_memory() -> None:
+    """Primary still fail-closes on missing worker+model peak. Min-spec does not gate it."""
     none = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=None,
-        profile=profile,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
+        profile="primary",
     )
     assert none["passed"] is False
     assert "worker_plus_model_peak_bytes" in none["failures"]
+    min_spec = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=None,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
+        profile="min-spec",
+    )
+    assert min_spec["passed"] is True
 
 
 @pytest.mark.parametrize("profile", ["primary", "min-spec"])
@@ -218,8 +258,13 @@ def test_strict_measure_model_fails_closed_on_missing_profile_measurements(
         measure_model=True,
     )
     assert profile_gate["passed"] is False
-    assert "understand_p95_s" in profile_gate["failures"]
-    assert "worker_plus_model_peak_bytes" in profile_gate["failures"]
+    if profile == "primary":
+        assert "understand_p95_s" in profile_gate["failures"]
+        assert "worker_plus_model_peak_bytes" in profile_gate["failures"]
+    else:
+        assert "completed_without_kill" in profile_gate["failures"]
+        assert "understand_p95_s" not in profile_gate["failures"]
+        assert "worker_plus_model_peak_bytes" not in profile_gate["failures"]
     assert report.pipeline_passed is True
     assert report.passed is False
 
@@ -242,27 +287,109 @@ def test_strict_measure_model_fails_closed_on_missing_profile_gate() -> None:
 
 
 def test_profile_peak_caps_are_gib() -> None:
-    """Plan '3 GB' / '3.5 GB' are 3 GiB / 3.5 GiB in thresholds.json, not decimal GB."""
+    """Plan '3 GB' is 3 GiB in thresholds.json, not decimal GB. Min-spec does not cap peak."""
     profiles = load_profile_thresholds()
     assert profiles["primary"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_GB
-    assert profiles["min-spec"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_FIVE_GB
+    assert "worker_plus_model_peak_bytes" not in profiles["min-spec"]
+    assert profiles["min-spec"]["completed_without_kill"].minimum == 1.0
     assert THREE_GB == 3 * 1024**3
     assert THREE_GB != 3 * 1000**3
+    assert THREE_FIVE_GB == 3758096384
+    assert THREE_THREE_GB == 3543348019
+    assert HEADROOM_PEAK_BYTES == THREE_THREE_GB
+    assert HEADROOM_UNDERSTAND_P95_S == 30.0
 
 
-def test_unmeasured_consolidation_cap_fails_closed(tmp_path: Path) -> None:
-    """§11.4 consolidation < 15 min: if a profile declares it, a missing sample fails."""
-    raw = json.loads(THRESHOLDS_PATH.read_text(encoding="utf-8"))
-    for name in raw["profiles"]:
-        raw["profiles"][name]["consolidate_s"] = {"max_exclusive": 15 * 60}
-    path = tmp_path / "thresholds.json"
-    path.write_text(json.dumps(raw), encoding="utf-8")
+def test_unmeasured_consolidation_cap_fails_closed() -> None:
+    """§11.4 consolidation < 15 min is gated; a missing sample fails closed."""
     for profile in ("primary", "min-spec"):
         missing = gate_profile(
             understand_p95_s=10.0,
             worker_plus_model_peak_bytes=_ok_peak(profile),
+            completed_without_kill=1.0,
             profile=profile,
-            path=path,
         )
         assert missing["passed"] is False
         assert "consolidate_s" in missing["failures"]
+
+
+def test_consolidation_15_min_boundary() -> None:
+    under = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("min-spec"),
+        consolidate_s=899.999,
+        completed_without_kill=1.0,
+        profile="min-spec",
+    )
+    at = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("min-spec"),
+        consolidate_s=900.0,
+        completed_without_kill=1.0,
+        profile="min-spec",
+    )
+    assert under["passed"] is True
+    assert at["passed"] is False
+    assert "consolidate_s" in at["failures"]
+
+
+def test_headroom_miss_does_not_fail_min_spec_gate() -> None:
+    """30 s / 3.3 GiB is engineering headroom, not the §14 #9 min-spec gate."""
+    gate = gate_profile(
+        understand_p95_s=34.0,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
+        completed_without_kill=1.0,
+        profile="min-spec",
+    )
+    room = headroom_status(
+        understand_p95_s=34.0,
+        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+    )
+    assert gate["passed"] is True
+    assert room["gating"] is False
+    assert room["understand_p95_s"]["within"] is False
+    assert room["worker_plus_model_peak_bytes"]["within"] is False
+    metrics = _metrics()
+    report = EvalReport(
+        mode="record",
+        runtime="ollama",
+        days=[_day(metrics)],
+        aggregate=metrics,
+        gate=gate_metrics(metrics),
+        profile="min-spec",
+        profile_gate=gate,
+        headroom=room,
+        measure_model=True,
+    )
+    assert report.passed is True
+
+
+def test_completed_without_kill_requires_every_fixture_day() -> None:
+    day = _day(_metrics())
+    assert _completed_without_kill(("day_acme_q4",), [day], failure_reason=None) == 1.0
+    assert (
+        _completed_without_kill(("day_acme_q4",), [day], failure_reason="RuntimeUnavailable") == 0.0
+    )
+    failed = _day(_metrics())
+    failed.error = "RuntimeCallError"
+    assert _completed_without_kill(("day_acme_q4",), [failed], failure_reason=None) == 0.0
+    assert _completed_without_kill(("a", "b"), [day], failure_reason=None) == 0.0
+    assert _completed_without_kill((), [], failure_reason=None) == 0.0
+
+
+def test_headroom_within_at_30s_and_3_3_gib() -> None:
+    room = headroom_status(
+        understand_p95_s=29.999,
+        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+    )
+    at = headroom_status(
+        understand_p95_s=30.0,
+        worker_plus_model_peak_bytes=THREE_THREE_GB,
+    )
+    assert room["understand_p95_s"]["max_exclusive"] == 30.0
+    assert room["worker_plus_model_peak_bytes"]["max_exclusive"] == THREE_THREE_GB
+    assert room["understand_p95_s"]["within"] is True
+    assert room["worker_plus_model_peak_bytes"]["within"] is True
+    assert at["understand_p95_s"]["within"] is False
+    assert at["worker_plus_model_peak_bytes"]["within"] is False

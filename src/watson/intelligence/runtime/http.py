@@ -105,8 +105,13 @@ def request_json(
         with direct_opener().open(request, timeout=timeout) as response:
             raw = response.read()
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeCallError(f"Ollama HTTP {exc.code} on {path}: {detail[:300]}") from exc
+        code = int(exc.code)
+        reason = str(exc.reason or "error")
+        try:
+            exc.read()
+        except Exception:
+            pass
+        raise RuntimeCallError(f"Ollama HTTP {code} on {path}: {reason}") from exc
     except TimeoutError as exc:
         raise RuntimeCallError(f"Ollama timed out on {path}") from exc
     except urllib.error.URLError as exc:

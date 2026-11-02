@@ -45,7 +45,9 @@ from watson.intelligence.runtime import (
     JobFailure,
     LanguageRuntime,
     Message,
+    OutputParseError,
     RuntimeBundle,
+    RuntimeCallError,
     RuntimeUnavailable,
     StructuredOutputError,
     build_runtime,
@@ -56,9 +58,11 @@ from watson.intelligence.schemas.consolidation import (
     CLUSTERING_JSON_SCHEMA,
     DAILY_SUMMARY_JSON_SCHEMA,
     DAY_EXTRACT_JSON_SCHEMA,
+    ActivityCluster,
     ClusteringOutput,
     DailySummaryOutput,
     DayExtractOutput,
+    SummaryParagraph,
 )
 from watson.intelligence.structured import complete_structured
 from watson.memory.corrections import apply_claim_corrections, rejected_claim_ids
@@ -94,6 +98,14 @@ CLUSTER_PROMPT_TASK = "clustering"
 EXTRACT_PROMPT_TASK = "day_extract"
 SUMMARY_PROMPT_TASK = "daily_summary"
 PROMPT_VERSION = "v1"
+# Keep clustering / extract / summary user lists inside the 4096-token window.
+_CLUSTER_ITEM_MAX = 120
+_EXTRACT_CLAIM_MAX = 160
+_SUMMARY_CLAIM_MAX = 120
+_PROMPT_LIST_MAX = 3000
+_UNDERSTAND_FAILED_RE = re.compile(r"understand_failed=\d+")
+_GROUND_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
+_GROUND_OVERLAP_MIN = 0.4
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
 )
@@ -250,12 +262,6 @@ def ensure_consolidate_job(
         job.state is JobState.COMPLETED
         and day is not None
         and str(day.get("state")) == "consolidated"
-    ):
-        return False
-    if (
-        not force
-        and job.state is JobState.FAILED
-        and _has_terminal_understand_jobs(conn, working_day_id, pipeline_version)
     ):
         return False
     _reset_job(conn, job.id, now=moment)
@@ -533,15 +539,21 @@ def consolidate_working_day(
         )
         if blocked == "wait":
             raise ConsolidationWait("understanding held")
-        if blocked == "error":
-            raise ConsolidationError("pending understanding")
+        skipped = skipped_understand_segment_ids(
+            conn,
+            working_day_id,
+            pipeline_version=cfg.pipeline_version,
+            close_after_seconds=cfg.close_after_seconds,
+        )
         counts = _replace_derived(
             conn,
             working_day_id,
             language,
             settings=cfg,
             now=moment,
+            skipped_understand=skipped,
         )
+        _record_understand_gaps(conn, working_day_id, skipped, now=moment)
         _verify_persistence(
             conn,
             working_day_id,
@@ -565,7 +577,11 @@ def consolidate_working_day(
         )
         log.info(
             "consolidated working day",
-            extra={"working_day_id": working_day_id, **counts},
+            extra={
+                "working_day_id": working_day_id,
+                "skipped_understand": len(skipped),
+                **counts,
+            },
         )
         return working_day_id
     except ConsolidationWait as exc:
@@ -648,6 +664,7 @@ def _replace_derived(
     *,
     settings: ConsolidateSettings,
     now: datetime,
+    skipped_understand: list[str] | None = None,
 ) -> dict[str, int]:
     observations = _load_observations(conn, working_day_id, settings.pipeline_version)
     claims = apply_claim_corrections(
@@ -669,7 +686,6 @@ def _replace_derived(
         if claims
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
     )
-    end_runtime_phase(language)
     raw_summary = (
         _summarize_day(language, claims, summary_prompt.text)
         if claims
@@ -688,6 +704,16 @@ def _replace_derived(
         working_day_id=working_day_id,
         pipeline_version=settings.pipeline_version,
     )
+    skipped = skipped_understand or []
+    if skipped:
+        note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
+        paragraphs = (*verified.paragraphs, note)
+        verified = VerifiedNarrative(
+            narrative_md="\n\n".join(paragraphs),
+            paragraphs=paragraphs,
+            claim_ids=verified.claim_ids,
+            unverified=verified.unverified,
+        )
     stamp = iso_now(now)
     try:
         _delete_derived(conn, working_day_id, settings.pipeline_version)
@@ -735,8 +761,10 @@ def _cluster_observations(
     observations: list[dict[str, Any]],
     system: str,
 ) -> ClusteringOutput:
-    numbered = "\n".join(
-        f"{index}. {row['description']}" for index, row in enumerate(observations, start=1)
+    numbered = _trim_numbered(
+        [str(row["description"]) for row in observations],
+        item_max=_CLUSTER_ITEM_MAX,
+        list_max=_PROMPT_LIST_MAX,
     )
     messages: list[Message] = [
         {"role": "system", "content": system},
@@ -745,7 +773,10 @@ def _cluster_observations(
             "content": f"Cluster these observations into activities.\n\n{numbered}",
         },
     ]
-    return _structured(language, messages, ClusteringOutput, CLUSTERING_JSON_SCHEMA, "clustering")
+    result = _structured(language, messages, ClusteringOutput, CLUSTERING_JSON_SCHEMA, "clustering")
+    if result is None:
+        return _fallback_clustering(observations)
+    return result
 
 
 def _extract_day(
@@ -754,9 +785,10 @@ def _extract_day(
     entities: list[dict[str, Any]],
     system: str,
 ) -> DayExtractOutput:
-    claim_lines = "\n".join(
-        f"{index}. [{row['kind']}/{row['assertion']}] {row['text']}"
-        for index, row in enumerate(claims, start=1)
+    claim_lines = _trim_numbered(
+        [f"[{row['kind']}/{row['assertion']}] {row['text']}" for row in claims],
+        item_max=_EXTRACT_CLAIM_MAX,
+        list_max=_PROMPT_LIST_MAX,
     )
     entity_lines = (
         "\n".join(f"- {row['type']}: {row['canonical_name']}" for row in entities) or "(none)"
@@ -771,7 +803,12 @@ def _extract_day(
             ),
         },
     ]
-    return _structured(language, messages, DayExtractOutput, DAY_EXTRACT_JSON_SCHEMA, "day extract")
+    result = _structured(
+        language, messages, DayExtractOutput, DAY_EXTRACT_JSON_SCHEMA, "day extract"
+    )
+    if result is None:
+        return DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
+    return result
 
 
 def _summarize_day(
@@ -779,8 +816,10 @@ def _summarize_day(
     claims: list[dict[str, Any]],
     system: str,
 ) -> DailySummaryOutput:
-    claim_lines = "\n".join(
-        f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}" for row in claims
+    claim_lines = _trim_numbered(
+        [f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}" for row in claims],
+        item_max=_SUMMARY_CLAIM_MAX,
+        list_max=_PROMPT_LIST_MAX,
     )
     messages: list[Message] = [
         {"role": "system", "content": system},
@@ -793,9 +832,12 @@ def _summarize_day(
             ),
         },
     ]
-    return _structured(
+    result = _structured(
         language, messages, DailySummaryOutput, DAILY_SUMMARY_JSON_SCHEMA, "daily summary"
     )
+    if result is None or (claims and not result.paragraphs):
+        return _fallback_summary(claims)
+    return result
 
 
 def _structured[T: BaseModel](
@@ -804,10 +846,18 @@ def _structured[T: BaseModel](
     model: type[T],
     schema: dict[str, Any],
     label: str,
-) -> T:
+) -> T | None:
     try:
         return complete_structured(language, messages, model, schema=schema)
-    except (StructuredOutputError, RuntimeUnavailable, JobFailure):
+    except RuntimeUnavailable:
+        raise
+    except (StructuredOutputError, OutputParseError, RuntimeCallError) as exc:
+        log.warning(
+            "consolidation structured output failed",
+            extra={"label": label, "error": type(exc).__name__},
+        )
+        return None
+    except JobFailure:
         raise
     except Exception as exc:
         raise ConsolidationError(f"{label} complete failed", retryable=True) from exc
@@ -897,7 +947,7 @@ def _insert_extract(
             ),
         )
     for item in extract.decisions:
-        grounded = _pick_indexes(item.claim_indexes, claim_ids)
+        grounded = _grounded_for_kind(item.claim_indexes, claims, "decision", text=item.text)
         if not grounded:
             continue
         conn.execute(
@@ -919,7 +969,7 @@ def _insert_extract(
             ),
         )
     for item in extract.commitments:
-        grounded = _pick_indexes(item.claim_indexes, claim_ids)
+        grounded = _grounded_for_kind(item.claim_indexes, claims, "commitment", text=item.text)
         if not grounded:
             continue
         status = item.status or "open"
@@ -1362,22 +1412,13 @@ def understand_block_reason(
     close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
     now: datetime | None = None,
 ) -> str | None:
-    """``wait`` / ``error`` / ``None``. Shared by consolidation hold and eval drain."""
+    """``wait`` / ``None``. Shared by consolidation hold and eval drain."""
     recover_expired_leases(conn, now=now)
     return _understand_incomplete(
         conn,
         working_day_id,
         pipeline_version=pipeline_version,
         close_after_seconds=close_after_seconds,
-    )
-
-
-def _has_terminal_understand_jobs(
-    conn: sqlcipher.Connection, working_day_id: str, pipeline_version: int
-) -> bool:
-    return any(
-        job.state is JobState.FAILED
-        for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version)
     )
 
 
@@ -1398,17 +1439,16 @@ def _understand_incomplete(
     pipeline_version: int,
     close_after_seconds: int,
 ) -> str | None:
-    """``wait`` / ``error`` while understand work for this day is unfinished.
+    """``wait`` / ``None`` while understand work for this day is unfinished.
 
     Claimed, pending, or chat-done-but-unresolved jobs defer consolidation
     (``ConsolidationWait``) so a SIGKILL inside the lease cannot mark the
-    day consolidated with missing entities. Failed jobs flag the day.
+    day consolidated with missing entities. Terminal-failed jobs are skipped
+    and flagged; they do not block the day.
     """
     states = {job.state for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version)}
     if JobState.CLAIMED in states or JobState.PENDING in states:
         return "wait"
-    if JobState.FAILED in states:
-        return "error"
     if _understand_is_held(
         conn,
         working_day_id,
@@ -1416,14 +1456,6 @@ def _understand_incomplete(
         close_after_seconds=close_after_seconds,
     ):
         return "wait"
-    pending = eligible_segment_ids(
-        conn,
-        pipeline_version=pipeline_version,
-        close_after_seconds=close_after_seconds,
-        working_day_id=working_day_id,
-    )
-    if pending:
-        return "error"
     return None
 
 
@@ -1455,6 +1487,139 @@ def _understand_is_held(
         if job is None or job.state is not JobState.FAILED:
             return True
     return False
+
+
+def skipped_understand_segment_ids(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int = PIPELINE_VERSION,
+    close_after_seconds: int = DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS,
+) -> list[str]:
+    """Failed understand jobs plus leftover eligible segments (no silent drop)."""
+    failed = {
+        str(job.payload.get("segment_id") or "")
+        for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version)
+        if job.state is JobState.FAILED
+    }
+    leftover = set(
+        eligible_segment_ids(
+            conn,
+            pipeline_version=pipeline_version,
+            close_after_seconds=close_after_seconds,
+            working_day_id=working_day_id,
+        )
+    )
+    return sorted(item for item in (failed | leftover) if item)
+
+
+def _record_understand_gaps(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    skipped: list[str],
+    *,
+    now: datetime | None,
+) -> None:
+    if not skipped:
+        return
+    stamp = iso_now(now)
+    gap = f"understand_failed={len(skipped)}"
+    row = conn.execute(
+        "SELECT consolidation_gap FROM working_days WHERE id = ?", (working_day_id,)
+    ).fetchone()
+    existing = str(row[0]) if row is not None and row[0] else ""
+    if _UNDERSTAND_FAILED_RE.search(existing):
+        value = _UNDERSTAND_FAILED_RE.sub(gap, existing, count=1)
+    elif existing:
+        value = f"{existing},{gap}"
+    else:
+        value = gap
+    conn.execute(
+        "UPDATE working_days SET consolidation_gap = ?, updated_at = ? WHERE id = ?",
+        (value, stamp, working_day_id),
+    )
+    conn.commit()
+
+
+def _trim_numbered(items: list[str], *, item_max: int, list_max: int) -> str:
+    lines: list[str] = []
+    used = 0
+    for index, raw in enumerate(items, start=1):
+        text = " ".join(str(raw).split())
+        if len(text) > item_max:
+            text = text[: item_max - 1] + "…"
+        line = f"{index}. {text}"
+        extra = len(line) + (1 if lines else 0)
+        if used + extra > list_max:
+            break
+        lines.append(line)
+        used += extra
+    return "\n".join(lines)
+
+
+def _fallback_clustering(observations: list[dict[str, Any]]) -> ClusteringOutput:
+    activities: list[ActivityCluster] = []
+    for index, row in enumerate(observations, start=1):
+        description = " ".join(str(row.get("description") or "segment").split()) or "segment"
+        activities.append(
+            ActivityCluster(
+                title=description[:80],
+                summary=description[:200],
+                observation_indexes=[index],
+            )
+        )
+    return ClusteringOutput(activities=activities)
+
+
+def _fallback_summary(claims: list[dict[str, Any]]) -> DailySummaryOutput:
+    if not claims:
+        return DailySummaryOutput(paragraphs=[])
+    cid = str(claims[0]["id"])
+    return DailySummaryOutput(
+        paragraphs=[
+            SummaryParagraph(text=f"Work continued [c:{cid}].", claim_ids=[cid]),
+        ]
+    )
+
+
+def _ground_tokens(text: str) -> set[str]:
+    return {match.group(0) for match in _GROUND_TOKEN_RE.finditer(text.casefold())}
+
+
+def _text_overlap(left: str, right: str) -> float:
+    a, b = _ground_tokens(left), _ground_tokens(right)
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _grounded_for_kind(
+    indexes: list[int],
+    claims: list[dict[str, Any]],
+    kind: str,
+    *,
+    text: str = "",
+) -> list[str]:
+    matching = [row for row in claims if str(row["kind"]) == kind]
+    if not matching:
+        return []
+    matching_ids = {str(row["id"]) for row in matching}
+    claim_ids = [str(row["id"]) for row in claims]
+    cited = _pick_indexes(indexes, claim_ids)
+    chosen = [cid for cid in cited if cid in matching_ids]
+    if chosen:
+        return chosen
+    by_id = {str(row["id"]): row for row in claims}
+    needles = [text, *[str(by_id[cid].get("text") or "") for cid in cited if cid in by_id]]
+    needles = [blob for blob in needles if blob.strip()]
+    if not needles:
+        return []
+    recovered: list[str] = []
+    for row in matching:
+        hay = str(row.get("text") or "")
+        if any(_text_overlap(needle, hay) >= _GROUND_OVERLAP_MIN for needle in needles):
+            recovered.append(str(row["id"]))
+    return recovered
 
 
 def _pick_indexes(indexes: list[int], items: list[str]) -> list[str]:

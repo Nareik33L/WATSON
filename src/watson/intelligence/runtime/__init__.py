@@ -17,11 +17,13 @@ from watson.intelligence.runtime.types import (
     JobFailure,
     LanguageRuntime,
     Message,
+    OutputParseError,
     RuntimeCallError,
     RuntimeUnavailable,
     StructuredOutputError,
     VisionRuntime,
     end_runtime_phase,
+    format_job_error,
 )
 
 __all__ = [
@@ -34,11 +36,13 @@ __all__ = [
     "Message",
     "NoRedirectHandler",
     "OllamaRuntime",
+    "OutputParseError",
     "RuntimeBundle",
     "RuntimeCallError",
     "RuntimeHold",
     "RuntimeUnavailable",
     "StructuredOutputError",
+    "format_job_error",
     "VisionRuntime",
     "build_runtime",
     "end_runtime_phase",

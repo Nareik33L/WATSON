@@ -91,6 +91,7 @@ packages = ["src/watson"]
 "schemas/sidecar.schema.json" = "watson/data/sidecar.schema.json"
 "src/watson/intelligence/prompts/understanding/v1.md" = "watson/intelligence/prompts/understanding/v1.md"
 "src/watson/intelligence/prompts/understanding/v2.md" = "watson/intelligence/prompts/understanding/v2.md"
+"src/watson/intelligence/prompts/understanding/v3.md" = "watson/intelligence/prompts/understanding/v3.md"
 "src/watson/intelligence/prompts/clustering/v1.md" = "watson/intelligence/prompts/clustering/v1.md"
 "src/watson/intelligence/prompts/day_extract/v1.md" = "watson/intelligence/prompts/day_extract/v1.md"
 "src/watson/intelligence/prompts/daily_summary/v1.md" = "watson/intelligence/prompts/daily_summary/v1.md"

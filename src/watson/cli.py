@@ -177,6 +177,16 @@ def _main(argv: Sequence[str] | None = None) -> int:
         default="auto",
         help="§11.4 profile (auto: min-spec when RAM < 16 GiB, else primary)",
     )
+    evaluate.add_argument(
+        "--llm-model",
+        default=None,
+        help=(
+            "Override intelligence.llm_model (default qwen2.5:3b). "
+            "Applies the per-model timeout/num_ctx preset. "
+            "Bake-off candidates: gemma2:9b, llama3.1:8b, qwen2.5:7b; "
+            "llama3.2:3b remains selectable."
+        ),
+    )
     evaluate.set_defaults(handler=_cmd_eval)
 
     for name in _STUB_COMMANDS:
@@ -278,6 +288,9 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     from watson.intelligence.eval.run import V1_DAY_FIXTURES, run_eval
 
     config = load_config()
+    if args.llm_model:
+        intel = config.intelligence.with_llm_model(str(args.llm_model))
+        config = config.model_copy(update={"intelligence": intel})
     mode = str(args.mode)
     if args.runtime:
         runtime_name = str(args.runtime)

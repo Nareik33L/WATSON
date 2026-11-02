@@ -19,13 +19,13 @@ Each release has one question it must answer. Scope that does not help answer th
 5. Evidence-based: every statement WATSON repeats cites a claim with evidence.
 6. Nothing in a later release weakens a privacy guarantee made in an earlier one.
 7. Personal is bought once and never depends on a server to run or to read its own data.
-8. **8 GB min-spec is a hard compatibility gate for every release** (Kieran, 2026-11-02 16:42). The 8 GB Mac is the testing laptop. WATSON must fit and run on it on the 3B model (`llama3.2:3b`) within the min-spec §11.4 targets. This is not optional, whatever model is later chosen for the 32 GB primary profile.
+8. **8 GB min-spec is the testing laptop for every release** (Kieran, 2026-11-02 21:53 via CoS). WATSON must complete eval on it without crash or OOM kill. Understand p95 is recorded, not gated. Primary (32 GB) keeps p95 < 20 s, worker+model < 3 GB, consolidation < 15 min. Strict precision ≥ 0.85 on both. 7–9B Q4 models are allowed in V1; the default is the largest model that completes on 8 GB with precision ≥ 0.85 (bake-off, biggest first: `gemma2:9b`, `llama3.1:8b`, `qwen2.5:7b`, then smaller). Baseline until bake-off: `qwen2.5:3b`.
 
-## Parked (post-POC)
+## V1 model bake-off (in POC)
 
 | Item | Notes |
 |---|---|
-| **Parked: larger model for 32 GB primary profile (post-POC)** | V1/POC stays on `llama3.2:3b` on both hardware profiles (plan §14 #9, Kieran 16:43). A larger model for the 32 GB primary profile is out of POC scope. Any future model must still pass the 8 GB min-spec gate on 3B (16:42). |
+| **Largest 8 GB-capable LLM** | Not parked. V1 default is the largest Q4 model that runs to completion on the 8 GB Mac at strict precision ≥ 0.85, however slow (Kieran 21:55). Candidates, biggest first: `gemma2:9b`, `llama3.1:8b`, `qwen2.5:7b`. Code default stays `qwen2.5:3b` until Device Ops sends the winner. Select with `watson eval --llm-model` / `WATSON_LLM_MODEL`. |
 
 ## Numbering note
 

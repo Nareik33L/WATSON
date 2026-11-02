@@ -111,10 +111,23 @@ class TimingRuntime:
         if callable(end):
             end()
 
-    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
+    def complete(
+        self,
+        messages: Sequence[Message],
+        schema: Mapping[str, Any],
+        *,
+        num_predict: int | None = None,
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         try:
-            result: dict[str, Any] = self._inner.complete(messages, schema)
+            try:
+                result: dict[str, Any] = self._inner.complete(
+                    messages, schema, num_predict=num_predict
+                )
+            except TypeError as exc:
+                if "num_predict" not in str(exc):
+                    raise
+                result = self._inner.complete(messages, schema)
             return result
         except Exception as exc:
             if _is_timeout(exc):

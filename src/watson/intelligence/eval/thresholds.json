@@ -14,11 +14,12 @@
   "profiles": {
     "primary": {
       "understand_p95_s": {"max_exclusive": 20},
-      "worker_plus_model_peak_bytes": {"max_exclusive": 3221225472}
+      "worker_plus_model_peak_bytes": {"max_exclusive": 3221225472},
+      "consolidate_s": {"max_exclusive": 900}
     },
     "min-spec": {
-      "understand_p95_s": {"max_exclusive": 35},
-      "worker_plus_model_peak_bytes": {"max_exclusive": 3758096384}
+      "completed_without_kill": {"min": 1.0},
+      "consolidate_s": {"max_exclusive": 900}
     }
   }
 }

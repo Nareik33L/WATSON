@@ -36,6 +36,10 @@ class RuntimeCallError(JobFailure):
         super().__init__(message, retryable=True)
 
 
+class OutputParseError(RuntimeCallError):
+    """Chat body was not a JSON object. One repair retry, then terminal."""
+
+
 class StructuredOutputError(JobFailure):
     """Pydantic validation failed after the single retry (plan §7.2)."""
 
@@ -43,6 +47,21 @@ class StructuredOutputError(JobFailure):
         super().__init__(message, retryable=False)
         self.raw = raw
         self.errors = errors
+
+
+LAST_ERROR_MAX = 240
+
+
+def format_job_error(exc: BaseException, *, limit: int = LAST_ERROR_MAX) -> str:
+    """``Type: truncated message`` for ``jobs.last_error``. Never stores raw model output."""
+    name = type(exc).__name__
+    message = " ".join(str(exc).split())
+    if not message:
+        return name
+    text = f"{name}: {message}"
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
 
 
 def end_runtime_phase(runtime: object) -> None:
@@ -54,7 +73,11 @@ def end_runtime_phase(runtime: object) -> None:
 
 class LanguageRuntime(Protocol):
     def complete(
-        self, messages: Sequence[Message], schema: Mapping[str, Any]
+        self,
+        messages: Sequence[Message],
+        schema: Mapping[str, Any],
+        *,
+        num_predict: int | None = None,
     ) -> dict[str, Any]:
         """Schema-constrained completion. Returns a JSON object."""
 
@@ -76,6 +99,4 @@ class DisabledVisionRuntime:
 
     def describe(self, image: bytes, schema: Mapping[str, Any]) -> dict[str, Any]:
         del image, schema
-        raise RuntimeUnavailable(
-            "VisionRuntime is disabled on 8 GB (ADR 0001). VLM stays off."
-        )
+        raise RuntimeUnavailable("VisionRuntime is disabled on 8 GB (ADR 0001). VLM stays off.")

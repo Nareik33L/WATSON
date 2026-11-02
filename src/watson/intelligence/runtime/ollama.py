@@ -10,6 +10,7 @@ from watson.config.schema import IntelligenceConfig
 from watson.intelligence.runtime.http import canonical_ollama_url, request_json
 from watson.intelligence.runtime.types import (
     Message,
+    OutputParseError,
     RuntimeCallError,
     RuntimeUnavailable,
 )
@@ -22,8 +23,9 @@ class OllamaRuntime:
 
     When ``unload_between_phases`` is on, at most one model is resident
     (§11.4). ``keep_alive: 0`` runs at sub-phase boundaries (understanding
-    chat → understanding embed → consolidation → summary) and whenever a
-    call would otherwise load a second model.
+    chat → understanding embed → consolidation) and whenever a call would
+    otherwise load a second model. Cluster, extract, and summary stay on
+    the same resident chat model; do not unload between those steps.
     """
 
     name = "ollama"
@@ -50,7 +52,13 @@ class OllamaRuntime:
                 fetch_command=pulls,
             )
 
-    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
+    def complete(
+        self,
+        messages: Sequence[Message],
+        schema: Mapping[str, Any],
+        *,
+        num_predict: int | None = None,
+    ) -> dict[str, Any]:
         self._ensure_resident("chat")
         payload: dict[str, Any] = {
             "model": self.llm_model,
@@ -58,11 +66,7 @@ class OllamaRuntime:
             "stream": False,
             "format": dict(schema),
             "keep_alive": self._settings.keep_alive,
-            "options": {
-                "temperature": self._settings.temperature,
-                "num_ctx": self._settings.ollama_num_ctx(),
-                "num_predict": int(self._settings.ollama.num_predict),
-            },
+            "options": self._chat_options(num_predict=num_predict),
         }
         body = request_json(self.base_url, "POST", "/api/chat", payload, timeout=self._timeout())
         message = body.get("message") if isinstance(body, dict) else None
@@ -71,7 +75,7 @@ class OllamaRuntime:
             content = str(message.get("content") or "")
         parsed = _parse_json_object(content)
         if not isinstance(parsed, dict):
-            raise RuntimeCallError("Ollama chat returned a non-object JSON value")
+            raise OutputParseError("Ollama chat returned a non-object JSON value")
         return parsed
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
@@ -97,6 +101,15 @@ class OllamaRuntime:
     def _timeout(self) -> float:
         return float(self._settings.ollama.timeout_s)
 
+    def _chat_options(self, *, num_predict: int | None = None) -> dict[str, Any]:
+        """Same KV-cache size on every chat so Ollama does not reallocate."""
+        predict = int(self._settings.ollama.num_predict if num_predict is None else num_predict)
+        return {
+            "temperature": self._settings.temperature,
+            "num_ctx": self._settings.ollama_num_ctx(),
+            "num_predict": predict,
+        }
+
     def end_phase(self) -> None:
         """Unload models used in this sub-phase. No-op when unloading is disabled."""
         if not self._settings.ollama.unload_between_phases:
@@ -118,11 +131,19 @@ class OllamaRuntime:
 
     def _unload(self, model: str) -> None:
         """Drop a resident model (Ollama ``keep_alive: 0``)."""
+        options = self._chat_options()
         request_json(
             self.base_url,
             "POST",
             "/api/generate",
-            {"model": model, "keep_alive": 0},
+            {
+                "model": model,
+                "keep_alive": 0,
+                "options": {
+                    "num_ctx": options["num_ctx"],
+                    "num_predict": options["num_predict"],
+                },
+            },
             timeout=self._timeout(),
         )
 
@@ -148,7 +169,7 @@ def _bare(name: str) -> str:
 def _parse_json_object(text: str) -> dict[str, Any]:
     cleaned = text.strip()
     if not cleaned:
-        raise RuntimeCallError("Ollama returned an empty chat body")
+        raise OutputParseError("Ollama returned an empty chat body")
     if cleaned.startswith("```"):
         lines = cleaned.splitlines()
         if lines and lines[0].startswith("```"):
@@ -162,8 +183,11 @@ def _parse_json_object(text: str) -> dict[str, Any]:
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start < 0 or end <= start:
-            raise RuntimeCallError("Ollama returned non-JSON chat output") from None
-        loaded = json.loads(cleaned[start : end + 1])
+            raise OutputParseError("Ollama returned non-JSON chat output") from None
+        try:
+            loaded = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            raise OutputParseError("Ollama returned non-JSON chat output") from None
     if not isinstance(loaded, dict):
-        raise RuntimeCallError("Ollama chat output is not a JSON object")
+        raise OutputParseError("Ollama chat output is not a JSON object")
     return loaded

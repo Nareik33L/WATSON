@@ -134,9 +134,13 @@ def _apply_env_overrides(merged: dict[str, Any], env: Mapping[str, str]) -> None
         capture["interval_seconds"] = interval
         merged["capture"] = capture
     runtime = env.get("WATSON_INTELLIGENCE_RUNTIME")
-    if runtime is not None and runtime != "":
+    llm_model = env.get("WATSON_LLM_MODEL")
+    if (runtime is not None and runtime != "") or (llm_model is not None and llm_model != ""):
         intelligence = dict(cast(dict[str, Any], merged.get("intelligence") or {}))
-        intelligence["runtime"] = runtime
+        if runtime is not None and runtime != "":
+            intelligence["runtime"] = runtime
+        if llm_model is not None and llm_model != "":
+            intelligence["llm_model"] = llm_model
         merged["intelligence"] = intelligence
 
 

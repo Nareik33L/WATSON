@@ -44,7 +44,7 @@ log = logging.getLogger("watson.pipeline.frames")
 # M1 extract stub only. Real OCR/VLM extraction is M2.
 FIXTURE_TEXT_SOURCE = "fixture_sidecar"
 EXTRACT_JOB_KIND = "extract"
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3
 FRAME_STATES = (
     "captured",
     "extracted",

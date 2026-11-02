@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -70,16 +70,59 @@ DEFAULT_MERGED_TEXT_MAX_CHARS = 32768
 
 # ADR 0001 / plan §7.1 — V1.0 dev defaults. VLM stays off on 8 GB.
 DEFAULT_INTELLIGENCE_RUNTIME: Literal["ollama", "fake"] = "ollama"
-DEFAULT_LLM_MODEL = "llama3.2:3b"
+# Baseline until the 8 GB bake-off picks a winner (plan §14; Kieran 21:53/21:55).
+DEFAULT_LLM_MODEL = "qwen2.5:3b"
+# Previous 3B default; still selectable via --llm-model / WATSON_LLM_MODEL.
+FALLBACK_LLM_MODEL = "llama3.2:3b"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
-# 4096 fits llama3.2:3b + nomic-embed-text one-at-a-time on 8 GB (§11.4 < 3 GB).
-# 8192 loaded the chat model at ~4.2 GB phys_footprint on the M1.
+# 4096 fits 3B + nomic-embed-text one-at-a-time on 8 GB. 7–9B Q4 uses the same
+# window with a longer timeout; 8192 loaded a 3B at ~4.2 GB phys_footprint.
 DEFAULT_CONTEXT_WINDOW = 4096
 DEFAULT_KEEP_ALIVE = "5m"
 DEFAULT_OLLAMA_TIMEOUT_S = 300.0
-DEFAULT_OLLAMA_NUM_PREDICT = 768
+# Long enough for a 7B/8B/9B Q4 on the 8 GB min-spec Mac (plan §14).
+LARGE_LLM_TIMEOUT_S = 900.0
+DEFAULT_OLLAMA_NUM_PREDICT = 512
 DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES = True
+
+
+class LlmPreset(NamedTuple):
+    """Per-model Ollama timeout and context. Unknown names get the 7B-on-8 GB timeout."""
+
+    timeout_s: float
+    num_ctx: int
+
+
+# Bake-off, biggest first (Kieran 2026-11-02 21:55). Default stays qwen2.5:3b
+# in code until Device Ops reports the largest model that completes at ≥ 0.85.
+LLM_PRESETS: dict[str, LlmPreset] = {
+    "qwen2.5:3b": LlmPreset(DEFAULT_OLLAMA_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW),
+    "llama3.2:3b": LlmPreset(DEFAULT_OLLAMA_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW),
+    "qwen2.5:7b": LlmPreset(LARGE_LLM_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW),
+    "llama3.1:8b": LlmPreset(LARGE_LLM_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW),
+    "gemma2:9b": LlmPreset(LARGE_LLM_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW),
+}
+BAKEOFF_LLM_MODELS_LARGEST_FIRST: tuple[str, ...] = (
+    "gemma2:9b",
+    "llama3.1:8b",
+    "qwen2.5:7b",
+)
+
+
+def llm_preset(model: str) -> LlmPreset:
+    """Timeout and num_ctx for ``model``. Unknown names use 900 s / 4096."""
+    name = model.strip()
+    if not name:
+        return LlmPreset(DEFAULT_OLLAMA_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW)
+    if name in LLM_PRESETS:
+        return LLM_PRESETS[name]
+    for key in sorted(LLM_PRESETS, key=len, reverse=True):
+        if name.startswith(key):
+            return LLM_PRESETS[key]
+    return LlmPreset(LARGE_LLM_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW)
+
+
 # Entity resolver: embedding cosine must exceed this after alias miss (§3.5).
 DEFAULT_ENTITY_SIMILARITY = 0.80
 # Retrieved memory: top-k FTS5 hits over entity names/aliases.
@@ -263,7 +306,10 @@ class OllamaClientConfig(_StrictModel):
         default=DEFAULT_OLLAMA_TIMEOUT_S,
         ge=5.0,
         le=3600.0,
-        description="urllib timeout for /api/chat and /api/embed. Default 300 s.",
+        description=(
+            "urllib timeout for /api/chat and /api/embed. "
+            "Default 300 s for 3B; 7–9B presets use 900 s."
+        ),
     )
     num_ctx: int | None = Field(
         default=None,
@@ -275,13 +321,14 @@ class OllamaClientConfig(_StrictModel):
         default=DEFAULT_OLLAMA_NUM_PREDICT,
         ge=16,
         le=8192,
-        description="Max completion tokens. 768 covers the understanding JSON schema.",
+        description="Max completion tokens. 512 covers the understanding JSON schema.",
     )
     unload_between_phases: bool = Field(
         default=DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES,
         description=(
             "Unload resident models at sub-phase boundaries "
-            "(understanding chat → understanding embed → consolidation → summary). "
+            "(understanding chat → understanding embed → consolidation). "
+            "Cluster, extract, and summary stay on one chat load. "
             "At most one model is resident."
         ),
     )
@@ -311,6 +358,36 @@ class IntelligenceConfig(_StrictModel):
         description="Top-k projects/people retrieved via FTS5 for the understanding prompt.",
     )
     ollama: OllamaClientConfig = Field(default_factory=OllamaClientConfig)
+
+    @model_validator(mode="after")
+    def apply_llm_preset_defaults(self) -> IntelligenceConfig:
+        """Bump the default 300 s timeout when a 7–9B (or unknown) model is selected."""
+        preset = llm_preset(self.llm_model)
+        ollama_updates: dict[str, Any] = {}
+        if (
+            self.ollama.timeout_s == DEFAULT_OLLAMA_TIMEOUT_S
+            and preset.timeout_s != DEFAULT_OLLAMA_TIMEOUT_S
+        ):
+            ollama_updates["timeout_s"] = preset.timeout_s
+        if self.ollama.num_ctx is None and preset.num_ctx != self.context_window:
+            ollama_updates["num_ctx"] = preset.num_ctx
+        if not ollama_updates:
+            return self
+        return self.model_copy(update={"ollama": self.ollama.model_copy(update=ollama_updates)})
+
+    def with_llm_model(self, model: str) -> IntelligenceConfig:
+        """Select ``model`` and apply its timeout / num_ctx preset (CLI / env)."""
+        name = str(model).strip()
+        preset = llm_preset(name)
+        return self.model_copy(
+            update={
+                "llm_model": name,
+                "context_window": preset.num_ctx,
+                "ollama": self.ollama.model_copy(
+                    update={"timeout_s": preset.timeout_s, "num_ctx": preset.num_ctx}
+                ),
+            }
+        )
 
     def ollama_num_ctx(self) -> int:
         """Context window sent as Ollama ``options.num_ctx``."""
