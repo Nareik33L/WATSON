@@ -92,9 +92,7 @@ def test_memory_requires_auth() -> None:
     assert api.status_code == 401
 
 
-def test_memory_lists_claims_with_quotes_and_actions(
-    data_dir: Path, key_provider: object
-) -> None:
+def test_memory_lists_claims_with_quotes_and_actions(data_dir: Path, key_provider: object) -> None:
     conn = open_test_db(data_dir)
     try:
         seeded = _seed_memory(conn)
@@ -123,9 +121,7 @@ def test_memory_lists_claims_with_quotes_and_actions(
     assert missing.status_code == 404
 
 
-def test_confirm_correct_reject_not_work_via_forms(
-    data_dir: Path, key_provider: object
-) -> None:
+def test_confirm_correct_reject_not_work_via_forms(data_dir: Path, key_provider: object) -> None:
     conn = open_test_db(data_dir)
     try:
         seeded = _seed_memory(conn)
@@ -249,9 +245,7 @@ def test_memory_get_does_not_write(data_dir: Path, key_provider: object) -> None
     assert after == before
 
 
-def test_memory_is_scoped_by_day_and_pipeline_version(
-    data_dir: Path, key_provider: object
-) -> None:
+def test_memory_is_scoped_by_day_and_pipeline_version(data_dir: Path, key_provider: object) -> None:
     conn = open_test_db(data_dir)
     try:
         older = _insert_day(conn, date="2026-10-30", state="consolidated")
@@ -338,9 +332,7 @@ def test_hostile_correction_text_is_escaped(data_dir: Path, key_provider: object
             text='Claim <script>c()</script> onclick="e"',
             snippet='Quote <script>q()</script> and "quotes"',
         )
-        project_id = _insert_entity(
-            conn, name='Acme <img src=x onerror="q">', typ="project"
-        )
+        project_id = _insert_entity(conn, name='Acme <img src=x onerror="q">', typ="project")
         _insert_entity(conn, name="Safe Deal", typ="project")
     finally:
         conn.close()
@@ -415,9 +407,7 @@ def test_rename_and_merge_entities(data_dir: Path, key_provider: object) -> None
         ).fetchone()
         assert str(src[0]) == "Ghost Deal"
         assert str(src[1]) == project_id
-        actions = {
-            str(row[0]) for row in conn.execute("SELECT action FROM corrections")
-        }
+        actions = {str(row[0]) for row in conn.execute("SELECT action FROM corrections")}
         assert actions == {"correct", "merge"}
     finally:
         conn.close()

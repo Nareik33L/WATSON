@@ -158,9 +158,7 @@ def merge_entities(
         raise CorrectionError("entities must be the same type")
     stamp = iso_now()
     _ensure_user_alias(conn, dest_id, str(source["canonical_name"]), stamp)
-    for row in conn.execute(
-        "SELECT alias FROM entity_aliases WHERE entity_id = ?", (source_id,)
-    ):
+    for row in conn.execute("SELECT alias FROM entity_aliases WHERE entity_id = ?", (source_id,)):
         _ensure_user_alias(conn, dest_id, str(row["alias"]), stamp)
     conn.execute(
         """
@@ -283,9 +281,7 @@ def _load_entity(conn: sqlcipher.Connection, entity_id: str) -> Any:
     return row
 
 
-def _ensure_user_alias(
-    conn: sqlcipher.Connection, entity_id: str, alias: str, stamp: str
-) -> None:
+def _ensure_user_alias(conn: sqlcipher.Connection, entity_id: str, alias: str, stamp: str) -> None:
     existing = conn.execute(
         "SELECT id FROM entity_aliases WHERE entity_id = ? AND alias = ?",
         (entity_id, alias),

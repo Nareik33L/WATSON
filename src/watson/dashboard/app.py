@@ -634,16 +634,12 @@ async def _mutation_fields(
 
 
 def _date_for_day(conn: sqlcipher.Connection, working_day_id: str) -> str | None:
-    row = conn.execute(
-        "SELECT date FROM working_days WHERE id = ?", (working_day_id,)
-    ).fetchone()
+    row = conn.execute("SELECT date FROM working_days WHERE id = ?", (working_day_id,)).fetchone()
     return None if row is None else str(row["date"])
 
 
 def _entity_type_and_id(conn: sqlcipher.Connection, entity_id: str) -> tuple[str, str]:
-    row = conn.execute(
-        "SELECT type FROM entities WHERE id = ?", (entity_id,)
-    ).fetchone()
+    row = conn.execute("SELECT type FROM entities WHERE id = ?", (entity_id,)).fetchone()
     if row is None:
         raise CorrectionError("entity not found", status_code=404)
     kind = str(row["type"])

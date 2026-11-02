@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from tests.replay_support import TEST_KEY
 from tests.unit.test_consolidation import (
     NOW,
@@ -21,6 +23,7 @@ from tests.unit.test_consolidation import (
 from watson.intelligence.runtime import FakeRuntime
 from watson.intelligence.runtime.types import Message
 from watson.memory.corrections import (
+    MAX_NEW_TEXT,
     CorrectionError,
     apply_claim_corrections,
     claim_histories,
@@ -223,9 +226,7 @@ def test_corrections_are_scoped_by_day_and_pipeline_version(tmp_path: Path) -> N
             record_claim_correction(conn, v2, "correct", new_text="v2 overlay", pipeline_version=1)
         except CorrectionError as exc:
             assert exc.status_code == 404
-        record_claim_correction(
-            conn, v2, "correct", new_text="v2 overlay", pipeline_version=2
-        )
+        record_claim_correction(conn, v2, "correct", new_text="v2 overlay", pipeline_version=2)
         day1 = apply_claim_corrections(
             conn, _load_claims(conn, first["day_id"], 1), working_day_id=first["day_id"]
         )
@@ -252,9 +253,7 @@ def test_reject_excludes_claim_from_summary_and_achievements(tmp_path: Path) -> 
         seeded = _seed_claim(conn, text="Appendix drafted")
         runtime = _echo()
         consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
-        before = str(
-            conn.execute("SELECT narrative_md FROM daily_summaries").fetchone()[0]
-        )
+        before = str(conn.execute("SELECT narrative_md FROM daily_summaries").fetchone()[0])
         assert "Appendix drafted" in before
         assert seeded["claim_id"] in before
         record_claim_correction(conn, seeded["claim_id"], "reject")
@@ -336,13 +335,101 @@ def test_merge_is_not_destructive(tmp_path: Path) -> None:
         assert str(src[1]) == dest
         dest_aliases = {
             str(r[0])
-            for r in conn.execute(
-                "SELECT alias FROM entity_aliases WHERE entity_id = ?", (dest,)
-            )
+            for r in conn.execute("SELECT alias FROM entity_aliases WHERE entity_id = ?", (dest,))
+        }
+        source_aliases = {
+            str(r[0])
+            for r in conn.execute("SELECT alias FROM entity_aliases WHERE entity_id = ?", (source,))
         }
         assert {"Old Acme", "Acme"} <= dest_aliases
+        assert "Acme" in source_aliases
         assert conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0] == 2
         assert str(conn.execute("SELECT action FROM corrections").fetchone()[0]) == "merge"
+    finally:
+        conn.close()
+
+
+def test_merge_rejects_self_cycle_and_cross_type(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        dest = _insert_entity(conn, name="Zebra Deal")
+        source = _insert_entity(conn, name="Acme")
+        other = _insert_entity(conn, name="Other Deal")
+        person = _insert_entity(conn, name="Priya Natarajan", typ="person")
+        with pytest.raises(CorrectionError, match="cannot merge an entity into itself"):
+            merge_entities(conn, dest, dest)
+        with pytest.raises(CorrectionError, match="entities must be the same type"):
+            merge_entities(conn, person, dest)
+        with pytest.raises(CorrectionError, match="entities must be the same type"):
+            merge_entities(conn, dest, person)
+        merge_entities(conn, source, dest)
+        with pytest.raises(CorrectionError, match="entity not found") as merged_source:
+            merge_entities(conn, source, other)
+        assert merged_source.value.status_code == 404
+        with pytest.raises(CorrectionError, match="entity not found") as merged_dest:
+            merge_entities(conn, other, source)
+        assert merged_dest.value.status_code == 404
+        assert (
+            str(
+                conn.execute(
+                    "SELECT merged_into_id FROM entities WHERE id = ?", (source,)
+                ).fetchone()[0]
+            )
+            == dest
+        )
+        assert (
+            conn.execute("SELECT merged_into_id FROM entities WHERE id = ?", (dest,)).fetchone()[0]
+            is None
+        )
+        assert (
+            conn.execute("SELECT merged_into_id FROM entities WHERE id = ?", (other,)).fetchone()[0]
+            is None
+        )
+        assert (
+            conn.execute("SELECT merged_into_id FROM entities WHERE id = ?", (person,)).fetchone()[
+                0
+            ]
+            is None
+        )
+    finally:
+        conn.close()
+
+
+def test_rename_rejects_name_clash_and_too_long(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        left = _insert_entity(conn, name="Acme Deal")
+        right = _insert_entity(conn, name="Other Deal")
+        with pytest.raises(CorrectionError, match="name already exists"):
+            rename_entity(conn, right, "Acme Deal")
+        assert (
+            str(
+                conn.execute(
+                    "SELECT canonical_name FROM entities WHERE id = ?", (right,)
+                ).fetchone()[0]
+            )
+            == "Other Deal"
+        )
+        with pytest.raises(CorrectionError, match="new_text is too long"):
+            rename_entity(conn, right, "x" * (MAX_NEW_TEXT + 1))
+        rename_entity(conn, right, "y" * MAX_NEW_TEXT)
+        assert (
+            str(
+                conn.execute(
+                    "SELECT canonical_name FROM entities WHERE id = ?", (right,)
+                ).fetchone()[0]
+            )
+            == "y" * MAX_NEW_TEXT
+        )
+        assert (
+            str(
+                conn.execute(
+                    "SELECT canonical_name FROM entities WHERE id = ?", (left,)
+                ).fetchone()[0]
+            )
+            == "Acme Deal"
+        )
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
     finally:
         conn.close()
 

@@ -16,6 +16,8 @@ from watson.intelligence.runtime import (
     JobFailure,
     RuntimeUnavailable,
 )
+from watson.intelligence.schemas.consolidation import DayExtractOutput, EntityDelta
+from watson.memory.corrections import merge_entities
 from watson.memory.db import connect, iso_now, parse_iso
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
@@ -25,6 +27,9 @@ from watson.pipeline.consolidation import (
     ConsolidationWait,
     _achievement_key,
     _insert_achievements,
+    _insert_extract,
+    _load_entities,
+    _match_entity,
     _project_bucket,
     _understand_jobs_for_day,
     catch_up_on_launch,
@@ -213,16 +218,16 @@ def _insert_claim(
     return claim_id
 
 
-def _insert_entity(conn: object, *, name: str = "Acme Q4 Proposal") -> str:
+def _insert_entity(conn: object, *, name: str = "Acme Q4 Proposal", typ: str = "project") -> str:
     entity_id, stamp = new_id(), "2026-10-31T09:00:00Z"
     conn.execute(
         """
         INSERT INTO entities (
             id, created_at, updated_at, type, canonical_name, description,
             first_seen, last_seen, provisional, merged_into_id
-        ) VALUES (?, ?, ?, 'project', ?, NULL, ?, ?, 0, NULL)
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 0, NULL)
         """,
-        (entity_id, stamp, stamp, name, stamp, stamp),
+        (entity_id, stamp, stamp, typ, name, stamp, stamp),
     )
     conn.commit()
     return entity_id
@@ -911,6 +916,81 @@ def test_project_bucket_malformed_json_is_null(tmp_path: Path) -> None:
     finally:
         conn.close()
 
+
+def test_merged_source_is_skipped_and_history_lands_on_dest(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        dest = _insert_entity(conn, name="Zebra Deal")
+        source = _insert_entity(conn, name="Acme")
+        conn.execute(
+            """
+            INSERT INTO entity_aliases (
+                id, created_at, updated_at, entity_id, alias, source
+            ) VALUES (?, '2026-10-31T09:00:00Z', '2026-10-31T09:00:00Z', ?, 'OldAcme', 'model')
+            """,
+            (new_id(), source),
+        )
+        conn.commit()
+        merge_entities(conn, source, dest)
+        names = {row["canonical_name"] for row in _load_entities(conn)}
+        assert names == {"Zebra Deal"}
+        assert _match_entity(conn, "Acme", "project") == dest
+        assert _match_entity(conn, "OldAcme", "project") == dest
+        assert _match_entity(conn, "Zebra Deal", "project") == dest
+
+        day_id = _insert_day(conn)
+        frame_id = _insert_frame(conn, day_id)
+        segment_id = _insert_segment(conn, day_id, frame_id)
+        observation_id = _insert_observation(conn, segment_id)
+        claim_id = _insert_claim(
+            conn,
+            observation_id,
+            day_id,
+            segment_id,
+            frame_id,
+            kind="outcome",
+            assertion="observed",
+            text="Appendix drafted",
+        )
+        evidence_before = int(conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0])
+        _insert_extract(
+            conn,
+            day_id,
+            DayExtractOutput(
+                entity_deltas=[
+                    EntityDelta(
+                        entity_name="Acme",
+                        entity_type="project",
+                        delta_text="Moved the proposal forward.",
+                        claim_indexes=[1],
+                    )
+                ],
+                decisions=[],
+                commitments=[],
+            ),
+            [{"id": claim_id}],
+            prompt_version="day_extract/v1",
+            pipeline_version=1,
+            stamp="2026-10-31T18:30:00Z",
+        )
+        dest_hist = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM entity_history WHERE entity_id = ?", (dest,)
+            ).fetchone()[0]
+        )
+        src_hist = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM entity_history WHERE entity_id = ?", (source,)
+            ).fetchone()[0]
+        )
+        assert dest_hist == 1
+        assert src_hist == 0
+        assert (
+            int(conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0])
+            == evidence_before
+        )
+    finally:
+        conn.close()
 
 
 def test_project_bucket_first_resolved_else_null(tmp_path: Path) -> None:

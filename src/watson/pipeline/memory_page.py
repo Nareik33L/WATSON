@@ -112,9 +112,7 @@ def _claims(
         original_text = str(row["text"])
         original_assertion = str(row["assertion"])
         history = histories.get(ident, ())
-        text, assertion, latest = overlay_from_history(
-            original_text, original_assertion, history
-        )
+        text, assertion, latest = overlay_from_history(original_text, original_assertion, history)
         out.append(
             MemoryClaim(
                 id=ident,
