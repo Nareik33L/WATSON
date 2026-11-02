@@ -81,3 +81,16 @@ button {
 .claims { list-style: none; padding-left: 0; }
 .entity-list { list-style: none; padding-left: 0; }
 .entity-list li { margin-bottom: 8px; }
+.claim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.claim-actions form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.correct-form input[type=text] { min-width: 12rem; flex: 1; max-width: 100%; }
+.badge { color: var(--muted); }
+.badge-user_confirmed { color: var(--accent); }
+.badge-user_corrected { color: var(--accent); }
+.badge-user_rejected { color: #8a1f1f; }

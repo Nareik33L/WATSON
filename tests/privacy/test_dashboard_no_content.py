@@ -105,10 +105,13 @@ def test_responses_have_csp_and_no_content_fields(
             person_detail = client.get(f"/people/{person_id}")
             history_api = client.get("/api/history")
             entities_api = client.get("/api/entities?type=project")
+            memory = client.get("/memory")
+            claims_api = client.get("/api/claims")
         assert HISTORY_REASON in history.text
         assert ENTITY_DESCRIPTION in project_detail.text
         assert "Acme Q4 Proposal" in projects.text
         assert "Priya Natarajan" in people.text
+        assert "Talked to Priya about pricing" in memory.text
         for response in (
             page,
             api,
@@ -124,6 +127,8 @@ def test_responses_have_csp_and_no_content_fields(
             person_detail,
             history_api,
             entities_api,
+            memory,
+            claims_api,
         ):
             assert response.status_code == 200
             assert response.headers["content-security-policy"] == CSP
@@ -143,6 +148,9 @@ def test_responses_have_csp_and_no_content_fields(
         assert SENTINEL not in dumped
         assert SENTINEL not in history.text
         assert SENTINEL not in project_detail.text
+        assert SENTINEL not in memory.text
+        assert SENTINEL not in claims_api.text
+        assert PLANTED not in memory.text
     finally:
         conn.close()
 

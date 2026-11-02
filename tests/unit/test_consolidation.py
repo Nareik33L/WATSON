@@ -504,6 +504,41 @@ def test_achievement_key_folds_case_whitespace_and_punctuation() -> None:
         "onboarding guide section 4 published"
     )
     assert _achievement_key("Onboarding Guide section 4 published.") != folded
+    assert _achievement_key("") == ""
+    assert _achievement_key("   ") == ""
+    assert _achievement_key("!!!") == ""
+
+
+def test_blank_normalized_achievement_key_is_skipped(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        blank = _insert_eligible_achievement(
+            conn, day_id, text="???", captured_at="2026-10-31T09:00:00Z"
+        )
+        spaces = _insert_eligible_achievement(
+            conn, day_id, text="   ---   ", captured_at="2026-10-31T09:01:00Z"
+        )
+        kept = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text="Section 3 published.",
+            captured_at="2026-10-31T09:02:00Z",
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT claim_id, text FROM achievement_candidates").fetchall()
+        assert len(rows) == 1
+        assert str(rows[0]["claim_id"]) == kept
+        assert str(rows[0]["text"]) == "Section 3 published."
+        linked = {
+            str(row[0]) for row in conn.execute("SELECT claim_id FROM achievement_candidate_claims")
+        }
+        assert linked == {kept}
+        assert blank not in linked
+        assert spaces not in linked
+    finally:
+        conn.close()
 
 
 def test_folded_achievement_texts_merge_and_near_misses_stay_separate(tmp_path: Path) -> None:
@@ -783,6 +818,99 @@ def test_later_resolved_project_used_when_first_name_is_unresolved(
         }
     finally:
         conn.close()
+
+
+def test_project_bucket_matches_alias(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        entity_id = _insert_entity(conn, name="Canonical Corp")
+        conn.execute(
+            """
+            INSERT INTO entity_aliases (
+                id, created_at, updated_at, entity_id, alias, source
+            ) VALUES ('alias-acme', '2026-10-31T09:00:00Z', '2026-10-31T09:00:00Z',
+                      ?, 'Acme', 'model')
+            """,
+            (entity_id,),
+        )
+        conn.commit()
+        text = "Section 3 published."
+        aliased = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme"],
+            captured_at="2026-10-31T09:00:00Z",
+        )
+        canonical = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Canonical Corp"],
+            captured_at="2026-10-31T09:01:00Z",
+        )
+        raw = str(
+            conn.execute(
+                "SELECT raw_json FROM observations WHERE id = "
+                "(SELECT observation_id FROM claims WHERE id = ?)",
+                (aliased,),
+            ).fetchone()[0]
+        )
+        assert _project_bucket(conn, raw) == entity_id
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
+        assert len(rows) == 1
+        assert _candidate_links(conn, str(rows[0]["id"])) == {aliased, canonical}
+    finally:
+        conn.close()
+
+
+def test_project_bucket_malformed_json_is_null(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _insert_entity(conn, name="Acme Q4 Proposal")
+        text = "Section 3 published."
+        malformed = _insert_eligible_achievement(
+            conn, day_id, text=text, captured_at="2026-10-31T09:00:00Z"
+        )
+        conn.execute(
+            "UPDATE observations SET raw_json = '{not json' WHERE id = "
+            "(SELECT observation_id FROM claims WHERE id = ?)",
+            (malformed,),
+        )
+        conn.commit()
+        raw = str(
+            conn.execute(
+                "SELECT raw_json FROM observations WHERE id = "
+                "(SELECT observation_id FROM claims WHERE id = ?)",
+                (malformed,),
+            ).fetchone()[0]
+        )
+        assert _project_bucket(conn, raw) is None
+        assert _project_bucket(conn, "null") is None
+        assert _project_bucket(conn, "[1, 2]") is None
+        null_bucket = _insert_eligible_achievement(
+            conn, day_id, text=text, captured_at="2026-10-31T09:01:00Z"
+        )
+        resolved = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:02:00Z",
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
+        assert len(rows) == 2
+        link_sets = {frozenset(_candidate_links(conn, str(row["id"]))) for row in rows}
+        assert link_sets == {frozenset({malformed, null_bucket}), frozenset({resolved})}
+    finally:
+        conn.close()
+
 
 
 def test_project_bucket_first_resolved_else_null(tmp_path: Path) -> None:
