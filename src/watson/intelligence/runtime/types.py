@@ -45,6 +45,13 @@ class StructuredOutputError(JobFailure):
         self.errors = errors
 
 
+def end_runtime_phase(runtime: object) -> None:
+    """Unload resident models at a phase boundary. No-op if unsupported."""
+    end = getattr(runtime, "end_phase", None)
+    if callable(end):
+        end()
+
+
 class LanguageRuntime(Protocol):
     def complete(
         self, messages: Sequence[Message], schema: Mapping[str, Any]

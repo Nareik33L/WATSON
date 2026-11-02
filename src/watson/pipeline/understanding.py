@@ -37,6 +37,7 @@ from watson.intelligence.runtime import (
     RuntimeUnavailable,
     StructuredOutputError,
     build_runtime,
+    end_runtime_phase,
     hold_if_unavailable,
     hold_understanding_jobs,
 )
@@ -53,9 +54,9 @@ log = logging.getLogger("watson.pipeline.understanding")
 
 WORKER_ID = "watson-understand"
 PROMPT_TASK = "understanding"
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 # Numbered merged OCR in the understanding user message. 4000 characters is
-# ~1000 tokens; with the v1 system prompt, retrieved aliases, JSON schema,
+# ~1000 tokens; with the v2 system prompt, retrieved aliases, JSON schema,
 # and num_predict=768 this fits the default 4096-token Ollama context.
 MERGED_TEXT_PROMPT_MAX = 4000
 SNIPPET_KIND_OCR = "ocr"
@@ -178,27 +179,30 @@ def drain_understand_jobs(
     if language is None or embedder is None:
         return 0
     completed = 0
-    while completed < limit:
-        job = claim(conn, worker_id=worker_id, kind=UNDERSTAND_JOB_KIND, now=now)
-        if job is None:
-            break
-        try:
-            understand_job(conn, job, language, embedder, settings=settings, now=now)
-            complete(conn, job.id, worker_id=worker_id, now=now)
-            completed += 1
-        except JobLeaseError:
-            raise
-        except RuntimeUnavailable as exc:
-            _hold_claimed_understand_job(conn, job, worker_id, exc, now=now)
-            break
-        except JobFailure as exc:
-            fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
-            if not exc.retryable:
-                continue
-            break
-        except (OSError, ValueError, RuntimeError, sqlcipher.DatabaseError) as exc:
-            fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
-            raise
+    try:
+        while completed < limit:
+            job = claim(conn, worker_id=worker_id, kind=UNDERSTAND_JOB_KIND, now=now)
+            if job is None:
+                break
+            try:
+                understand_job(conn, job, language, embedder, settings=settings, now=now)
+                complete(conn, job.id, worker_id=worker_id, now=now)
+                completed += 1
+            except JobLeaseError:
+                raise
+            except RuntimeUnavailable as exc:
+                _hold_claimed_understand_job(conn, job, worker_id, exc, now=now)
+                break
+            except JobFailure as exc:
+                fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
+                if not exc.retryable:
+                    continue
+                break
+            except (OSError, ValueError, RuntimeError, sqlcipher.DatabaseError) as exc:
+                fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
+                raise
+    finally:
+        end_runtime_phase(language)
     if completed:
         log.info("drained understand jobs", extra={"completed": completed, "limit": limit})
     return completed

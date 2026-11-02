@@ -250,7 +250,7 @@ def test_missing_runtime_holds_understand_jobs(
         conn.close()
 
 
-def test_ollama_unloads_chat_before_embed_and_embed_before_chat(
+def test_ollama_unloads_only_at_phase_end_not_between_chat_and_embed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     opened = _install_transport(
@@ -265,12 +265,89 @@ def test_ollama_unloads_chat_before_embed_and_embed_before_chat(
     runtime.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)
     runtime.embed(["a"])
     runtime.complete([{"role": "user", "content": "y"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.embed(["b"])
     paths = [req.full_url.rsplit("/", 1)[-1] for req in opened]
-    assert paths == ["chat", "generate", "embed", "generate", "chat"]
-    unload_chat = json.loads(opened[1].data or b"{}")
+    assert paths == ["chat", "embed", "chat", "embed"]
+    runtime.end_phase()
+    paths = [req.full_url.rsplit("/", 1)[-1] for req in opened]
+    assert paths == ["chat", "embed", "chat", "embed", "generate", "generate"]
+    unload_chat = json.loads(opened[4].data or b"{}")
+    unload_embed = json.loads(opened[5].data or b"{}")
     assert unload_chat == {"model": "llama3.2:3b", "keep_alive": 0}
-    unload_embed = json.loads(opened[3].data or b"{}")
     assert unload_embed == {"model": "nomic-embed-text", "keep_alive": 0}
+
+
+def _phase_loads(opened: list[Request]) -> dict[str, int]:
+    """Count model loads (first use after unload or start) and mid-phase unloads."""
+    resident: set[str] = set()
+    loads = {"chat": 0, "embed": 0, "unloads": 0}
+    for req in opened:
+        name = req.full_url.rsplit("/", 1)[-1]
+        if name == "generate":
+            body = json.loads(req.data or b"{}")
+            if body.get("keep_alive") == 0:
+                loads["unloads"] += 1
+                model = str(body.get("model") or "")
+                if model == "llama3.2:3b":
+                    resident.discard("chat")
+                if model == "nomic-embed-text":
+                    resident.discard("embed")
+            continue
+        kind = "chat" if name == "chat" else "embed" if name == "embed" else None
+        if kind is None:
+            continue
+        if kind not in resident:
+            loads[kind] += 1
+            resident.add(kind)
+    return loads
+
+
+def test_one_load_per_phase_and_zero_mid_phase_switches(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened = _install_transport(
+        monkeypatch,
+        {
+            "/api/chat": {"message": {"content": json.dumps(_STUB_CHAT)}},
+            "/api/embed": {"embeddings": [[0.0, 1.0]]},
+            "/api/generate": {},
+        },
+    )
+    runtime = _ollama()
+    mark = 0
+
+    def take() -> list[Request]:
+        nonlocal mark
+        chunk = opened[mark:]
+        mark = len(opened)
+        return chunk
+
+    runtime.complete([{"role": "user", "content": "u1"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.embed(["e1"])
+    runtime.complete([{"role": "user", "content": "u2"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.embed(["e2"])
+    understanding = take()
+    stats = _phase_loads(understanding)
+    assert stats["chat"] == 1
+    assert stats["embed"] == 1
+    assert stats["unloads"] == 0
+    runtime.end_phase()
+    take()
+
+    runtime.complete([{"role": "user", "content": "cluster"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.complete([{"role": "user", "content": "extract"}], UNDERSTANDING_JSON_SCHEMA)
+    consolidation = take()
+    stats = _phase_loads(consolidation)
+    assert stats["chat"] == 1
+    assert stats["embed"] == 0
+    assert stats["unloads"] == 0
+    runtime.end_phase()
+    take()
+
+    runtime.complete([{"role": "user", "content": "summary"}], UNDERSTANDING_JSON_SCHEMA)
+    summary = take()
+    stats = _phase_loads(summary)
+    assert stats["chat"] == 1
+    assert stats["unloads"] == 0
+    runtime.end_phase()
 
 
 def test_ollama_skips_unload_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -288,6 +365,7 @@ def test_ollama_skips_unload_when_disabled(monkeypatch: pytest.MonkeyPatch) -> N
     runtime = OllamaRuntime(settings)
     runtime.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)
     runtime.embed(["a"])
+    runtime.end_phase()
     paths = [req.full_url.rsplit("/", 1)[-1] for req in opened]
     assert paths == ["chat", "embed"]
 

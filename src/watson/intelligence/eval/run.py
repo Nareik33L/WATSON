@@ -360,7 +360,8 @@ def _peak_rss_bytes() -> int:
 
 
 def _format_failure(exc: BaseException) -> str:
-    return f"{type(exc).__name__}: {exc}"
+    """Exception type only — never copy OCR, prompts, or window titles into reports."""
+    return type(exc).__name__
 
 
 def _failed_day(name: str, exc: BaseException) -> DayEval:

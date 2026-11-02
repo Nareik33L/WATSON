@@ -21,6 +21,7 @@ from watson.intelligence.runtime.types import (
     RuntimeUnavailable,
     StructuredOutputError,
     VisionRuntime,
+    end_runtime_phase,
 )
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "StructuredOutputError",
     "VisionRuntime",
     "build_runtime",
+    "end_runtime_phase",
     "hold_if_unavailable",
     "hold_understanding_jobs",
 ]

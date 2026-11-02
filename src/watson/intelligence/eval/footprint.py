@@ -16,10 +16,11 @@ import threading
 from dataclasses import dataclass, field
 
 _PHYS = re.compile(
-    r"phys_footprint[:\s]+([0-9]*\.?[0-9]+)\s*([KMGT]i?B?)?",
+    r"(?<![A-Za-z0-9_])phys_footprint(?![A-Za-z0-9_])[:\s]+([0-9]*\.?[0-9]+)\s*([KMGT]i?B?)?",
     re.IGNORECASE,
 )
 _MODEL_NAMES = ("ollama", "llama-server", "llama.cpp")
+_WATSON_CMDLINE = (b"watson", b"watson-")
 
 
 def parse_phys_footprint(text: str) -> int | None:
@@ -35,13 +36,18 @@ def parse_phys_footprint(text: str) -> int | None:
 
 
 def find_model_pids() -> list[int]:
-    """PIDs of Ollama / llama-server processes, excluding this process."""
+    """PIDs of Ollama / llama-server processes, excluding this process.
+
+    Match the process name (not ``pgrep -f``) so ``watson eval --runtime ollama``
+    is not counted as the model server.
+    """
     found: list[int] = []
     self_pid = os.getpid()
     for name in _MODEL_NAMES:
+        argv = ["pgrep", "-x", name] if "." not in name else ["pgrep", "-f", name]
         try:
             proc = subprocess.run(
-                ["pgrep", "-f", name],
+                argv,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -54,21 +60,27 @@ def find_model_pids() -> list[int]:
                 pid = int(token)
             except ValueError:
                 continue
-            if pid != self_pid and pid not in found:
-                found.append(pid)
+            if pid == self_pid or pid in found:
+                continue
+            if _is_watson_wrapper(pid):
+                continue
+            found.append(pid)
     return found
 
 
 def pid_phys_footprint_bytes(pid: int) -> int:
     """Darwin phys_footprint via ``footprint``; Linux ``VmRSS``."""
-    if sys.platform == "darwin":
-        darwin = _darwin_footprint(pid)
-        if darwin is not None:
-            return darwin
-    linux = _linux_vmrss(pid)
-    if linux is not None:
-        return linux
-    return _ps_rss(pid)
+    try:
+        if sys.platform == "darwin":
+            darwin = _darwin_footprint(pid)
+            if darwin:
+                return darwin
+        linux = _linux_vmrss(pid)
+        if linux:
+            return linux
+        return _ps_rss(pid)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0
 
 
 def worker_rss_bytes() -> int:
@@ -100,11 +112,34 @@ def _linux_vmrss(pid: int) -> int | None:
     try:
         with open(f"/proc/{pid}/status", encoding="utf-8") as handle:
             for line in handle:
-                if line.startswith("VmRSS:"):
-                    return int(line.split()[1]) * 1024
+                if not line.startswith("VmRSS:"):
+                    continue
+                parts = line.split()
+                if len(parts) < 2:
+                    return None
+                amount = int(parts[1])
+                unit = parts[2].casefold() if len(parts) > 2 else "kb"
+                if unit.startswith("kb"):
+                    return amount * 1024
+                if unit.startswith("mb"):
+                    return amount * 1024 * 1024
+                if unit.startswith("gb"):
+                    return amount * 1024**3
+                if unit in {"b", "bytes"}:
+                    return amount
+                return amount * 1024
     except (OSError, ValueError):
         return None
     return None
+
+
+def _is_watson_wrapper(pid: int) -> bool:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            cmdline = handle.read().replace(b"\x00", b" ")
+    except OSError:
+        return False
+    return any(token in cmdline for token in _WATSON_CMDLINE)
 
 
 def _ps_rss(pid: int) -> int:
@@ -159,7 +194,10 @@ class FootprintSampler:
                     pids.append(pid)
         total = worker_rss_bytes()
         for pid in pids:
-            total += pid_phys_footprint_bytes(pid)
+            try:
+                total += pid_phys_footprint_bytes(pid)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                continue
         return total
 
     def _loop(self) -> None:

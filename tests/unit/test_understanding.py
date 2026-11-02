@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 
 from tests.replay_support import DAY_ACME_Q4, TEST_KEY, open_test_db
 from watson.config.schema import IntelligenceConfig
+from watson.intelligence.prompts import load_prompt
 from watson.intelligence.runtime import UNDERSTAND_JOB_KIND, FakeRuntime, JobFailure
 from watson.intelligence.runtime import http as http_mod
 from watson.intelligence.runtime.types import RuntimeUnavailable
@@ -30,6 +32,7 @@ from watson.pipeline.jobs import JobState, claim, enqueue, get_job
 from watson.pipeline.replay import replay_fixture
 from watson.pipeline.understanding import (
     MERGED_TEXT_PROMPT_MAX,
+    PROMPT_VERSION,
     UnderstandSettings,
     _citation_supported,
     _load_segment,
@@ -184,6 +187,22 @@ def test_number_merged_text_and_eligibility_helpers() -> None:
     assert MERGED_TEXT_PROMPT_MAX == 4000
 
 
+def test_merged_text_prompt_max_keeps_4000_truncates_4001_and_empty() -> None:
+    """C1 (>=), C2 (+1), C5 (first-line slice overflow), and empty."""
+    assert number_merged_text("", max_chars=MERGED_TEXT_PROMPT_MAX) == "(empty)"
+    exact = "x" * (MERGED_TEXT_PROMPT_MAX - 3)
+    kept = number_merged_text(exact, max_chars=MERGED_TEXT_PROMPT_MAX)
+    assert kept == f"1. {exact}"
+    assert len(kept) == MERGED_TEXT_PROMPT_MAX
+    assert "(truncated)" not in kept
+    over = "x" * (MERGED_TEXT_PROMPT_MAX - 2)
+    truncated = number_merged_text(over, max_chars=MERGED_TEXT_PROMPT_MAX)
+    body = truncated.replace("\n(truncated)", "")
+    assert truncated.endswith("(truncated)")
+    assert len(body) == MERGED_TEXT_PROMPT_MAX
+    assert body == f"1. {over}"[:MERGED_TEXT_PROMPT_MAX]
+
+
 def test_eligibility_closed_or_twenty_minutes(tmp_path: Path) -> None:
     path = tmp_path / "watson.db"
     upgrade_head(path, TEST_KEY)
@@ -319,7 +338,7 @@ def test_acme_q4_fake_runtime_replay(data_dir: Path, key_provider: object, tmp_p
                 "SELECT DISTINCT prompt_version, pipeline_version FROM observations"
             )
         }
-        assert versions == {("understanding/v1", PIPELINE_VERSION)}
+        assert versions == {("understanding/v2", PIPELINE_VERSION)}
 
         acme = conn.execute(
             "SELECT id FROM entities WHERE canonical_name = ?", ("Acme Q4 Proposal",)
@@ -500,5 +519,100 @@ def test_runtime_unavailable_mid_drain_holds_without_burning_attempts(tmp_path: 
         assert row["attempts"] == 0
         assert row["last_error"] == "RuntimeUnavailable"
         assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+UNDERSTANDING_V1_SHA256 = "49af407570f2d90a1d9fe055d14a283a12011b5d54495f2489fa6d60b904e781"
+
+
+def test_understanding_v1_prompt_bytes_are_pinned() -> None:
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "watson"
+        / "intelligence"
+        / "prompts"
+        / "understanding"
+        / "v1.md"
+    )
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert digest == UNDERSTANDING_V1_SHA256
+    prompt = load_prompt("understanding", "v1")
+    assert prompt.prompt_version == "understanding/v1"
+    assert "capped at 4000" not in prompt.text
+    assert hashlib.sha256(prompt.text.encode("utf-8")).hexdigest() == UNDERSTANDING_V1_SHA256
+
+
+def test_new_understand_run_records_v2_and_preserves_v1_rows(tmp_path: Path) -> None:
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        segment_id = _closed_segment(conn)
+        segment = _load_segment(conn, segment_id)
+        assert segment is not None
+        v1_id = _persist_observation(
+            conn,
+            segment,
+            UnderstandingOutput.model_validate(
+                {
+                    "activity_type": "knowledge_work",
+                    "description": "v1 preserved description",
+                    "confidence": 0.5,
+                    "claims": [
+                        {
+                            "kind": "activity",
+                            "text": "v1 preserved claim",
+                            "assertion": "observed",
+                            "evidence": [
+                                {"snippet": "Still editing", "line_start": 1, "line_end": 1}
+                            ],
+                        }
+                    ],
+                    "project_candidates": [],
+                    "people_candidates": [],
+                }
+            ),
+            prompt_version="understanding/v1",
+            pipeline_version=1,
+            model_id="fake",
+            stamp="2026-10-31T10:00:00Z",
+        )
+        conn.commit()
+        runtime = FakeRuntime()
+        v2_id = understand_segment(
+            conn,
+            segment_id,
+            runtime,
+            runtime,
+            settings=UnderstandSettings(pipeline_version=PIPELINE_VERSION),
+        )
+        conn.commit()
+        assert v2_id != v1_id
+        assert PIPELINE_VERSION == 2
+        assert PROMPT_VERSION == "v2"
+        rows = {
+            int(row["pipeline_version"]): (
+                str(row["id"]),
+                str(row["prompt_version"]),
+                str(row["description"]),
+            )
+            for row in conn.execute(
+                """
+                SELECT id, prompt_version, pipeline_version, description
+                FROM observations WHERE segment_id = ?
+                """,
+                (segment_id,),
+            )
+        }
+        assert rows[1][0] == v1_id
+        assert rows[1][1] == "understanding/v1"
+        assert rows[1][2] == "v1 preserved description"
+        assert rows[PIPELINE_VERSION][0] == v2_id
+        assert rows[PIPELINE_VERSION][1] == "understanding/v2"
+        v2_prompt = load_prompt("understanding", "v2")
+        assert v2_prompt.prompt_version == "understanding/v2"
+        assert "capped at 4000" in v2_prompt.text
     finally:
         conn.close()

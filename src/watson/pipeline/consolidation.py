@@ -49,6 +49,7 @@ from watson.intelligence.runtime import (
     RuntimeUnavailable,
     StructuredOutputError,
     build_runtime,
+    end_runtime_phase,
     hold_if_unavailable,
 )
 from watson.intelligence.schemas.consolidation import (
@@ -631,11 +632,13 @@ def _replace_derived(
         if claims
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
     )
+    end_runtime_phase(language)
     raw_summary = (
         _summarize_day(language, claims, summary_prompt.text)
         if claims
         else DailySummaryOutput(paragraphs=[])
     )
+    end_runtime_phase(language)
     verified = verify_narrative(
         expand_index_citations(
             [

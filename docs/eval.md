@@ -70,7 +70,7 @@ footprint -p <pid>    # look for phys_footprint
 
 `intelligence.runtime` must stay `ollama`. Do not set `intelligence.runtime = "fake"` for this path.
 
-8 GB Ollama defaults that keep one model resident: `context_window = 4096`, `intelligence.ollama.timeout_s = 300`, `num_predict = 768`, `unload_between_phases = true`. The understanding OCR cap is 4000 characters (see `docs/config.md`).
+8 GB Ollama defaults: `context_window = 4096`, `intelligence.ollama.timeout_s = 300`, `num_predict = 768`, `unload_between_phases = true` (unload only at understanding → consolidation → summary boundaries). The understanding **v2** OCR cap is 4000 characters and new rows record `prompt_version = understanding/v2` with `pipeline_version = 2` (see `docs/config.md`). `report.json` holds metrics, ids, counts, timings, and hashes — never raw OCR, prompt bodies, or window titles.
 
 ## Thresholds
 

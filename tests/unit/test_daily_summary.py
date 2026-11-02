@@ -25,6 +25,7 @@ from watson.pipeline.consolidation import (
     consolidate_working_day,
     derived_counts,
 )
+from watson.pipeline.frames import PIPELINE_VERSION
 from watson.privacy.retention import Tier2SweepResult
 from watson.privacy.spoolsweep import SpoolSweepResult
 
@@ -44,15 +45,15 @@ def test_summary_cites_day_claims_and_lists_uncited(tmp_path: Path) -> None:
         ).fetchone()
         assert row is not None
         assert row["prompt_version"] == "daily_summary/v1"
-        assert int(row["pipeline_version"]) == 1
+        assert int(row["pipeline_version"]) == PIPELINE_VERSION
         narrative = str(row["narrative_md"])
         assert "[c:" in narrative
         assert narrative.count("[c:") == 2
         day_ids = {
             str(item[0])
             for item in conn.execute(
-                "SELECT id FROM claims WHERE working_day_id = ? AND pipeline_version = 1",
-                (seeded["day_id"],),
+                "SELECT id FROM claims WHERE working_day_id = ? AND pipeline_version = ?",
+                (seeded["day_id"], PIPELINE_VERSION),
             )
         }
         assert citations_resolvable(narrative, day_ids)
@@ -190,7 +191,7 @@ def test_summary_prompt_is_scoped_to_day_and_version(tmp_path: Path) -> None:
             kind="activity",
             assertion="observed",
             text="v2 only",
-            pipeline_version=2,
+            pipeline_version=99,
         )
         captured: list[str] = []
 
@@ -218,11 +219,11 @@ def test_summary_uses_configured_pipeline_version(tmp_path: Path) -> None:
         for row in conn.execute(
             "SELECT id FROM segments WHERE working_day_id = ?", (seeded["day_id"],)
         ):
-            _insert_observation(conn, str(row[0]), pipeline_version=2)
+            _insert_observation(conn, str(row[0]), pipeline_version=99)
         _insert_claim(
             conn,
             conn.execute(
-                "SELECT id FROM observations WHERE pipeline_version = 2 LIMIT 1"
+                "SELECT id FROM observations WHERE pipeline_version = 99 LIMIT 1"
             ).fetchone()[0],
             seeded["day_id"],
             seeded["changed"],
@@ -230,7 +231,7 @@ def test_summary_uses_configured_pipeline_version(tmp_path: Path) -> None:
             kind="outcome",
             assertion="observed",
             text="v2 appendix",
-            pipeline_version=2,
+            pipeline_version=99,
         )
         runtime = _runtime()
         consolidate_working_day(
@@ -239,17 +240,17 @@ def test_summary_uses_configured_pipeline_version(tmp_path: Path) -> None:
             runtime=runtime,
             embedding=runtime,
             now=NOW,
-            settings=ConsolidateSettings(pipeline_version=2),
+            settings=ConsolidateSettings(pipeline_version=99),
         )
         row = conn.execute(
             """
             SELECT pipeline_version FROM daily_summaries
-            WHERE working_day_id = ? AND pipeline_version = 2
+            WHERE working_day_id = ? AND pipeline_version = 99
             """,
             (seeded["day_id"],),
         ).fetchone()
         assert row is not None
-        assert int(row["pipeline_version"]) == 2
+        assert int(row["pipeline_version"]) == 99
         assert (
             conn.execute(
                 "SELECT COUNT(*) FROM daily_summaries WHERE pipeline_version = 1"

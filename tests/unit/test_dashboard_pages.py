@@ -19,6 +19,7 @@ from tests.unit.test_consolidation import (
 from watson.config import load_config
 from watson.dashboard.app import PACKAGE_DIR, create_app
 from watson.memory.ids import new_id
+from watson.pipeline.frames import PIPELINE_VERSION
 
 INSTALL_TOKEN = "test-install-token-not-a-secret-for-ci"
 ORIGIN = "http://127.0.0.1:8000"
@@ -85,7 +86,7 @@ def _observation_with_candidates(
     description: str,
     projects: list[str],
     people: list[str],
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
 ) -> str:
     obs_id = _insert_observation(
         conn, segment_id, description=description, pipeline_version=pipeline_version
@@ -112,7 +113,7 @@ def _insert_summary(
     claim_ids: list[str],
     *,
     unverified: list[dict[str, str]] | None = None,
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
 ) -> None:
     stamp = "2026-10-31T18:00:00Z"
     conn.execute(
@@ -149,7 +150,7 @@ def _insert_entity_history(
     *,
     delta: str,
     claim_ids: list[str],
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
 ) -> None:
     stamp = "2026-10-31T18:00:00Z"
     conn.execute(
@@ -398,7 +399,7 @@ def test_entity_links_ignore_other_pipeline_version(data_dir: Path, key_provider
             description="v2 leaked",
             projects=["Acme Q4 Proposal"],
             people=[],
-            pipeline_version=2,
+            pipeline_version=99,
         )
         _insert_claim(
             conn,
@@ -409,7 +410,7 @@ def test_entity_links_ignore_other_pipeline_version(data_dir: Path, key_provider
             kind="activity",
             assertion="observed",
             text="v2 claim leaked",
-            pipeline_version=2,
+            pipeline_version=99,
         )
         project_id = _insert_entity(conn, name="Acme Q4 Proposal", typ="project")
     finally:
@@ -624,7 +625,7 @@ def test_history_today_and_entity_history_are_scoped(data_dir: Path, key_provide
             description="older-v2 leaked observation",
             projects=["Acme Q4 Proposal"],
             people=[],
-            pipeline_version=2,
+            pipeline_version=99,
         )
         latest_v1 = _observation_with_candidates(
             conn,
@@ -639,7 +640,7 @@ def test_history_today_and_entity_history_are_scoped(data_dir: Path, key_provide
             description="v2 leaked",
             projects=["Acme Q4 Proposal"],
             people=[],
-            pipeline_version=2,
+            pipeline_version=99,
         )
         v1_claim = _insert_claim(
             conn,
@@ -660,7 +661,7 @@ def test_history_today_and_entity_history_are_scoped(data_dir: Path, key_provide
             kind="activity",
             assertion="observed",
             text="v2 claim leaked",
-            pipeline_version=2,
+            pipeline_version=99,
         )
         _insert_claim(
             conn,
@@ -678,9 +679,9 @@ def test_history_today_and_entity_history_are_scoped(data_dir: Path, key_provide
             latest_id,
             "latest-v2 summary leaked",
             [v2_claim],
-            pipeline_version=2,
+            pipeline_version=99,
         )
-        _insert_summary(conn, older_id, "older-v2-summary leaked", [], pipeline_version=2)
+        _insert_summary(conn, older_id, "older-v2-summary leaked", [], pipeline_version=99)
         project_id = _insert_entity(conn, name="Acme Q4 Proposal", typ="project")
         _insert_entity_history(
             conn,
@@ -695,7 +696,7 @@ def test_history_today_and_entity_history_are_scoped(data_dir: Path, key_provide
             latest_id,
             delta="v2 delta leaked",
             claim_ids=[v2_claim],
-            pipeline_version=2,
+            pipeline_version=99,
         )
     finally:
         conn.close()

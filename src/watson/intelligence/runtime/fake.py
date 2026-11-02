@@ -38,6 +38,9 @@ class FakeRuntime:
     def probe(self) -> None:
         return None
 
+    def end_phase(self) -> None:
+        return None
+
     def complete(
         self, messages: Sequence[Message], schema: Mapping[str, Any]
     ) -> dict[str, Any]:

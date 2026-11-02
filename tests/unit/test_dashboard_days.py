@@ -27,6 +27,7 @@ from watson.dashboard.app import create_app
 from watson.intelligence.runtime.select import RuntimeHold
 from watson.memory.ids import new_id
 from watson.pipeline.consolidation import consolidate_working_day, retry_working_day
+from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import JobState, enqueue
 
 INSTALL_TOKEN = "test-install-token-not-a-secret-for-ci"
@@ -170,7 +171,7 @@ def _insert_summary(
     narrative: str,
     claim_ids: list[str] | None = None,
     unverified: list[dict[str, str]] | None = None,
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
 ) -> None:
     stamp = "2026-10-31T10:00:00Z"
     ids = claim_ids or []
@@ -265,7 +266,7 @@ def test_production_retry_never_writes_fake_model_id(
     assert retry.status_code == 303
     assert seen.get("spool_dir") == config.spool_dir
     assert seen.get("settings") is not None
-    assert seen["settings"].pipeline_version == 1
+    assert seen["settings"].pipeline_version == PIPELINE_VERSION
     assert seen.get("runtime") is None
 
     conn = open_test_db(data_dir)
@@ -396,7 +397,7 @@ def test_days_page_scopes_summary_to_pipeline_version(
             kind="outcome",
             assertion="observed",
             text="v2 claim leaked",
-            pipeline_version=2,
+            pipeline_version=99,
         )
         stamp = "2026-10-31T10:00:00Z"
         conn.execute(
@@ -413,7 +414,7 @@ def test_days_page_scopes_summary_to_pipeline_version(
             day_id,
             narrative="v2 narrative leaked",
             claim_ids=[v2],
-            pipeline_version=2,
+            pipeline_version=99,
         )
         _insert_summary(conn, day_id, narrative="v1 narrative only", claim_ids=[v1])
     finally:

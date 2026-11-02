@@ -16,6 +16,7 @@ from watson.intelligence.eval.metrics import (
     recall,
     unsupported_count,
 )
+from watson.pipeline.frames import PIPELINE_VERSION
 
 try:
     import yaml
@@ -37,7 +38,7 @@ def score_day(
     working_day_id: str,
     truth: dict[str, Any],
     *,
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
 ) -> dict[str, float]:
     predicted = collect_predicted(conn, working_day_id, pipeline_version=pipeline_version)
     projects = [str(item) for item in list(truth.get("projects") or [])]
@@ -68,7 +69,10 @@ def score_day(
 
 
 def collect_predicted(
-    conn: sqlcipher.Connection, working_day_id: str, *, pipeline_version: int = 1
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int = PIPELINE_VERSION,
 ) -> dict[str, Any]:
     projects = [
         str(row[0])

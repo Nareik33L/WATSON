@@ -70,6 +70,11 @@ class TimingRuntime:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
+    def end_phase(self) -> None:
+        end = getattr(self._inner, "end_phase", None)
+        if callable(end):
+            end()
+
     def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
         started = time.perf_counter()
         try:

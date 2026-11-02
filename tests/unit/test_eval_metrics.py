@@ -437,6 +437,49 @@ def test_report_passed_is_false_when_summary_missing() -> None:
     assert report.pipeline_passed is False
 
 
+def test_pipeline_passed_is_false_when_a_day_has_error() -> None:
+    """R5: pipeline_passed ignores a day's error when the rest of the gate is green."""
+    metrics = _all_metrics()
+    ok = DayEval(
+        name="ok",
+        date="2026-10-31",
+        metrics=metrics,
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=True,
+        citation_count=1,
+        claims=1,
+    )
+    broken = DayEval(
+        name="broken",
+        date="2026-10-31",
+        metrics=metrics,
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=True,
+        citation_count=1,
+        claims=1,
+        error="day exploded",
+    )
+    report = EvalReport(
+        mode="replay",
+        runtime="replay",
+        days=[ok, broken],
+        aggregate=metrics,
+        gate=gate_metrics(metrics),
+        failure_reason=None,
+    )
+    assert report.gate["passed"] is True
+    assert report.failure_reason is None
+    assert all(day.identical_counts and day.narrative_ok for day in report.days)
+    assert report.pipeline_passed is False
+    assert report.passed is False
+
+
 def test_narrative_ok_is_not_summary_present() -> None:
     present = DayEval(
         name="x",

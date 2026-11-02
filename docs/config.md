@@ -52,12 +52,15 @@ endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
 `/api/chat` and `/api/embed`; the urllib default of 120 s is too short for
 llama3.2:3b on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
 `num_predict = 768` (sized to the understanding JSON schema), and
-`unload_between_phases = true` so only one model is resident (§11.4).
+`unload_between_phases = true` unloads resident models at phase
+boundaries (understanding → consolidation → summary), never mid-phase.
 Chat options always send `temperature = 0`, `num_ctx`, and `num_predict`.
 
-The understanding prompt caps numbered merged OCR at **4000 characters**
-(~1000 tokens). With the v1 system prompt, retrieved aliases, the JSON
+The understanding **v2** prompt (`prompt_version = understanding/v2`,
+`PIPELINE_VERSION = 2`) caps numbered merged OCR at **4000 characters**
+(~1000 tokens). With the v2 system prompt, retrieved aliases, the JSON
 schema, and `num_predict = 768`, that fits the default 4096-token window.
+Existing `understanding/v1` / `pipeline_version = 1` rows stay readable.
 
 `entity_similarity_threshold` is the embedding cosine above which a
 free-text project/people candidate merges into an existing entity

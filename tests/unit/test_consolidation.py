@@ -38,6 +38,7 @@ from watson.pipeline.consolidation import (
     requeue_understand_jobs_for_day,
     retry_working_day,
 )
+from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import DEFAULT_MAX_ATTEMPTS, JobState, enqueue
 from watson.pipeline.segmentation import close_open_segments
 from watson.privacy.audit import KIND_CONSOLIDATED
@@ -46,6 +47,12 @@ from watson.privacy.spoolsweep import SpoolSweepResult
 
 RECORDINGS = Path(__file__).resolve().parents[1] / "fixtures" / "runtime" / "consolidation.json"
 NOW = datetime(2026, 10, 31, 20, 0, tzinfo=UTC)
+
+
+def _write_achievements(
+    conn: object, day_id: str, *, stamp: str, pipeline_version: int = PIPELINE_VERSION
+) -> None:
+    _insert_achievements(conn, day_id, pipeline_version=pipeline_version, stamp=stamp)
 
 
 def _open(tmp_path: Path):
@@ -61,9 +68,9 @@ def _insert_day(conn: object, *, date: str = "2026-10-31", state: str = "open") 
         INSERT INTO working_days (
             id, created_at, updated_at, date, started_at, ended_at,
             state, consolidation_error, pipeline_version
-        ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, 1)
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?)
         """,
-        (day_id, stamp, stamp, date, stamp, state),
+        (day_id, stamp, stamp, date, stamp, state, PIPELINE_VERSION),
     )
     conn.commit()
     return day_id
@@ -120,7 +127,7 @@ def _insert_segment(
             url_domain, started_at, ended_at, frame_count, dwell_seconds, line_changes,
             merged_text, state, expires_at, pipeline_version, start_frame_id
         ) VALUES (?, ?, ?, ?, 'com.lumen.pages', 'acme', NULL, ?, ?, 1, 60, ?,
-                  ?, ?, NULL, 1, ?)
+                  ?, ?, NULL, ?, ?)
         """,
         (
             segment_id,
@@ -132,6 +139,7 @@ def _insert_segment(
             line_changes,
             merged,
             state,
+            PIPELINE_VERSION,
             frame_id,
         ),
     )
@@ -144,7 +152,7 @@ def _insert_observation(
     segment_id: str,
     *,
     description: str = "Editing Acme",
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
     project_candidates: list[str] | None = None,
 ) -> str:
     obs_id, stamp = new_id(), "2026-10-31T10:00:00Z"
@@ -177,7 +185,7 @@ def _insert_claim(
     assertion: str,
     text: str,
     evidence: bool = True,
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
     snippet: str = "Still editing: Acme proposal appendix",
     created_at: str = "2026-10-31T10:00:00Z",
 ) -> str:
@@ -448,7 +456,7 @@ def _insert_eligible_achievement(
     day_id: str,
     *,
     text: str,
-    pipeline_version: int = 1,
+    pipeline_version: int = PIPELINE_VERSION,
     project_candidates: list[str] | None = None,
     captured_at: str = "2026-10-31T09:00:00Z",
     snippet: str | None = None,
@@ -524,7 +532,7 @@ def test_folded_achievement_texts_merge_and_near_misses_stay_separate(tmp_path: 
             captured_at="2026-10-31T09:10:00Z",
             snippet="near-miss-section-4",
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute(
             "SELECT id, text FROM achievement_candidates ORDER BY text, id"
@@ -575,7 +583,7 @@ def test_same_text_in_different_projects_does_not_merge(tmp_path: Path) -> None:
             project_candidates=["Onboarding Guide"],
             captured_at="2026-10-31T09:01:00Z",
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT id FROM achievement_candidates ORDER BY id").fetchall()
         assert len(rows) == 2
@@ -605,7 +613,7 @@ def test_same_text_in_same_project_merges(tmp_path: Path) -> None:
             project_candidates=["Acme Q4 Proposal"],
             captured_at="2026-10-31T09:01:00Z",
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
         assert len(rows) == 1
@@ -628,7 +636,7 @@ def _null_and_resolved_same_text(conn: object, *, null_first: bool) -> tuple[str
         project_candidates=["Acme Q4 Proposal"],
         captured_at=project_at,
     )
-    _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+    _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
     conn.commit()
     return null_id, project_id, day_id
 
@@ -688,7 +696,7 @@ def test_unresolved_project_name_falls_back_to_null_bucket(tmp_path: Path) -> No
             project_candidates=["Acme Q4 Proposal"],
             captured_at="2026-10-31T09:03:00Z",
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
         assert len(rows) == 2
@@ -729,7 +737,7 @@ def test_first_resolved_project_wins_not_the_last(tmp_path: Path) -> None:
             project_candidates=["Onboarding Guide"],
             captured_at="2026-10-31T09:02:00Z",
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
         assert len(rows) == 2
@@ -764,7 +772,7 @@ def test_later_resolved_project_used_when_first_name_is_unresolved(
         null_bucket = _insert_eligible_achievement(
             conn, day_id, text=text, captured_at="2026-10-31T09:02:00Z"
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
         assert len(rows) == 2
@@ -821,7 +829,7 @@ def test_achievements_do_not_merge_across_pipeline_versions(tmp_path: Path) -> N
         v2 = _insert_eligible_achievement(
             conn, day_id, text=text, pipeline_version=2, captured_at="2026-10-31T09:01:00Z"
         )
-        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         v1_rows = conn.execute(
             "SELECT id, pipeline_version FROM achievement_candidates WHERE pipeline_version = 1"
@@ -829,7 +837,7 @@ def test_achievements_do_not_merge_across_pipeline_versions(tmp_path: Path) -> N
         assert len(v1_rows) == 1
         assert _candidate_links(conn, str(v1_rows[0]["id"])) == {v1}
         assert v2 not in _candidate_links(conn, str(v1_rows[0]["id"]))
-        _insert_achievements(conn, day_id, pipeline_version=2, stamp="2026-10-31T18:31:00Z")
+        _write_achievements(conn, day_id, pipeline_version=2, stamp="2026-10-31T18:31:00Z")
         conn.commit()
         rows = conn.execute(
             """
@@ -857,7 +865,7 @@ def test_achievements_do_not_merge_across_working_days(tmp_path: Path) -> None:
         second = _insert_eligible_achievement(
             conn, day_two, text=text, captured_at="2026-10-31T09:00:00Z"
         )
-        _insert_achievements(conn, day_one, pipeline_version=1, stamp="2026-10-30T18:30:00Z")
+        _write_achievements(conn, day_one, stamp="2026-10-30T18:30:00Z")
         conn.commit()
         day_one_rows = conn.execute(
             "SELECT id FROM achievement_candidates WHERE working_day_id = ?",
@@ -866,7 +874,7 @@ def test_achievements_do_not_merge_across_working_days(tmp_path: Path) -> None:
         assert len(day_one_rows) == 1
         assert _candidate_links(conn, str(day_one_rows[0]["id"])) == {first}
         assert second not in _candidate_links(conn, str(day_one_rows[0]["id"]))
-        _insert_achievements(conn, day_two, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        _write_achievements(conn, day_two, stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute(
             "SELECT id, working_day_id FROM achievement_candidates ORDER BY working_day_id, id"
@@ -885,9 +893,7 @@ def test_duplicate_achievements_collapse_to_one_candidate_with_all_links(
     conn = _open(tmp_path)
     try:
         seeded = _four_same_achievements(conn)
-        _insert_achievements(
-            conn, str(seeded["day_id"]), pipeline_version=1, stamp="2026-10-31T18:30:00Z"
-        )
+        _write_achievements(conn, str(seeded["day_id"]), stamp="2026-10-31T18:30:00Z")
         conn.commit()
         rows = conn.execute(
             "SELECT id, claim_id, text FROM achievement_candidates ORDER BY text, id"
@@ -1179,33 +1185,33 @@ def test_replace_does_not_append_across_pipeline_versions(tmp_path: Path) -> Non
             runtime=runtime,
             embedding=runtime,
             now=NOW,
-            pipeline_version=1,
+            pipeline_version=PIPELINE_VERSION,
         )
-        v1 = derived_counts(conn, seeded["day_id"], 1)
+        current = derived_counts(conn, seeded["day_id"], PIPELINE_VERSION)
         stamp = "2026-10-31T21:00:00Z"
         conn.execute(
             """
             INSERT INTO activities (
                 id, created_at, updated_at, working_day_id, title, summary,
                 observation_ids, prompt_version, pipeline_version
-            ) VALUES (?, ?, ?, ?, 'v2 only', 'keep', '[]', 'clustering/v1', 2)
+            ) VALUES (?, ?, ?, ?, 'v99 only', 'keep', '[]', 'clustering/v1', 99)
             """,
             (new_id(), stamp, stamp, seeded["day_id"]),
         )
         conn.commit()
-        assert derived_counts(conn, seeded["day_id"], 2)["activities"] == 1
+        assert derived_counts(conn, seeded["day_id"], 99)["activities"] == 1
         consolidate_working_day(
             conn,
             seeded["day_id"],
             runtime=runtime,
             embedding=runtime,
             now=NOW,
-            pipeline_version=1,
+            pipeline_version=PIPELINE_VERSION,
         )
-        assert derived_counts(conn, seeded["day_id"], 1) == v1
-        assert derived_counts(conn, seeded["day_id"], 2)["activities"] == 1
+        assert derived_counts(conn, seeded["day_id"], PIPELINE_VERSION) == current
+        assert derived_counts(conn, seeded["day_id"], 99)["activities"] == 1
         assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == (
-            v1["activities"] + 1
+            current["activities"] + 1
         )
     finally:
         conn.close()
@@ -1264,8 +1270,8 @@ def test_runtime_unavailable_holds_day_not_failed(tmp_path: Path) -> None:
         job = enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": seeded["day_id"], "pipeline_version": 1},
-            idempotency_key=consolidate_idempotency_key(seeded["day_id"], 1),
+            payload={"working_day_id": seeded["day_id"], "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(seeded["day_id"], PIPELINE_VERSION),
             now=NOW,
         )
         held = FakeRuntime(complete_queue=[RuntimeUnavailable("still down")])
@@ -1298,8 +1304,8 @@ def test_drain_holds_consolidation_wait_without_burning_attempts(tmp_path: Path)
         job = enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": day_id, "pipeline_version": 1},
-            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            payload={"working_day_id": day_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(day_id, PIPELINE_VERSION),
             now=early,
         )
         runtime = _runtime()
@@ -1338,8 +1344,8 @@ def test_retry_requeues_dead_understand_job(tmp_path: Path) -> None:
         job = enqueue(
             conn,
             kind=UNDERSTAND_JOB_KIND,
-            payload={"segment_id": segment_id, "pipeline_version": 1},
-            idempotency_key=f"understand:{segment_id}:1",
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
         )
         conn.execute(
             "UPDATE jobs SET state = ?, attempts = 5, last_error = ? WHERE id = ?",
@@ -1413,8 +1419,8 @@ def test_catch_up_requeues_dead_consolidate_job(tmp_path: Path) -> None:
         job = enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": seeded["day_id"], "pipeline_version": 1},
-            idempotency_key=consolidate_idempotency_key(seeded["day_id"], 1),
+            payload={"working_day_id": seeded["day_id"], "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(seeded["day_id"], PIPELINE_VERSION),
         )
         conn.execute(
             "UPDATE jobs SET state = ?, attempts = 5, last_error = ? WHERE id = ?",
@@ -1537,7 +1543,7 @@ def test_delete_and_retention_are_scoped_to_day_and_version(tmp_path: Path) -> N
         other = _insert_day(conn, date="2026-10-30")
         other_frame = _insert_frame(conn, other, captured_at="2026-10-30T09:00:00Z")
         other_activity = _insert_activity(conn, other, title="other-day", pipeline_version=1)
-        v2_activity = _insert_activity(conn, seeded["day_id"], title="v2-keep", pipeline_version=2)
+        v2_activity = _insert_activity(conn, seeded["day_id"], title="v2-keep", pipeline_version=99)
         conn.execute(
             """
             UPDATE frame_text SET expires_at = '2026-10-01T00:00:00Z'
@@ -1599,7 +1605,7 @@ def test_achievements_and_deltas_grounded_in_day_claims(tmp_path: Path) -> None:
             kind="outcome",
             assertion="observed",
             text="v2 only outcome",
-            pipeline_version=2,
+            pipeline_version=99,
         )
         runtime = FakeRuntime(
             recordings=RECORDINGS,
@@ -1634,7 +1640,7 @@ def test_achievements_and_deltas_grounded_in_day_claims(tmp_path: Path) -> None:
             ],
         )
         consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
-        counts = derived_counts(conn, seeded["day_id"], 1)
+        counts = derived_counts(conn, seeded["day_id"], PIPELINE_VERSION)
         assert counts["decisions"] == 0
         assert counts["commitments"] == 0
         assert counts["history"] == 0
@@ -1644,7 +1650,7 @@ def test_achievements_and_deltas_grounded_in_day_claims(tmp_path: Path) -> None:
         assert seeded["observed"] in claim_ids
         assert v2_claim not in claim_ids
         assert all(
-            int(row[0]) == 1
+            int(row[0]) == PIPELINE_VERSION
             for row in conn.execute("SELECT pipeline_version FROM achievement_candidates")
         )
     finally:
@@ -1668,8 +1674,8 @@ def test_grounded_history_stores_day_claim_ids(tmp_path: Path) -> None:
         day_claims = {
             str(r[0])
             for r in conn.execute(
-                "SELECT id FROM claims WHERE working_day_id = ? AND pipeline_version = 1",
-                (seeded["day_id"],),
+                "SELECT id FROM claims WHERE working_day_id = ? AND pipeline_version = ?",
+                (seeded["day_id"], PIPELINE_VERSION),
             )
         }
         assert stored <= day_claims
@@ -1733,8 +1739,8 @@ def test_runtime_down_during_understand_holds_without_consolidating(
         job = enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": day_id, "pipeline_version": 1},
-            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            payload={"working_day_id": day_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(day_id, PIPELINE_VERSION),
             now=NOW,
         )
         runtime = FakeRuntime(complete_queue=[RuntimeUnavailable("model down")])
@@ -1827,8 +1833,8 @@ def test_permanently_broken_understanding_fails_day_and_stays_retryable(
         understand = enqueue(
             conn,
             kind=UNDERSTAND_JOB_KIND,
-            payload={"segment_id": segment_id, "pipeline_version": 1},
-            idempotency_key=f"understand:{segment_id}:1",
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
             now=NOW,
         )
         conn.execute(
@@ -1839,8 +1845,8 @@ def test_permanently_broken_understanding_fails_day_and_stays_retryable(
         consolidate = enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": day_id, "pipeline_version": 1},
-            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            payload={"working_day_id": day_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(day_id, PIPELINE_VERSION),
             now=NOW,
         )
         bad = {"not": "valid understanding"}
@@ -1899,7 +1905,9 @@ def test_verify_count_mismatch_fails_without_sweep(
     calls = {"n": 0}
     real = derived_counts
 
-    def mismatch(conn: object, working_day_id: str, pipeline_version: int = 1) -> dict[str, int]:
+    def mismatch(
+        conn: object, working_day_id: str, pipeline_version: int = PIPELINE_VERSION
+    ) -> dict[str, int]:
         calls["n"] += 1
         seen = real(conn, working_day_id, pipeline_version)
         if calls["n"] == 2:
@@ -1960,7 +1968,7 @@ def test_load_claims_ignores_other_pipeline_version(tmp_path: Path) -> None:
             kind="decision",
             assertion="observed",
             text="v2-only claim must be ignored",
-            pipeline_version=2,
+            pipeline_version=99,
         )
         conn.execute(
             "UPDATE claims SET created_at = '2026-10-31T10:00:01Z' WHERE id = ?",
@@ -1969,8 +1977,8 @@ def test_load_claims_ignores_other_pipeline_version(tmp_path: Path) -> None:
         conn.commit()
         v1_count = int(
             conn.execute(
-                "SELECT COUNT(*) FROM claims WHERE working_day_id = ? AND pipeline_version = 1",
-                (seeded["day_id"],),
+                "SELECT COUNT(*) FROM claims WHERE working_day_id = ? AND pipeline_version = ?",
+                (seeded["day_id"], PIPELINE_VERSION),
             ).fetchone()[0]
         )
         runtime = FakeRuntime(
@@ -1995,7 +2003,7 @@ def test_load_claims_ignores_other_pipeline_version(tmp_path: Path) -> None:
             ],
         )
         consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
-        counts = derived_counts(conn, seeded["day_id"], 1)
+        counts = derived_counts(conn, seeded["day_id"], PIPELINE_VERSION)
         assert counts["decisions"] == 0
         stored = {
             claim_id
@@ -2014,8 +2022,8 @@ def test_requeue_preserves_pending_understand_attempts(tmp_path: Path) -> None:
         job = enqueue(
             conn,
             kind=UNDERSTAND_JOB_KIND,
-            payload={"segment_id": segment_id, "pipeline_version": 1},
-            idempotency_key=f"understand:{segment_id}:1",
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
             now=NOW,
         )
         conn.execute(
@@ -2041,8 +2049,8 @@ def test_requeue_zeros_failed_understand_attempts(tmp_path: Path) -> None:
         job = enqueue(
             conn,
             kind=UNDERSTAND_JOB_KIND,
-            payload={"segment_id": segment_id, "pipeline_version": 1},
-            idempotency_key=f"understand:{segment_id}:1",
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
             now=NOW,
         )
         conn.execute(
@@ -2123,8 +2131,8 @@ def test_ensure_consolidate_job_leaves_claimed_job(tmp_path: Path) -> None:
         job = enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": day_id, "pipeline_version": 1},
-            idempotency_key=consolidate_idempotency_key(day_id, 1),
+            payload={"working_day_id": day_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(day_id, PIPELINE_VERSION),
             now=NOW,
         )
         lease = (NOW + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -2153,8 +2161,8 @@ def test_ensure_consolidate_job_leaves_consolidated_day(tmp_path: Path) -> None:
         job = enqueue(
             conn,
             kind=CONSOLIDATE_JOB_KIND,
-            payload={"working_day_id": seeded["day_id"], "pipeline_version": 1},
-            idempotency_key=consolidate_idempotency_key(seeded["day_id"], 1),
+            payload={"working_day_id": seeded["day_id"], "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(seeded["day_id"], PIPELINE_VERSION),
             now=NOW,
         )
         conn.execute(
@@ -2184,8 +2192,8 @@ def test_broken_day_fails_when_other_day_has_pending_segment(tmp_path: Path) -> 
         understand = enqueue(
             conn,
             kind=UNDERSTAND_JOB_KIND,
-            payload={"segment_id": segment_a, "pipeline_version": 1},
-            idempotency_key=f"understand:{segment_a}:1",
+            payload={"segment_id": segment_a, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_a}:{PIPELINE_VERSION}",
             now=NOW,
         )
         conn.execute(
