@@ -29,13 +29,13 @@
         "decisions": [
           {
             "text": "Ship the appendix on Friday",
-            "claim_indexes": [1]
+            "claim_indexes": [5]
           }
         ],
         "commitments": [
           {
             "text": "Send Priya the draft",
-            "claim_indexes": [1],
+            "claim_indexes": [6],
             "status": "open",
             "due_hint": "Friday"
           }

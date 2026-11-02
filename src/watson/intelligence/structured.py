@@ -8,7 +8,12 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from watson.intelligence.runtime.types import LanguageRuntime, Message, StructuredOutputError
+from watson.intelligence.runtime.types import (
+    LanguageRuntime,
+    Message,
+    OutputParseError,
+    StructuredOutputError,
+)
 
 _RETRY_PREFIX = (
     "Your previous output failed validation. Fix every error and return "
@@ -26,24 +31,27 @@ def complete_structured[T: BaseModel](
     """Call ``runtime.complete``, validate, retry once with the error appended."""
     json_schema = dict(schema) if schema is not None else _schema_for(model)
     history = list(messages)
-    raw = runtime.complete(history, json_schema)
+    raw: dict[str, Any] | None = None
     try:
+        raw = runtime.complete(history, json_schema)
         return model.model_validate(raw)
-    except ValidationError as first:
-        retry_messages: list[Message] = [
-            *history,
-            {"role": "assistant", "content": _as_json(raw)},
-            {"role": "user", "content": _RETRY_PREFIX + str(first)},
-        ]
+    except (ValidationError, OutputParseError) as first:
+        repair = str(first)
+        assistant = _as_json(raw) if raw is not None else ""
+    retry_messages: list[Message] = [*history]
+    if assistant:
+        retry_messages.append({"role": "assistant", "content": assistant})
+    retry_messages.append({"role": "user", "content": _RETRY_PREFIX + repair})
+    raw_retry: dict[str, Any] | None = None
+    try:
         raw_retry = runtime.complete(retry_messages, json_schema)
-        try:
-            return model.model_validate(raw_retry)
-        except ValidationError as second:
-            raise StructuredOutputError(
-                "structured output failed validation after one retry",
-                raw=raw_retry,
-                errors=str(second),
-            ) from second
+        return model.model_validate(raw_retry)
+    except (ValidationError, OutputParseError) as second:
+        raise StructuredOutputError(
+            "structured output failed validation after one retry",
+            raw=raw_retry if raw_retry is not None else raw,
+            errors=str(second),
+        ) from second
 
 
 def _schema_for(model: type[BaseModel]) -> dict[str, Any]:

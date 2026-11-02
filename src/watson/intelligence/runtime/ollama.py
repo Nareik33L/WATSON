@@ -10,6 +10,7 @@ from watson.config.schema import IntelligenceConfig
 from watson.intelligence.runtime.http import canonical_ollama_url, request_json
 from watson.intelligence.runtime.types import (
     Message,
+    OutputParseError,
     RuntimeCallError,
     RuntimeUnavailable,
 )
@@ -71,7 +72,7 @@ class OllamaRuntime:
             content = str(message.get("content") or "")
         parsed = _parse_json_object(content)
         if not isinstance(parsed, dict):
-            raise RuntimeCallError("Ollama chat returned a non-object JSON value")
+            raise OutputParseError("Ollama chat returned a non-object JSON value")
         return parsed
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
@@ -148,7 +149,7 @@ def _bare(name: str) -> str:
 def _parse_json_object(text: str) -> dict[str, Any]:
     cleaned = text.strip()
     if not cleaned:
-        raise RuntimeCallError("Ollama returned an empty chat body")
+        raise OutputParseError("Ollama returned an empty chat body")
     if cleaned.startswith("```"):
         lines = cleaned.splitlines()
         if lines and lines[0].startswith("```"):
@@ -162,8 +163,11 @@ def _parse_json_object(text: str) -> dict[str, Any]:
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start < 0 or end <= start:
-            raise RuntimeCallError("Ollama returned non-JSON chat output") from None
-        loaded = json.loads(cleaned[start : end + 1])
+            raise OutputParseError("Ollama returned non-JSON chat output") from None
+        try:
+            loaded = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            raise OutputParseError("Ollama returned non-JSON chat output") from None
     if not isinstance(loaded, dict):
-        raise RuntimeCallError("Ollama chat output is not a JSON object")
+        raise OutputParseError("Ollama chat output is not a JSON object")
     return loaded

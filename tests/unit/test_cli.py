@@ -30,6 +30,7 @@ def test_eval_help_is_not_a_stub(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--mode" in out
     assert "replay" in out
     assert "--runtime" in out
+    assert "--llm-model" in out
     assert "not implemented" not in out
 
 
@@ -99,6 +100,77 @@ def test_eval_cli_replays_and_writes_report(
     assert "eval_pipeline_passed: True" in out
     assert captured["mode"] == "replay"
     assert captured["runtime_name"] == "replay"
+    set_key_provider(None)
+
+
+def test_eval_cli_llm_model_overrides_config(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from watson.config.schema import FALLBACK_LLM_MODEL
+    from watson.intelligence.eval.run import DayEval, EvalReport
+
+    _eval_key(monkeypatch)
+    captured: dict[str, object] = {}
+
+    def fake_run_eval(**kwargs: object) -> EvalReport:
+        captured.update(kwargs)
+        out_dir = Path(str(kwargs["out_dir"]))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "report.json").write_text("{}\n", encoding="utf-8")
+        (out_dir / "report.md").write_text("# ok\n", encoding="utf-8")
+        return EvalReport(
+            mode="replay",
+            runtime="replay",
+            days=[
+                DayEval(
+                    name="day_acme_q4",
+                    date="2026-10-31",
+                    metrics={"project_f1": 1.0},
+                    derived_first={"summaries": 1},
+                    derived_second={"summaries": 1},
+                    summary_present=True,
+                    identical_counts=True,
+                    narrative_nonempty=True,
+                    citation_count=1,
+                    claims=1,
+                )
+            ],
+            aggregate={
+                "project_f1": 1.0,
+                "people_f1": 1.0,
+                "completed_accuracy": 1.0,
+                "decisions_recall": 1.0,
+                "decisions_precision": 1.0,
+                "commitments_recall": 1.0,
+                "commitments_precision": 1.0,
+                "unsupported_achievements": 0.0,
+                "duplicate_observation_rate": 0.0,
+                "noise_non_work_rate": 1.0,
+                "claims_with_evidence": 1.0,
+                "citations_resolvable": 1.0,
+            },
+            gate={"passed": True, "failures": [], "hard_failures": []},
+        )
+
+    monkeypatch.setattr("watson.intelligence.eval.run.run_eval", fake_run_eval)
+    assert (
+        cli.main(
+            [
+                "eval",
+                "--mode",
+                "replay",
+                "--llm-model",
+                FALLBACK_LLM_MODEL,
+                "--out",
+                str(tmp_path / "eval"),
+            ]
+        )
+        == 0
+    )
+    config = captured["config"]
+    assert getattr(config.intelligence, "llm_model") == FALLBACK_LLM_MODEL
     set_key_provider(None)
 
 

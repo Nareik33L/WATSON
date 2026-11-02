@@ -71,6 +71,8 @@ DEFAULT_MERGED_TEXT_MAX_CHARS = 32768
 # ADR 0001 / plan §7.1 — V1.0 dev defaults. VLM stays off on 8 GB.
 DEFAULT_INTELLIGENCE_RUNTIME: Literal["ollama", "fake"] = "ollama"
 DEFAULT_LLM_MODEL = "llama3.2:3b"
+# One-line flip after the quality-fix eval (plan §14): DEFAULT_LLM_MODEL = FALLBACK_LLM_MODEL
+FALLBACK_LLM_MODEL = "qwen2.5:3b"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 # 4096 fits llama3.2:3b + nomic-embed-text one-at-a-time on 8 GB (§11.4 < 3 GB).
@@ -78,7 +80,7 @@ DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_CONTEXT_WINDOW = 4096
 DEFAULT_KEEP_ALIVE = "5m"
 DEFAULT_OLLAMA_TIMEOUT_S = 300.0
-DEFAULT_OLLAMA_NUM_PREDICT = 768
+DEFAULT_OLLAMA_NUM_PREDICT = 512
 DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES = True
 # Entity resolver: embedding cosine must exceed this after alias miss (§3.5).
 DEFAULT_ENTITY_SIMILARITY = 0.80
@@ -275,7 +277,7 @@ class OllamaClientConfig(_StrictModel):
         default=DEFAULT_OLLAMA_NUM_PREDICT,
         ge=16,
         le=8192,
-        description="Max completion tokens. 768 covers the understanding JSON schema.",
+        description="Max completion tokens. 512 covers the understanding JSON schema.",
     )
     unload_between_phases: bool = Field(
         default=DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES,

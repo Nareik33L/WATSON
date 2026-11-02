@@ -164,8 +164,9 @@ def gate_profile(
     worker_plus_model_peak_bytes: int | None,
     profile: str,
     path: Path | None = None,
+    consolidate_s: float | None = None,
 ) -> dict[str, Any]:
-    """Compare understand p95 and worker+model peak to the active §11.4 profile."""
+    """Compare understand p95, consolidation, and worker+model peak to the §11.4 profile."""
     if profile not in KNOWN_PROFILES:
         raise ValueError(f"unknown eval profile {profile!r}")
     rules = load_profile_thresholds(path)[profile]
@@ -174,6 +175,7 @@ def gate_profile(
         "worker_plus_model_peak_bytes": (
             None if worker_plus_model_peak_bytes is None else float(worker_plus_model_peak_bytes)
         ),
+        "consolidate_s": None if consolidate_s is None else float(consolidate_s),
     }
     failures: list[str] = []
     for name, rule in rules.items():

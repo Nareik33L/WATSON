@@ -8,7 +8,12 @@ from typing import Any
 import pytest
 
 from watson.intelligence.prompts import PromptError, load_prompt
-from watson.intelligence.runtime import FakeRuntime, Message, StructuredOutputError
+from watson.intelligence.runtime import (
+    FakeRuntime,
+    Message,
+    OutputParseError,
+    StructuredOutputError,
+)
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
 from watson.intelligence.structured import complete_structured
 
@@ -56,6 +61,14 @@ def test_load_understanding_v2_records_cap_and_version() -> None:
     assert "visible completion evidence" in prompt.text.casefold()
 
 
+def test_load_understanding_v3_records_cap_and_version() -> None:
+    prompt = load_prompt("understanding", "v3")
+    assert prompt.prompt_version == "understanding/v3"
+    assert "capped at 3000" in prompt.text
+    assert "prefer fewer claims" in prompt.text.casefold()
+    assert "visible completion evidence" in prompt.text.casefold()
+
+
 class _RecordingRuntime:
     def __init__(self) -> None:
         self.user_messages: list[str] = []
@@ -100,6 +113,40 @@ def test_retry_message_includes_pydantic_validation_error() -> None:
 
 def test_complete_structured_raises_typed_failure_after_retry() -> None:
     runtime = FakeRuntime(complete_queue=[{"nope": True}, {"still": "bad"}])
+    with pytest.raises(StructuredOutputError, match="one retry") as raised:
+        complete_structured(
+            runtime,
+            [{"role": "user", "content": "segment"}],
+            UnderstandingOutput,
+        )
+    assert raised.value.retryable is False
+    assert runtime.complete_calls == 2
+
+
+def test_complete_structured_retries_parse_error_once() -> None:
+    runtime = FakeRuntime(
+        complete_queue=[
+            OutputParseError("Ollama returned non-JSON chat output"),
+            _VALID,
+        ]
+    )
+    out = complete_structured(
+        runtime,
+        [{"role": "user", "content": "segment"}],
+        UnderstandingOutput,
+        schema=UNDERSTANDING_JSON_SCHEMA,
+    )
+    assert out.description.startswith("Reading mail")
+    assert runtime.complete_calls == 2
+
+
+def test_complete_structured_parse_error_is_terminal_after_one_retry() -> None:
+    runtime = FakeRuntime(
+        complete_queue=[
+            OutputParseError("Ollama returned non-JSON chat output"),
+            OutputParseError("Ollama returned non-JSON chat output"),
+        ]
+    )
     with pytest.raises(StructuredOutputError, match="one retry") as raised:
         complete_structured(
             runtime,

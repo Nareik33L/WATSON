@@ -145,7 +145,7 @@ def test_ollama_adapter_uses_format_schema(monkeypatch: pytest.MonkeyPatch) -> N
     assert body["model"] == "llama3.2:3b" and body["format"] == UNDERSTANDING_JSON_SCHEMA
     assert body["options"]["temperature"] == 0.0
     assert body["options"]["num_ctx"] == 4096
-    assert body["options"]["num_predict"] == 768
+    assert body["options"]["num_predict"] == 512
     assert chat._timeout == 300.0
     embed = next(req for req in opened if req.full_url.endswith("/api/embed"))
     assert json.loads(embed.data or b"{}")["model"] == "nomic-embed-text"
@@ -533,3 +533,29 @@ def test_urlerror_timeout_is_a_call_error(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(http_mod, "direct_opener", lambda: opener)
     with pytest.raises(RuntimeCallError, match="timed out"):
         request_json("http://127.0.0.1:11434", "POST", "/api/chat", {}, timeout=0.1)
+
+
+def test_format_job_error_is_type_plus_truncated_message() -> None:
+    from watson.intelligence.runtime.types import format_job_error
+
+    err = RuntimeCallError("Ollama returned non-JSON chat output")
+    text = format_job_error(err)
+    assert text.startswith("RuntimeCallError:")
+    assert "non-JSON" in text
+    assert "\n" not in text
+    long = RuntimeCallError("x" * 500)
+    clipped = format_job_error(long, limit=40)
+    assert len(clipped) == 40
+    assert clipped.endswith("…")
+
+
+def test_parse_json_object_sliced_invalid_is_typed() -> None:
+    from watson.intelligence.runtime.ollama import _parse_json_object
+    from watson.intelligence.runtime.types import OutputParseError
+
+    with pytest.raises(OutputParseError, match="non-JSON"):
+        _parse_json_object("{not-json {still broken")
+    with pytest.raises(OutputParseError, match="empty"):
+        _parse_json_object("   ")
+    with pytest.raises(OutputParseError, match="not a JSON object"):
+        _parse_json_object("[1, 2]")

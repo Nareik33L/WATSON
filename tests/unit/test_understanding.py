@@ -39,7 +39,6 @@ from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.backlog import drain_backlog
 from watson.pipeline.consolidation import (
-    ConsolidationError,
     ConsolidationWait,
     consolidate_working_day,
     derived_counts,
@@ -66,6 +65,7 @@ from watson.pipeline.understanding import (
     drain_understand_jobs,
     eligible_segment_ids,
     enqueue_eligible_understand_jobs,
+    has_completion_evidence,
     number_merged_text,
     understand_idempotency_key,
     understand_segment,
@@ -224,7 +224,7 @@ def test_number_merged_text_and_eligibility_helpers() -> None:
     capped = number_merged_text(long, max_chars=4000)
     assert len(capped.replace("\n(truncated)", "")) <= 4000
     assert capped.endswith("(truncated)")
-    assert MERGED_TEXT_PROMPT_MAX == 4000
+    assert MERGED_TEXT_PROMPT_MAX == 3000
 
 
 def test_merged_text_prompt_max_keeps_4000_truncates_4001_and_empty() -> None:
@@ -244,10 +244,10 @@ def test_merged_text_prompt_max_keeps_4000_truncates_4001_and_empty() -> None:
 
 
 def test_merged_text_cap_counts_newlines_across_two_lines() -> None:
-    """C1: ``>=`` vs ``>`` is visible when two numbered lines plus a newline hit 4000."""
+    """C1: ``>=`` vs ``>`` is visible when two numbered lines plus a newline hit the cap."""
     max_chars = MERGED_TEXT_PROMPT_MAX
-    first = "a" * 2000
-    second = "b" * 1993
+    first = "a" * 1500
+    second = "b" * 1493
     kept = number_merged_text(f"{first}\n{second}", max_chars=max_chars)
     expected = f"1. {first}\n2. {second}"
     assert kept == expected
@@ -394,7 +394,7 @@ def test_acme_q4_fake_runtime_replay(data_dir: Path, key_provider: object, tmp_p
                 "SELECT DISTINCT prompt_version, pipeline_version FROM observations"
             )
         }
-        assert versions == {("understanding/v2", PIPELINE_VERSION)}
+        assert versions == {("understanding/v3", PIPELINE_VERSION)}
 
         acme = conn.execute(
             "SELECT id FROM entities WHERE canonical_name = ?", ("Acme Q4 Proposal",)
@@ -511,52 +511,49 @@ def test_schema_and_persist_reject_claims_without_evidence(tmp_path: Path) -> No
 
         segment = _load_segment(conn, segment_id)
         assert segment is not None
-        with pytest.raises(JobFailure, match="without evidence"):
-            _persist_observation(
-                conn,
-                segment,
-                _output(evidence=[]),
-                prompt_version="understanding/v1",
-                pipeline_version=1,
-                model_id="fake",
-                stamp="2026-10-31T10:00:00Z",
-            )
-        conn.rollback()
+        _persist_observation(
+            conn,
+            segment,
+            _output(evidence=[]),
+            prompt_version="understanding/v1",
+            pipeline_version=1,
+            model_id="fake",
+            stamp="2026-10-31T10:00:00Z",
+        )
         assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+        conn.rollback()
 
         missing_line = EvidenceCitation.model_construct(snippet=_LINE, line_start=99, line_end=99)
-        with pytest.raises(JobFailure, match="missing claim_evidence"):
-            _persist_observation(
-                conn,
-                segment,
-                _output(evidence=[missing_line]),
-                prompt_version="understanding/v1",
-                pipeline_version=1,
-                model_id="fake",
-                stamp="2026-10-31T10:00:00Z",
-            )
-        conn.rollback()
+        _persist_observation(
+            conn,
+            segment,
+            _output(evidence=[missing_line]),
+            prompt_version="understanding/v1",
+            pipeline_version=1,
+            model_id="fake",
+            stamp="2026-10-31T10:00:00Z",
+        )
         assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0] == 0
+        conn.rollback()
 
         whitespace = EvidenceCitation.model_construct(snippet="   \n\t  ", line_start=1, line_end=1)
         assert _citation_supported(whitespace, [_LINE]) is False
-        with pytest.raises(JobFailure, match="missing claim_evidence"):
-            _persist_observation(
-                conn,
-                segment,
-                _output(evidence=[whitespace]),
-                prompt_version="understanding/v1",
-                pipeline_version=1,
-                model_id="fake",
-                stamp="2026-10-31T10:00:00Z",
-            )
-        conn.rollback()
+        _persist_observation(
+            conn,
+            segment,
+            _output(evidence=[whitespace]),
+            prompt_version="understanding/v1",
+            pipeline_version=1,
+            model_id="fake",
+            stamp="2026-10-31T10:00:00Z",
+        )
         assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0] == 0
+        conn.rollback()
     finally:
         conn.close()
 
@@ -573,13 +570,15 @@ def test_runtime_unavailable_mid_drain_holds_without_burning_attempts(tmp_path: 
         row = conn.execute("SELECT state, last_error, attempts FROM jobs").fetchone()
         assert row["state"] == JobState.PENDING.value
         assert row["attempts"] == 0
-        assert row["last_error"] == "RuntimeUnavailable"
+        assert str(row["last_error"]).startswith("RuntimeUnavailable:")
+        assert "model vanished" in str(row["last_error"])
         assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
     finally:
         conn.close()
 
 
 UNDERSTANDING_V1_SHA256 = "49af407570f2d90a1d9fe055d14a283a12011b5d54495f2489fa6d60b904e781"
+UNDERSTANDING_V3_SHA256 = "f1a8ebc5bfd6a5b45c2881ffd5c476a0780c684915d8d3277ccc67c93a998440"
 
 
 def test_understanding_v1_prompt_bytes_are_pinned() -> None:
@@ -598,6 +597,25 @@ def test_understanding_v1_prompt_bytes_are_pinned() -> None:
     assert prompt.prompt_version == "understanding/v1"
     assert "capped at 4000" not in prompt.text
     assert hashlib.sha256(prompt.text.encode("utf-8")).hexdigest() == UNDERSTANDING_V1_SHA256
+
+
+def test_understanding_v3_prompt_bytes_are_pinned() -> None:
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "watson"
+        / "intelligence"
+        / "prompts"
+        / "understanding"
+        / "v3.md"
+    )
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert digest == UNDERSTANDING_V3_SHA256
+    prompt = load_prompt("understanding", "v3")
+    assert prompt.prompt_version == "understanding/v3"
+    assert "capped at 3000" in prompt.text
+    assert "Prefer fewer claims" in prompt.text
+    assert hashlib.sha256(prompt.text.encode("utf-8")).hexdigest() == UNDERSTANDING_V3_SHA256
 
 
 def test_new_understand_run_records_v2_and_preserves_v1_rows(tmp_path: Path) -> None:
@@ -646,8 +664,8 @@ def test_new_understand_run_records_v2_and_preserves_v1_rows(tmp_path: Path) -> 
         )
         conn.commit()
         assert v2_id != v1_id
-        assert PIPELINE_VERSION == 2
-        assert PROMPT_VERSION == "v2"
+        assert PIPELINE_VERSION == 3
+        assert PROMPT_VERSION == "v3"
         rows = {
             int(row["pipeline_version"]): (
                 str(row["id"]),
@@ -666,10 +684,10 @@ def test_new_understand_run_records_v2_and_preserves_v1_rows(tmp_path: Path) -> 
         assert rows[1][1] == "understanding/v1"
         assert rows[1][2] == "v1 preserved description"
         assert rows[PIPELINE_VERSION][0] == v2_id
-        assert rows[PIPELINE_VERSION][1] == "understanding/v2"
-        v2_prompt = load_prompt("understanding", "v2")
-        assert v2_prompt.prompt_version == "understanding/v2"
-        assert "capped at 4000" in v2_prompt.text
+        assert rows[PIPELINE_VERSION][1] == "understanding/v3"
+        v3_prompt = load_prompt("understanding", "v3")
+        assert v3_prompt.prompt_version == "understanding/v3"
+        assert "capped at 3000" in v3_prompt.text
     finally:
         conn.close()
 
@@ -1002,7 +1020,8 @@ def _working_day_id(conn: object, segment_id: str) -> str:
 
 def _day_row(conn: object, day_id: str) -> Any:
     return conn.execute(
-        "SELECT state, consolidation_error, consolidated_at FROM working_days WHERE id = ?",
+        "SELECT state, consolidation_error, consolidated_at, consolidation_gap "
+        "FROM working_days WHERE id = ?",
         (day_id,),
     ).fetchone()
 
@@ -1084,7 +1103,8 @@ def test_retryable_job_failure_stops_drain_without_raising(
         ).fetchone()
         assert first_job["state"] == JobState.PENDING.value
         assert first_job["attempts"] == 1
-        assert first_job["last_error"] == "JobFailure"
+        assert str(first_job["last_error"]).startswith("JobFailure:")
+        assert "retryable drain stop" in str(first_job["last_error"])
         assert second_job["state"] == JobState.PENDING.value
         assert second_job["attempts"] == 0
         assert second_job["last_error"] is None
@@ -1202,18 +1222,17 @@ def test_poison_raw_json_fails_job_and_continues_drain(
             (f"%{good_segment}%",),
         ).fetchone()
         assert poison_job["attempts"] == 1
-        assert poison_job["last_error"] == "JobFailure"
+        assert str(poison_job["last_error"]).startswith("JobFailure:")
         assert poison_job["state"] == JobState.FAILED.value
         assert good_job["state"] == JobState.COMPLETED.value
         assert _has_entity(conn, typ="person", name="Priya Natarajan")
         assert any("poison observation raw_json" in rec.message for rec in caplog.records)
         runtime = FakeRuntime(recordings=CONSOLIDATION_RECORDINGS)
-        with pytest.raises(ConsolidationError, match="pending understanding"):
-            consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=_NOW)
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=_NOW)
         day = _day_row(conn, day_id)
-        assert day["state"] == "failed"
-        assert day["consolidated_at"] is None
-        assert day["consolidation_error"] == "ConsolidationError"
+        assert day["state"] == "consolidated"
+        assert day["consolidated_at"] is not None
+        assert "understand_failed=" in str(day["consolidation_gap"] or "")
     finally:
         conn.close()
 
@@ -1347,3 +1366,85 @@ def test_sigkill_mid_drain_holds_consolidation_until_lease_recovered(tmp_path: P
         assert _day_row(clean, clean_day)["state"] == "consolidated"
     finally:
         clean.close()
+
+
+def test_has_completion_evidence_rejects_intentions() -> None:
+    assert has_completion_evidence("Email sent to Priya") is True
+    assert has_completion_evidence("PR merged on GitHub") is True
+    assert has_completion_evidence("I will send the draft") is False
+    assert has_completion_evidence("Still editing the appendix") is False
+
+
+def test_observed_achievement_without_completion_evidence_is_downgraded(tmp_path: Path) -> None:
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        segment_id = _closed_segment(conn, merged=_LINE)
+        segment = _load_segment(conn, segment_id)
+        assert segment is not None
+        output = UnderstandingOutput.model_validate(
+            {
+                "activity_type": "knowledge_work",
+                "description": "Editing",
+                "confidence": 0.7,
+                "claims": [
+                    {
+                        "kind": "achievement",
+                        "text": "Shipped the appendix",
+                        "assertion": "observed",
+                        "evidence": [{"snippet": _LINE, "line_start": 1, "line_end": 1}],
+                    },
+                    {
+                        "kind": "decision",
+                        "text": "We might use Harbor",
+                        "assertion": "unconfirmed",
+                        "evidence": [{"snippet": _LINE, "line_start": 1, "line_end": 1}],
+                    },
+                ],
+                "project_candidates": [],
+                "people_candidates": [],
+            }
+        )
+        _persist_observation(
+            conn,
+            segment,
+            output,
+            prompt_version="understanding/v3",
+            pipeline_version=PIPELINE_VERSION,
+            model_id="fake",
+            stamp="2026-10-31T10:00:00Z",
+        )
+        conn.commit()
+        rows = conn.execute("SELECT kind, assertion, text FROM claims ORDER BY kind").fetchall()
+        kinds = {(str(row["kind"]), str(row["assertion"])) for row in rows}
+        assert ("achievement", "unconfirmed") in kinds
+        assert ("achievement", "observed") not in kinds
+        assert not any(str(row["kind"]) == "decision" for row in rows)
+    finally:
+        conn.close()
+
+
+def test_parse_failure_is_terminal_after_one_repair_with_typed_last_error(tmp_path: Path) -> None:
+    from watson.intelligence.runtime.types import OutputParseError
+
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _closed_segment(conn)
+        enqueue_eligible_understand_jobs(conn)
+        runtime = FakeRuntime(
+            complete_queue=[
+                OutputParseError("Ollama returned non-JSON chat output"),
+                OutputParseError("Ollama returned non-JSON chat output"),
+            ]
+        )
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 0
+        row = conn.execute("SELECT state, attempts, last_error FROM jobs").fetchone()
+        assert row["state"] == JobState.FAILED.value
+        assert row["attempts"] == 1
+        assert str(row["last_error"]).startswith("StructuredOutputError:")
+        assert runtime.complete_calls == 2
+    finally:
+        conn.close()

@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
 from watson.intelligence.eval.run import DayEval, EvalReport
 from watson.intelligence.eval.thresholds import (
     MIN_SPEC_RAM_LIMIT_BYTES,
-    THRESHOLDS_PATH,
     gate_metrics,
     gate_profile,
     load_profile_thresholds,
@@ -20,7 +16,8 @@ from watson.intelligence.eval.thresholds import (
 
 GIB = 1024**3
 THREE_GB = 3 * GIB
-THREE_FIVE_GB = int(3.5 * GIB)
+THREE_THREE_GB = int(3.3 * GIB)
+OK_CONSOLIDATE_S = 1.0
 
 
 def _metrics() -> dict[str, float]:
@@ -72,13 +69,15 @@ def test_profile_override_wins_over_ram() -> None:
 
 def test_min_spec_p95_boundary() -> None:
     under = gate_profile(
-        understand_p95_s=34.999,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        understand_p95_s=29.999,
+        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
     at = gate_profile(
-        understand_p95_s=35.0,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        understand_p95_s=30.0,
+        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
     assert under["passed"] is True
@@ -89,12 +88,14 @@ def test_min_spec_p95_boundary() -> None:
 def test_min_spec_peak_memory_boundary() -> None:
     under = gate_profile(
         understand_p95_s=10.0,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
     at = gate_profile(
         understand_p95_s=10.0,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB,
+        worker_plus_model_peak_bytes=THREE_THREE_GB,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
     assert under["passed"] is True
@@ -106,11 +107,13 @@ def test_primary_p95_boundary() -> None:
     under = gate_profile(
         understand_p95_s=19.999,
         worker_plus_model_peak_bytes=THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="primary",
     )
     at = gate_profile(
         understand_p95_s=20.0,
         worker_plus_model_peak_bytes=THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="primary",
     )
     assert under["passed"] is True
@@ -122,11 +125,13 @@ def test_primary_peak_memory_boundary() -> None:
     under = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="primary",
     )
     at = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=THREE_GB,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="primary",
     )
     assert under["passed"] is True
@@ -138,8 +143,9 @@ def test_strict_measure_model_uses_profile_gate() -> None:
     metrics = _metrics()
     day = _day(metrics)
     profile_gate = gate_profile(
-        understand_p95_s=35.0,
-        worker_plus_model_peak_bytes=THREE_FIVE_GB - 1,
+        understand_p95_s=30.0,
+        worker_plus_model_peak_bytes=THREE_THREE_GB - 1,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile="min-spec",
     )
     report = EvalReport(
@@ -168,7 +174,7 @@ def test_strict_measure_model_uses_profile_gate() -> None:
 
 
 def _ok_peak(profile: str) -> int:
-    return (THREE_GB if profile == "primary" else THREE_FIVE_GB) - 1
+    return (THREE_GB if profile == "primary" else THREE_THREE_GB) - 1
 
 
 @pytest.mark.parametrize("profile", ["primary", "min-spec"])
@@ -177,6 +183,7 @@ def test_profile_gate_fails_closed_on_missing_p95(profile: str) -> None:
     none = gate_profile(
         understand_p95_s=None,
         worker_plus_model_peak_bytes=_ok_peak(profile),
+        consolidate_s=OK_CONSOLIDATE_S,
         profile=profile,
     )
     assert none["passed"] is False
@@ -189,6 +196,7 @@ def test_profile_gate_fails_closed_on_missing_peak_memory(profile: str) -> None:
     none = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=None,
+        consolidate_s=OK_CONSOLIDATE_S,
         profile=profile,
     )
     assert none["passed"] is False
@@ -242,27 +250,40 @@ def test_strict_measure_model_fails_closed_on_missing_profile_gate() -> None:
 
 
 def test_profile_peak_caps_are_gib() -> None:
-    """Plan '3 GB' / '3.5 GB' are 3 GiB / 3.5 GiB in thresholds.json, not decimal GB."""
+    """Plan '3 GB' / '3.3 GiB' are binary GiB in thresholds.json, not decimal GB."""
     profiles = load_profile_thresholds()
     assert profiles["primary"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_GB
-    assert profiles["min-spec"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_FIVE_GB
+    assert profiles["min-spec"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_THREE_GB
     assert THREE_GB == 3 * 1024**3
     assert THREE_GB != 3 * 1000**3
+    assert THREE_THREE_GB == 3543348019
 
 
-def test_unmeasured_consolidation_cap_fails_closed(tmp_path: Path) -> None:
-    """§11.4 consolidation < 15 min: if a profile declares it, a missing sample fails."""
-    raw = json.loads(THRESHOLDS_PATH.read_text(encoding="utf-8"))
-    for name in raw["profiles"]:
-        raw["profiles"][name]["consolidate_s"] = {"max_exclusive": 15 * 60}
-    path = tmp_path / "thresholds.json"
-    path.write_text(json.dumps(raw), encoding="utf-8")
+def test_unmeasured_consolidation_cap_fails_closed() -> None:
+    """§11.4 consolidation < 15 min is gated; a missing sample fails closed."""
     for profile in ("primary", "min-spec"):
         missing = gate_profile(
             understand_p95_s=10.0,
             worker_plus_model_peak_bytes=_ok_peak(profile),
             profile=profile,
-            path=path,
         )
         assert missing["passed"] is False
         assert "consolidate_s" in missing["failures"]
+
+
+def test_consolidation_15_min_boundary() -> None:
+    under = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("min-spec"),
+        consolidate_s=899.999,
+        profile="min-spec",
+    )
+    at = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("min-spec"),
+        consolidate_s=900.0,
+        profile="min-spec",
+    )
+    assert under["passed"] is True
+    assert at["passed"] is False
+    assert "consolidate_s" in at["failures"]

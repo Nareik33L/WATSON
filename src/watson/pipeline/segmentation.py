@@ -392,7 +392,12 @@ def close_open_segments(
     conn.commit()
     from watson.pipeline.understanding import enqueue_eligible_understand_jobs
 
-    enqueue_eligible_understand_jobs(conn, close_after_seconds=close_after_seconds, now=now)
+    enqueue_eligible_understand_jobs(
+        conn,
+        close_after_seconds=close_after_seconds,
+        working_day_id=working_day_id,
+        now=now,
+    )
     return len(ids)
 
 

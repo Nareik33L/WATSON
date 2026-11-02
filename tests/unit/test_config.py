@@ -13,7 +13,9 @@ from watson.config.schema import (
     APPLICATION_SUPPORT_WATSON,
     DEFAULT_DENIED_DOMAINS,
     DEFAULT_EXCLUDED_BUNDLE_IDS,
+    DEFAULT_LLM_MODEL,
     DEFAULT_WINDOW_TITLE_PATTERNS,
+    FALLBACK_LLM_MODEL,
 )
 from watson.pipeline.status import StatusReport
 
@@ -43,12 +45,14 @@ def test_defaults_use_application_support_path(
     assert config.retention.derived_days is None
     assert config.intelligence.runtime == "ollama"
     assert config.intelligence.llm_model == "llama3.2:3b"
+    assert DEFAULT_LLM_MODEL == "llama3.2:3b"
+    assert FALLBACK_LLM_MODEL == "qwen2.5:3b"
     assert config.intelligence.embedding_model == "nomic-embed-text"
     assert config.intelligence.vlm_enabled is False
     assert config.intelligence.ollama_host == "http://127.0.0.1:11434"
     assert config.intelligence.context_window == 4096
     assert config.intelligence.ollama.timeout_s == 300.0
-    assert config.intelligence.ollama.num_predict == 768
+    assert config.intelligence.ollama.num_predict == 512
     assert config.intelligence.ollama.unload_between_phases is True
     assert config.intelligence.ollama_num_ctx() == 4096
     assert config.intelligence.entity_similarity_threshold == 0.80
@@ -233,3 +237,14 @@ not_a_real_field = 1
     )
     with pytest.raises(ConfigError, match=r"capture\.not_a_real_field"):
         load_config()
+
+
+def test_watson_llm_model_env_overrides_default(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WATSON_LLM_MODEL", FALLBACK_LLM_MODEL)
+    config = load_config()
+    assert config.intelligence.llm_model == FALLBACK_LLM_MODEL
+    monkeypatch.delenv("WATSON_LLM_MODEL")
+    again = load_config()
+    assert again.intelligence.llm_model == DEFAULT_LLM_MODEL

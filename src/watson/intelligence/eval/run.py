@@ -41,6 +41,7 @@ from watson.pipeline.consolidation import (
     ConsolidationWait,
     consolidate_working_day,
     derived_counts,
+    skipped_understand_segment_ids,
     understand_block_reason,
 )
 from watson.pipeline.frames import PIPELINE_VERSION
@@ -76,6 +77,7 @@ class DayEval:
     citation_count: int = 0
     claims: int = 0
     consolidate_s: float = 0.0
+    skipped_understand: int = 0
     error: str | None = None
 
     @property
@@ -226,6 +228,8 @@ def run_eval(
         latency = stats.summary()
         understand = latency.get("understand_segment") if isinstance(latency, dict) else None
         understand_p95 = understand.get("p95_s") if isinstance(understand, dict) else None
+        consolidate = latency.get("consolidate") if isinstance(latency, dict) else None
+        consolidate_max = consolidate.get("max_s") if isinstance(consolidate, dict) else None
         report = EvalReport(
             mode=mode,
             runtime=getattr(runtime, "name", runtime_name) if runtime is not None else runtime_name,
@@ -244,6 +248,9 @@ def run_eval(
                     understand_p95 if isinstance(understand_p95, int | float) else None
                 ),
                 worker_plus_model_peak_bytes=worker_plus_model,
+                consolidate_s=(
+                    consolidate_max if isinstance(consolidate_max, int | float) else None
+                ),
                 profile=active_profile,
             ),
             measure_model=measure_model,
@@ -283,6 +290,7 @@ def render_markdown(report: EvalReport) -> str:
             f"narrative_nonempty={day.narrative_nonempty} "
             f"citations={day.citation_count} "
             f"consolidate_s={day.consolidate_s:.3f} "
+            f"skipped_understand={day.skipped_understand} "
             f"identical_counts={day.identical_counts} ok={mark}"
         )
     if report.failure_reason:
@@ -363,6 +371,7 @@ def _eval_one(
         truth = load_truth(fixture / "truth.yaml")
         metrics = score_day(conn, day_id, truth)
         predicted = collect_predicted(conn, day_id)
+        skipped = skipped_understand_segment_ids(conn, day_id)
         return DayEval(
             name=fixture.name,
             date=result.date,
@@ -375,6 +384,7 @@ def _eval_one(
             citation_count=int(predicted["citation_count"]),
             claims=int(predicted["claims"]),
             consolidate_s=first[1] + second[1],
+            skipped_understand=len(skipped),
         )
     finally:
         conn.close()
@@ -455,7 +465,9 @@ def _reconcile_understand_jobs(conn: sqlcipher.Connection, day_id: str) -> None:
     from watson.pipeline.consolidation import _understand_jobs_for_day
 
     jobs = _understand_jobs_for_day(conn, day_id, PIPELINE_VERSION)
-    unfinished = [job for job in jobs if job.state is not JobState.COMPLETED]
+    unfinished = [
+        job for job in jobs if job.state in {JobState.PENDING, JobState.CLAIMED}
+    ]
     if unfinished:
         raise ConsolidationWait("understanding held")
 
@@ -563,6 +575,7 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
                 "citation_count": day.citation_count,
                 "claims": day.claims,
                 "consolidate_s": day.consolidate_s,
+                "skipped_understand": day.skipped_understand,
                 "error": day.error,
             }
             for day in report.days

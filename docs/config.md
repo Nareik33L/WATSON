@@ -51,18 +51,24 @@ endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
 `[intelligence.ollama]` is the HTTP client: `timeout_s = 300` (passed to
 `/api/chat` and `/api/embed`; the urllib default of 120 s is too short for
 llama3.2:3b on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
-`num_predict = 768` (sized to the understanding JSON schema), and
+`num_predict = 512` (sized to the understanding JSON schema), and
 `unload_between_phases = true` unloads resident models at sub-phase
 boundaries (understanding chat → understanding embed → consolidation →
 summary). At most one model is resident; chat completions for a batch run
 before any resolver embeddings.
 Chat options always send `temperature = 0`, `num_ctx`, and `num_predict`.
 
-The understanding **v2** prompt (`prompt_version = understanding/v2`,
-`PIPELINE_VERSION = 2`) caps numbered merged OCR at **4000 characters**
-(~1000 tokens). With the v2 system prompt, retrieved aliases, the JSON
-schema, and `num_predict = 768`, that fits the default 4096-token window.
-Existing `understanding/v1` / `pipeline_version = 1` rows stay readable.
+The understanding **v3** prompt (`prompt_version = understanding/v3`,
+`PIPELINE_VERSION = 3`) caps numbered merged OCR at **3000 characters**
+(~750 tokens). With the v3 system prompt, retrieved aliases, the JSON
+schema, and `num_predict = 512`, that fits the default 4096-token window.
+Existing `understanding/v1` / `pipeline_version = 1` and `understanding/v2`
+/ `pipeline_version = 2` rows stay readable.
+
+The default chat model is `llama3.2:3b`. Flip to the §14 fallback with
+`intelligence.llm_model = "qwen2.5:3b"`, `WATSON_LLM_MODEL=qwen2.5:3b`,
+or `watson eval --llm-model qwen2.5:3b`. In code the one-line switch is
+`DEFAULT_LLM_MODEL = FALLBACK_LLM_MODEL`.
 
 `entity_similarity_threshold` is the embedding cosine above which a
 free-text project/people candidate merges into an existing entity
@@ -77,7 +83,7 @@ context_window = 4096
 
 [intelligence.ollama]
 timeout_s = 300
-num_predict = 768
+num_predict = 512
 unload_between_phases = true
 ```
 

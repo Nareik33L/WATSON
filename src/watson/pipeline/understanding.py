@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -39,12 +40,14 @@ from watson.intelligence.runtime import (
     StructuredOutputError,
     build_runtime,
     end_runtime_phase,
+    format_job_error,
     hold_if_unavailable,
     hold_understanding_jobs,
 )
 from watson.intelligence.runtime.fake import FakeRuntime
 from watson.intelligence.runtime.stats import record_understand_prompt, record_understand_segment
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
+from watson.intelligence.schemas.understanding import Assertion, ClaimKind
 from watson.intelligence.structured import complete_structured
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
@@ -66,14 +69,23 @@ log = logging.getLogger("watson.pipeline.understanding")
 
 WORKER_ID = "watson-understand"
 PROMPT_TASK = "understanding"
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 # Chat + deferred embed for a day's segments can exceed the default 60s lease.
 UNDERSTAND_LEASE_SECONDS = max(DEFAULT_LEASE_SECONDS, 3600)
-# Numbered merged OCR in the understanding user message. 4000 characters is
-# ~1000 tokens; with the v2 system prompt, retrieved aliases, JSON schema,
-# and num_predict=768 this fits the default 4096-token Ollama context.
-MERGED_TEXT_PROMPT_MAX = 4000
+# Numbered merged OCR in the understanding user message. 3000 characters is
+# ~750 tokens; with the v3 system prompt, retrieved aliases, JSON schema,
+# and num_predict=512 this fits the default 4096-token Ollama context.
+MERGED_TEXT_PROMPT_MAX = 3000
 SNIPPET_KIND_OCR = "ocr"
+_COMPLETION_RE = re.compile(
+    r"\b(done|sent|approved|agreed|merged|published|shipped|completed|"
+    r"submitted|deployed|closed|signed[- ]off|checked(?:\s+off)?)\b",
+    re.IGNORECASE,
+)
+_INTENTION_RE = re.compile(
+    r"\b(will|please|todo|need to|going to|i['’]ll|i will)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -104,6 +116,7 @@ class UnderstandSettings:
             close_after_seconds=close_after,
             retrieve_top_k=int(intel.retrieve_top_k),
             entity_similarity_threshold=float(intel.entity_similarity_threshold),
+            merged_text_max_chars=MERGED_TEXT_PROMPT_MAX,
             model_id=model_id or intel.llm_model,
         )
 
@@ -240,7 +253,7 @@ def drain_understand_jobs(
                 fail(
                     conn,
                     job.id,
-                    type(exc).__name__,
+                    format_job_error(exc),
                     worker_id=worker_id,
                     now=now,
                     max_attempts=1 if not exc.retryable else DEFAULT_MAX_ATTEMPTS,
@@ -249,7 +262,7 @@ def drain_understand_jobs(
                     continue
                 break
             except (OSError, ValueError, RuntimeError, sqlcipher.DatabaseError) as exc:
-                fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
+                fail(conn, job.id, format_job_error(exc), worker_id=worker_id, now=now)
                 raise
         if pending:
             # Chat sub-phase done. Unload the LLM before any resolver embeddings.
@@ -461,7 +474,7 @@ def build_understand_user_message(
 
 
 def number_merged_text(text: str, *, max_chars: int) -> str:
-    """Number non-empty OCR lines and stop before ``max_chars`` (default 4000)."""
+    """Number non-empty OCR lines and stop before ``max_chars`` (default 3000)."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     numbered = [f"{index}. {line}" for index, line in enumerate(lines, start=1)]
     if not numbered:
@@ -651,9 +664,22 @@ def _persist_observation(
     raw_merged = str(segment.get("merged_text") or "")
     lines = [line.strip() for line in raw_merged.splitlines() if line.strip()]
     for candidate in output.claims:
-        if not candidate.evidence:
-            raise JobFailure("understanding produced a claim without evidence", retryable=False)
         supported = [item for item in candidate.evidence if _citation_supported(item, lines)]
+        if not supported:
+            continue
+        kind = candidate.kind
+        assertion = candidate.assertion
+        if (
+            kind in {ClaimKind.OUTCOME, ClaimKind.ACHIEVEMENT}
+            and assertion is Assertion.OBSERVED
+            and not any(has_completion_evidence(item.snippet) for item in supported)
+        ):
+            assertion = Assertion.UNCONFIRMED
+        if (
+            kind in {ClaimKind.DECISION, ClaimKind.COMMITMENT}
+            and assertion is Assertion.UNCONFIRMED
+        ):
+            continue
         claim_id = new_id()
         conn.execute(
             """
@@ -668,9 +694,9 @@ def _persist_observation(
                 stamp,
                 observation_id,
                 segment["working_day_id"],
-                candidate.kind.value,
+                kind.value,
                 candidate.text,
-                candidate.assertion.value,
+                assertion.value,
                 float(output.confidence),
                 pipeline_version,
             ),
@@ -719,6 +745,20 @@ def _citation_supported(citation: Any, lines: list[str]) -> bool:
     return bool(snippet) and bool(lines) and 1 <= start <= end <= len(lines)
 
 
+def has_completion_evidence(text: str) -> bool:
+    """True when OCR text records a finished action, not an intention."""
+    blob = text.strip()
+    if not blob or not _COMPLETION_RE.search(blob):
+        return False
+    if _INTENTION_RE.search(blob) and not re.search(
+        r"\b(sent|approved|merged|published|shipped|completed|submitted|deployed|done)\b",
+        blob,
+        re.IGNORECASE,
+    ):
+        return False
+    return True
+
+
 def _hold_claimed_understand_job(
     conn: sqlcipher.Connection,
     job: Job,
@@ -729,7 +769,7 @@ def _hold_claimed_understand_job(
 ) -> None:
     """§7.4: return the lease and keep the job pending without burning attempts."""
     stamp = iso_now(now)
-    reason = type(exc).__name__
+    reason = format_job_error(exc)
     conn.execute(
         """
         UPDATE jobs

@@ -36,6 +36,7 @@ def test_m3_replay_meets_section_11_2_and_acceptance(tmp_path: Path, key_provide
     assert payload["latency"]["consolidate"]["n"] >= 1
     assert payload["latency"]["prompt"]["n"] >= 1
     assert all("consolidate_s" in day for day in payload["days"])
+    assert all("skipped_understand" in day for day in payload["days"])
     assert report.runtime == "replay"
     assert report.days, "eval produced no fixture days"
     assert {day.name for day in report.days} == set(V1_DAY_FIXTURES)
@@ -142,10 +143,12 @@ def test_bad_replay_recordings_fail_hard_thresholds(tmp_path: Path, key_provider
         out_dir=tmp_path / "bad-eval",
         key=TEST_KEY,
     )
-    assert report.aggregate["unsupported_achievements"] >= 1.0
+    # Persist-time evidence guard drops the invented achievement; the gate
+    # still fails on the hallucinated Ghost Project (and other soft metrics).
+    assert report.aggregate["unsupported_achievements"] == 0.0
     assert report.gate["passed"] is False
     assert report.passed is False
-    assert "unsupported_achievements" in report.gate["failures"]
+    assert "project_f1" in report.gate["failures"]
 
 
 def test_eval_refuses_implicit_fake_in_replay() -> None:
