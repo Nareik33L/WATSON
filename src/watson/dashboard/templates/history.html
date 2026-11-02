@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}WATSON history{% endblock %}
+{% block content %}
+<section>
+  <h2>History</h2>
+  {% if history is none or not history.days %}
+  <p>no working days</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>date</th>
+          <th>state</th>
+          <th>observations</th>
+          <th>summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in history.days %}
+        <tr>
+          <td><a href="/days?date={{ item.date }}">{{ item.date }}</a></td>
+          <td>
+            <span class="day-state day-state-{{ item.state }}">{{ item.state }}</span>
+            {% if item.error %}
+            <span class="label">reason</span> {{ item.error }}
+            {% endif %}
+          </td>
+          <td>{{ item.observation_count }}</td>
+          <td>{% if item.has_summary %}yes{% else %}no{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

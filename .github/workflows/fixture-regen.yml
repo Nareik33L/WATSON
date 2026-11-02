@@ -5,6 +5,7 @@ on:
     paths:
       - "tools/fixture_gen/**"
       - "tests/fixtures/**"
+      - "src/watson/dashboard/**"
       - ".github/workflows/fixture-regen.yml"
   push:
     branches: [main]
@@ -12,6 +13,7 @@ on:
     paths:
       - "tools/fixture_gen/**"
       - "tests/fixtures/**"
+      - "src/watson/dashboard/**"
       - ".github/workflows/fixture-regen.yml"
 
 concurrency:

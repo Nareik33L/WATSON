@@ -3,30 +3,97 @@
   {% if today is none or today.date is none %}
   <p>no working day</p>
   {% else %}
-  <p><span class="label">date</span> {{ today.date }}</p>
+  <p>
+    <span class="label">date</span> {{ today.date }}
+    <span class="label">state</span>
+    <span class="day-state day-state-{{ today.state }}">{{ today.state }}</span>
+  </p>
   {% if not today.segments %}
   <p>no segments</p>
   {% else %}
-  <table>
-    <thead>
-      <tr>
-        <th>app</th>
-        <th>title</th>
-        <th>start–end</th>
-        <th>duration</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in today.segments %}
-      <tr>
-        <td>{{ item.app_name or "-" }}</td>
-        <td>{{ item.window_title or "-" }}</td>
-        <td>{{ item.range_label() }}</td>
-        <td>{{ item.duration_label() }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>app</th>
+          <th>title</th>
+          <th>start–end</th>
+          <th>duration</th>
+          <th>observation</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in today.segments %}
+        <tr>
+          <td>{{ item.app_name or "-" }}</td>
+          <td>{{ item.window_title or "-" }}</td>
+          <td>{{ item.range_label() }}</td>
+          <td>{{ item.duration_label() }}</td>
+          <td>
+            {% if item.observation %}
+            <span class="label">{{ item.observation.activity_type }}</span>
+            {{ item.observation.description }}
+            {% else %}
+            —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% endif %}
   {% endif %}
 </section>
+
+{% if today is not none and today.day is not none and today.date is not none %}
+<section>
+  <h2>Daily summary</h2>
+  {% if not today.day.spans %}
+  <p>no summary</p>
+  {% else %}
+  <p class="narrative">
+    {% for span in today.day.spans %}
+      {% if span.claim_id %}
+      <a class="cite" href="#claim-{{ span.claim_id }}">{{ span.text }}</a>
+      {% else %}
+      {{ span.text }}
+      {% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+</section>
+
+{% if today.day.unverified %}
+<section>
+  <h2>Unverified</h2>
+  <ul>
+    {% for item in today.day.unverified %}
+    <li id="unverified-{{ item.id }}">{{ item.kind }}: {{ item.text }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section>
+  <h2>Claims</h2>
+  {% if not today.day.claims %}
+  <p>no claims</p>
+  {% else %}
+  <ul class="claims">
+    {% for item in today.day.claims %}
+    <li id="claim-{{ item.id }}">
+      <p><span class="mono">[c:{{ item.id }}]</span> {{ item.kind }}/{{ item.assertion }} — {{ item.text }}</p>
+      {% if item.quotes %}
+      <ul>
+        {% for quote in item.quotes %}
+        <li>{{ quote }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
