@@ -18,7 +18,7 @@ Mac workflows do not run on the tag. Certification happens before tagging.
 
 | Workflow | Job | Runner | When it runs |
 |---|---|---|---|
-| `CI` | `ruff, mypy, pytest` and `OS-level no-network replay` | ubuntu | `pull_request`, and `push` to `main` or `v*` tags, except docs-only changes (`docs/**`, root `*.md`, `docs/results/**`). |
+| `CI` | `ruff, mypy, pytest` and `OS-level no-network replay` (includes `watson eval --mode replay`) | ubuntu | `pull_request`, and `push` to `main` or `v*` tags, except docs-only changes (`docs/**`, root `*.md`, `docs/results/**`). |
 | `Fixture regen` | `playwright fixture regen` | ubuntu | `pull_request`, and `push` to `main` or `v*` tags, when `tools/fixture_gen/**`, `tests/fixtures/**`, or the workflow file change. |
 | `DB smoke` | `SQLCipher smoke (macos-15)` | macos-15 | `workflow_dispatch`, or Sunday 03:00 UTC if `main` had a commit in the last 7 days. |
 | `Helper` | `swiftc + SwiftPM + tests` | macos-15 | Same as DB smoke. |

@@ -153,6 +153,7 @@ jobs:
           uv run python -m watson.privacy.netns -- .venv/bin/watson replay tests/fixtures/day_near_empty --instant
           uv run python -m watson.privacy.netns -- .venv/bin/watson db status
           uv run python -m watson.privacy.netns -- .venv/bin/pytest tests/unit/test_dashboard_auth.py tests/unit/test_dashboard_bind.py tests/privacy/test_dashboard_no_content.py -q
+          uv run python -m watson.privacy.netns -- .venv/bin/watson eval --mode replay --out /tmp/watson-eval-netns
 
       - name: Transcribe under no-network namespace
         env:

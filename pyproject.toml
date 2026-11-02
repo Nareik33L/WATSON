@@ -90,6 +90,8 @@ packages = ["src/watson"]
 "src/watson/intelligence/prompts/understanding/v1.md" = "watson/intelligence/prompts/understanding/v1.md"
 "src/watson/intelligence/prompts/clustering/v1.md" = "watson/intelligence/prompts/clustering/v1.md"
 "src/watson/intelligence/prompts/day_extract/v1.md" = "watson/intelligence/prompts/day_extract/v1.md"
+"src/watson/intelligence/prompts/daily_summary/v1.md" = "watson/intelligence/prompts/daily_summary/v1.md"
+"src/watson/intelligence/eval/thresholds.json" = "watson/intelligence/eval/thresholds.json"
 # fonts/ and scenarios/ live inside watson_fixturegen and ship in the wheel.
 
 [tool.ruff.lint]
