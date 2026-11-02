@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 from watson.config.schema import IntelligenceConfig
 from watson.intelligence.runtime.http import canonical_ollama_url, request_json
@@ -14,9 +14,15 @@ from watson.intelligence.runtime.types import (
     RuntimeUnavailable,
 )
 
+Phase = Literal["chat", "embed"]
+
 
 class OllamaRuntime:
-    """``complete`` / ``embed`` against a local Ollama server via ``format``."""
+    """``complete`` / ``embed`` against a local Ollama server via ``format``.
+
+    One model resident at a time when ``unload_between_phases`` is on (§11.4):
+    the chat model is unloaded before embed, and the embedder before chat.
+    """
 
     name = "ollama"
 
@@ -25,6 +31,7 @@ class OllamaRuntime:
         self.base_url = canonical_ollama_url(settings.ollama_host)
         self.llm_model = settings.llm_model
         self.embedding_model = settings.embedding_model
+        self._resident: Phase | None = None
 
     def probe(self) -> None:
         """Raise RuntimeUnavailable if the server or a configured model is missing."""
@@ -37,14 +44,12 @@ class OllamaRuntime:
         if missing:
             pulls = " && ".join(f"ollama pull {name}" for name in missing)
             raise RuntimeUnavailable(
-                f"Ollama model(s) missing at {self.base_url}: {', '.join(missing)}. "
-                f"Run: {pulls}",
+                f"Ollama model(s) missing at {self.base_url}: {', '.join(missing)}. Run: {pulls}",
                 fetch_command=pulls,
             )
 
-    def complete(
-        self, messages: Sequence[Message], schema: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
+        self._ensure_phase("chat")
         payload: dict[str, Any] = {
             "model": self.llm_model,
             "messages": [dict(item) for item in messages],
@@ -53,10 +58,11 @@ class OllamaRuntime:
             "keep_alive": self._settings.keep_alive,
             "options": {
                 "temperature": self._settings.temperature,
-                "num_ctx": self._settings.context_window,
+                "num_ctx": self._settings.ollama_num_ctx(),
+                "num_predict": int(self._settings.ollama.num_predict),
             },
         }
-        body = request_json(self.base_url, "POST", "/api/chat", payload)
+        body = request_json(self.base_url, "POST", "/api/chat", payload, timeout=self._timeout())
         message = body.get("message") if isinstance(body, dict) else None
         content = ""
         if isinstance(message, dict):
@@ -69,6 +75,7 @@ class OllamaRuntime:
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
+        self._ensure_phase("embed")
         body = request_json(
             self.base_url,
             "POST",
@@ -78,12 +85,37 @@ class OllamaRuntime:
                 "input": list(texts),
                 "keep_alive": self._settings.keep_alive,
             },
-            timeout=60.0,
+            timeout=self._timeout(),
         )
         embeddings = body.get("embeddings")
         if not isinstance(embeddings, list):
             raise RuntimeCallError("Ollama /api/embed returned no embeddings")
         return [[float(x) for x in row] for row in embeddings]
+
+    def _timeout(self) -> float:
+        return float(self._settings.ollama.timeout_s)
+
+    def _ensure_phase(self, phase: Phase) -> None:
+        if not self._settings.ollama.unload_between_phases:
+            self._resident = phase
+            return
+        if self._resident == phase:
+            return
+        if self._resident == "chat":
+            self._unload(self.llm_model)
+        elif self._resident == "embed":
+            self._unload(self.embedding_model)
+        self._resident = phase
+
+    def _unload(self, model: str) -> None:
+        """Drop a resident model (Ollama ``keep_alive: 0``)."""
+        request_json(
+            self.base_url,
+            "POST",
+            "/api/generate",
+            {"model": model, "keep_alive": 0},
+            timeout=self._timeout(),
+        )
 
 
 def _installed_names(tags: dict[str, Any]) -> set[str]:

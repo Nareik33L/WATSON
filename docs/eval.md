@@ -35,17 +35,42 @@ cat /tmp/watson-eval-ollama/report.md
 
 `--mode record` writes recordings under `--out` (`recordings.json`) unless `--recordings` is set. It will not overwrite `tests/fixtures/eval/recordings.json` by default.
 
-The report includes **wall_seconds** and **peak_rss_bytes** of the Python eval process. That is client RSS, not Ollama model weights. Record both:
+The report is always written (`report.json` and `report.md`), including on abort, hold (`ConsolidationWait`), or a missing runtime. Partial per-day rows stay in `days` with `error` set; `failure_reason` names the exception.
 
-| Measurement | Where |
+### Latency
+
+`report.json` → `latency`:
+
+| Field | Meaning |
 |---|---|
-| Eval process wall time | `report.json` → `wall_seconds` |
-| Eval process peak RSS | `report.json` → `peak_rss_bytes` |
-| Ollama model RSS | Activity Monitor / `sample` on `ollama` while the run is in progress |
-| Combined worker+model RSS | sum of the two, against §11.4 worker peak RSS < 3 GB |
-| Understanding latency per segment | time `watson eval --only day_acme_q4` and divide by segment count |
+| `complete` / `embed` | per-call n, p50/p95/max seconds |
+| `understand_segment.per_segment_s` | one entry per segment that ran understanding |
+| `timeouts` | `/api/chat` or `/api/embed` calls that hit `intelligence.ollama.timeout_s` |
+
+§11.4 target: understanding < 20 s/segment.
+
+### §11.4 worker peak RSS
+
+**Worker peak RSS** is the eval/worker process **plus** the resident model server, measured by Darwin **`phys_footprint`** (includes Metal/GPU allocations). Client `ru_maxrss` alone is not that number.
+
+```bash
+watson eval --mode record --runtime ollama \
+  --measure-model \
+  --out /tmp/watson-eval-ollama
+```
+
+`--measure-model` discovers `ollama` / `llama-server` PIDs and samples `phys_footprint` (via `footprint` on macOS, `VmRSS` on Linux) alongside the worker. `--rss-pid` adds an explicit PID (repeatable). The combined peak is `report.json` → `worker_plus_model_peak_bytes` (target < 3 GB). `peak_rss_bytes` remains the Python eval process `ru_maxrss`.
+
+Manual check on the V1 Mac while a run is in progress:
+
+```bash
+# llama-server / Ollama runner PID from Activity Monitor
+footprint -p <pid>    # look for phys_footprint
+```
 
 `intelligence.runtime` must stay `ollama`. Do not set `intelligence.runtime = "fake"` for this path.
+
+8 GB Ollama defaults that keep one model resident: `context_window = 4096`, `intelligence.ollama.timeout_s = 300`, `num_predict = 768`, `unload_between_phases = true`. The understanding OCR cap is 4000 characters (see `docs/config.md`).
 
 ## Thresholds
 

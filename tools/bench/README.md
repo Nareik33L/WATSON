@@ -56,6 +56,11 @@ That writes:
 
 The harness unloads each Ollama model (`keep_alive=0`) before loading the next. Do not fetch the `16gb` profile on this Mac.
 
+§11.4 **worker peak RSS** for the M3 eval is worker process + resident model
+server, measured by Darwin `phys_footprint` (Metal/GPU included). Prefer
+`watson eval --measure-model` / `--rss-pid` (see `docs/eval.md`) over this
+harness' client-only RSS column.
+
 If you later point `--frames` at a 50-frame fixture directory, budget about **+8–15 min per VLM candidate**.
 
 ## Optional: MLX and llama.cpp on the same Mac

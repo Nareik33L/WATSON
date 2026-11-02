@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from tests.replay_support import TEST_KEY, V1_DAY_FIXTURES
@@ -25,6 +26,12 @@ def test_m3_replay_meets_section_11_2_and_acceptance(tmp_path: Path, key_provide
     )
     assert (tmp_path / "eval" / "report.json").is_file()
     assert (tmp_path / "eval" / "report.md").is_file()
+    payload = json.loads((tmp_path / "eval" / "report.json").read_text(encoding="utf-8"))
+    assert payload["failure_reason"] is None
+    assert payload["latency"]["timeouts"] == 0
+    assert payload["latency"]["complete"]["n"] > 0
+    assert payload["latency"]["understand_segment"]["n"] > 0
+    assert payload["worker_plus_model_peak_bytes"] is not None
     assert report.runtime == "replay"
     assert report.days, "eval produced no fixture days"
     assert {day.name for day in report.days} == set(V1_DAY_FIXTURES)

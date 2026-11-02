@@ -29,6 +29,7 @@ from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import JobState, claim, enqueue, get_job
 from watson.pipeline.replay import replay_fixture
 from watson.pipeline.understanding import (
+    MERGED_TEXT_PROMPT_MAX,
     UnderstandSettings,
     _citation_supported,
     _load_segment,
@@ -176,6 +177,11 @@ def _seed_entity(conn: object, *, typ: str, name: str, alias: str | None = None)
 def test_number_merged_text_and_eligibility_helpers() -> None:
     assert number_merged_text("one\n\ntwo", max_chars=32) == "1. one\n2. two"
     assert number_merged_text("", max_chars=8) == "(empty)"
+    long = "\n".join(f"line-{index:04d} extra words" for index in range(1, 200))
+    capped = number_merged_text(long, max_chars=4000)
+    assert len(capped.replace("\n(truncated)", "")) <= 4000
+    assert capped.endswith("(truncated)")
+    assert MERGED_TEXT_PROMPT_MAX == 4000
 
 
 def test_eligibility_closed_or_twenty_minutes(tmp_path: Path) -> None:

@@ -107,17 +107,26 @@ def request_json(
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeCallError(f"Ollama HTTP {exc.code} on {path}: {detail[:300]}") from exc
+    except TimeoutError as exc:
+        raise RuntimeCallError(f"Ollama timed out on {path}") from exc
     except urllib.error.URLError as exc:
+        if _is_timeout_reason(exc.reason):
+            raise RuntimeCallError(f"Ollama timed out on {path}") from exc
         reason = exc.reason if not isinstance(exc.reason, BaseException) else str(exc.reason)
         raise RuntimeUnavailable(
             f"Ollama is not reachable at {base_url} ({reason}). "
             'Start the local Ollama app or set intelligence.runtime = "fake".'
         ) from exc
-    except TimeoutError as exc:
-        raise RuntimeCallError(f"Ollama timed out on {path}") from exc
     if not raw:
         return {}
     loaded = json.loads(raw.decode("utf-8"))
     if not isinstance(loaded, dict):
         raise RuntimeCallError(f"Ollama {path} returned a non-object")
     return loaded
+
+
+def _is_timeout_reason(reason: object) -> bool:
+    if isinstance(reason, TimeoutError):
+        return True
+    text = str(reason).lower()
+    return "timed out" in text or "timeout" in text

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -40,6 +41,7 @@ from watson.intelligence.runtime import (
     hold_understanding_jobs,
 )
 from watson.intelligence.runtime.fake import FakeRuntime
+from watson.intelligence.runtime.stats import record_understand_segment
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
 from watson.intelligence.structured import complete_structured
 from watson.memory.db import iso_now
@@ -52,7 +54,10 @@ log = logging.getLogger("watson.pipeline.understanding")
 WORKER_ID = "watson-understand"
 PROMPT_TASK = "understanding"
 PROMPT_VERSION = "v1"
-MERGED_TEXT_PROMPT_MAX = 8000
+# Numbered merged OCR in the understanding user message. 4000 characters is
+# ~1000 tokens; with the v1 system prompt, retrieved aliases, JSON schema,
+# and num_predict=768 this fits the default 4096-token Ollama context.
+MERGED_TEXT_PROMPT_MAX = 4000
 SNIPPET_KIND_OCR = "ocr"
 
 
@@ -249,6 +254,22 @@ def understand_segment(
     if existing is not None:
         return str(existing["id"])
 
+    started = time.perf_counter()
+    try:
+        return _understand_segment_body(conn, segment_id, language, embedding, cfg=cfg, now=now)
+    finally:
+        record_understand_segment(time.perf_counter() - started)
+
+
+def _understand_segment_body(
+    conn: sqlcipher.Connection,
+    segment_id: str,
+    language: LanguageRuntime,
+    embedding: EmbeddingRuntime,
+    *,
+    cfg: UnderstandSettings,
+    now: datetime | None,
+) -> str | None:
     segment = _load_segment(conn, segment_id)
     if segment is None:
         raise JobFailure(f"understand job refers to missing segment {segment_id}", retryable=False)
@@ -326,25 +347,35 @@ def build_understand_user_message(
         f"Dwell: {int(segment.get('dwell_seconds') or 0)}s\n"
         f"Frames: {int(segment.get('frame_count') or 0)}\n"
         f"Line changes: {int(segment.get('line_changes') or 0)}\n"
-        f"\nMerged text:\n{numbered}\n"
+        f"\nMerged text (capped at {max_chars} characters):\n{numbered}\n"
         f"\nRetrieved context:\n{memory_block}\n"
     )
 
 
 def number_merged_text(text: str, *, max_chars: int) -> str:
+    """Number non-empty OCR lines and stop before ``max_chars`` (default 4000)."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     numbered = [f"{index}. {line}" for index, line in enumerate(lines, start=1)]
     if not numbered:
         return "(empty)"
     out: list[str] = []
     used = 0
+    truncated = False
     for line in numbered:
         extra = len(line) + (1 if out else 0)
         if used + extra > max_chars:
+            truncated = True
             break
         out.append(line)
         used += extra
-    return "\n".join(out) if out else numbered[0][:max_chars]
+    if not out:
+        body = numbered[0][:max_chars]
+        truncated = len(numbered[0]) > max_chars or len(numbered) > 1
+    else:
+        body = "\n".join(out)
+    if truncated:
+        return f"{body}\n(truncated)"
+    return body
 
 
 def _resolve_adapters(

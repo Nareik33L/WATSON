@@ -13,10 +13,17 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
+from watson.intelligence.eval.footprint import FootprintSampler
 from watson.intelligence.eval.recordings import DEFAULT_RECORDINGS, RecordingRuntime
 from watson.intelligence.eval.score import collect_predicted, load_truth, score_day
 from watson.intelligence.eval.thresholds import gate_metrics, load_thresholds
 from watson.intelligence.runtime import FakeRuntime, build_runtime
+from watson.intelligence.runtime.stats import (
+    InferenceStats,
+    TimingRuntime,
+    bind_stats,
+    reset_stats,
+)
 from watson.intelligence.runtime.types import RuntimeUnavailable
 from watson.memory.db import connect
 from watson.memory.migrate import upgrade_head
@@ -48,6 +55,7 @@ class DayEval:
     narrative_nonempty: bool = False
     citation_count: int = 0
     claims: int = 0
+    error: str | None = None
 
     @property
     def narrative_ok(self) -> bool:
@@ -66,11 +74,18 @@ class EvalReport:
     gate: dict[str, Any] = field(default_factory=dict)
     wall_seconds: float = 0.0
     peak_rss_bytes: int = 0
+    worker_plus_model_peak_bytes: int | None = None
+    failure_reason: str | None = None
+    latency: dict[str, Any] = field(default_factory=dict)
 
     @property
     def pipeline_passed(self) -> bool:
         """Structural / acceptance gate used by replay CI (not a quality claim)."""
+        if self.failure_reason:
+            return False
         if not self.days or not self.aggregate:
+            return False
+        if any(day.error for day in self.days):
             return False
         if self.gate.get("hard_failures"):
             return False
@@ -130,29 +145,58 @@ def run_eval(
     out_dir: Path,
     key: bytes,
     config: Any | None = None,
+    rss_pids: tuple[int, ...] = (),
+    measure_model: bool = False,
 ) -> EvalReport:
     started = time.perf_counter()
     path = recordings if recordings is not None else DEFAULT_RECORDINGS
-    runtime = build_eval_runtime(
-        mode=mode, runtime_name=runtime_name, recordings=path, config=config
-    )
+    stats = InferenceStats()
+    stats_token = bind_stats(stats)
+    sampler = FootprintSampler(extra_pids=list(rss_pids), measure_model=measure_model)
+    sampler.start()
     days: list[DayEval] = []
-    for name in names:
-        fixture = fixtures_root / name
-        days.append(_eval_one(fixture, runtime=runtime, out_dir=out_dir / name, key=key))
-    if isinstance(runtime, RecordingRuntime):
-        runtime.save()
-    aggregate = _aggregate([day.metrics for day in days])
-    report = EvalReport(
-        mode=mode,
-        runtime=getattr(runtime, "name", runtime_name),
-        days=days,
-        aggregate=aggregate,
-        gate=gate_metrics(aggregate, load_thresholds()),
-        wall_seconds=time.perf_counter() - started,
-        peak_rss_bytes=_peak_rss_bytes(),
-    )
-    _write_reports(out_dir, report)
+    failure_reason: str | None = None
+    runtime: Any = None
+    try:
+        runtime = build_eval_runtime(
+            mode=mode, runtime_name=runtime_name, recordings=path, config=config
+        )
+        runtime = TimingRuntime(runtime, stats)
+        for name in names:
+            fixture = fixtures_root / name
+            try:
+                days.append(_eval_one(fixture, runtime=runtime, out_dir=out_dir / name, key=key))
+            except Exception as exc:
+                failure_reason = _format_failure(exc)
+                days.append(_failed_day(name, exc))
+    except Exception as exc:
+        failure_reason = _format_failure(exc)
+    finally:
+        try:
+            inner = getattr(runtime, "_inner", runtime)
+            if isinstance(inner, RecordingRuntime):
+                inner.save()
+            elif isinstance(runtime, RecordingRuntime):
+                runtime.save()
+        except Exception:
+            pass
+        worker_plus_model = sampler.stop()
+        reset_stats(stats_token)
+        scored = [day.metrics for day in days if not day.error and day.metrics]
+        aggregate = _aggregate(scored)
+        report = EvalReport(
+            mode=mode,
+            runtime=getattr(runtime, "name", runtime_name) if runtime is not None else runtime_name,
+            days=days,
+            aggregate=aggregate,
+            gate=gate_metrics(aggregate, load_thresholds()),
+            wall_seconds=time.perf_counter() - started,
+            peak_rss_bytes=_peak_rss_bytes(),
+            worker_plus_model_peak_bytes=worker_plus_model,
+            failure_reason=failure_reason,
+            latency=stats.summary(),
+        )
+        _write_reports(out_dir, report)
     return report
 
 
@@ -164,6 +208,7 @@ def render_markdown(report: EvalReport) -> str:
         f"runtime: `{report.runtime}`  ",
         f"wall_seconds: {report.wall_seconds:.3f}  ",
         f"peak_rss_bytes: {report.peak_rss_bytes}  ",
+        f"worker_plus_model_peak_bytes: {report.worker_plus_model_peak_bytes}  ",
         f"passed: **{report.passed}**  ",
         f"pipeline_passed: **{report.pipeline_passed}**  ",
         "replay is a pipeline-only gate; quality F1 is measured, not a model claim.",
@@ -175,6 +220,9 @@ def render_markdown(report: EvalReport) -> str:
         lines.append(f"| {key} | {value:.4f} |")
     lines.extend(["", "## Days", ""])
     for day in report.days:
+        if day.error:
+            lines.append(f"- `{day.name}` ({day.date}): ERROR {day.error}")
+            continue
         mark = "yes" if day.narrative_ok and day.identical_counts else "no"
         lines.append(
             f"- `{day.name}` ({day.date}): summary={day.summary_present} "
@@ -182,8 +230,31 @@ def render_markdown(report: EvalReport) -> str:
             f"citations={day.citation_count} "
             f"identical_counts={day.identical_counts} ok={mark}"
         )
+    if report.failure_reason:
+        lines.extend(["", f"failure_reason: {report.failure_reason}"])
     if report.gate.get("failures"):
         lines.extend(["", f"failures: {', '.join(report.gate['failures'])}"])
+    latency = report.latency
+    if latency:
+        lines.extend(["", "## Latency", ""])
+        complete = latency.get("complete") if isinstance(latency, dict) else None
+        understand = latency.get("understand_segment") if isinstance(latency, dict) else None
+        timeouts = latency.get("timeouts") if isinstance(latency, dict) else 0
+        if isinstance(complete, dict):
+            lines.append(
+                f"- complete p50={complete.get('p50_s')} p95={complete.get('p95_s')} "
+                f"max={complete.get('max_s')} n={complete.get('n')}"
+            )
+        if isinstance(understand, dict):
+            lines.append(
+                f"- understand_segment p50={understand.get('p50_s')} "
+                f"p95={understand.get('p95_s')} max={understand.get('max_s')} "
+                f"n={understand.get('n')}"
+            )
+            per = understand.get("per_segment_s") or []
+            if per:
+                lines.append("- per_segment_s: " + ", ".join(f"{item:.3f}" for item in per))
+        lines.append(f"- timeouts: {timeouts}")
     lines.append("")
     return "\n".join(lines)
 
@@ -288,6 +359,23 @@ def _peak_rss_bytes() -> int:
     return rss * 1024
 
 
+def _format_failure(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _failed_day(name: str, exc: BaseException) -> DayEval:
+    return DayEval(
+        name=name,
+        date="",
+        metrics={},
+        derived_first={},
+        derived_second={},
+        summary_present=False,
+        identical_counts=False,
+        error=_format_failure(exc),
+    )
+
+
 def _write_reports(out_dir: Path, report: EvalReport) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -299,6 +387,9 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
         "gate": report.gate,
         "wall_seconds": report.wall_seconds,
         "peak_rss_bytes": report.peak_rss_bytes,
+        "worker_plus_model_peak_bytes": report.worker_plus_model_peak_bytes,
+        "failure_reason": report.failure_reason,
+        "latency": report.latency,
         "days": [
             {
                 "name": day.name,
@@ -311,6 +402,7 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
                 "narrative_nonempty": day.narrative_nonempty,
                 "citation_count": day.citation_count,
                 "claims": day.claims,
+                "error": day.error,
             }
             for day in report.days
         ],

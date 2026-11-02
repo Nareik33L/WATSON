@@ -73,8 +73,13 @@ DEFAULT_INTELLIGENCE_RUNTIME: Literal["ollama", "fake"] = "ollama"
 DEFAULT_LLM_MODEL = "llama3.2:3b"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
-DEFAULT_CONTEXT_WINDOW = 8192
+# 4096 fits llama3.2:3b + nomic-embed-text one-at-a-time on 8 GB (§11.4 < 3 GB).
+# 8192 loaded the chat model at ~4.2 GB phys_footprint on the M1.
+DEFAULT_CONTEXT_WINDOW = 4096
 DEFAULT_KEEP_ALIVE = "5m"
+DEFAULT_OLLAMA_TIMEOUT_S = 300.0
+DEFAULT_OLLAMA_NUM_PREDICT = 768
+DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES = True
 # Entity resolver: embedding cosine must exceed this after alias miss (§3.5).
 DEFAULT_ENTITY_SIMILARITY = 0.80
 # Retrieved memory: top-k FTS5 hits over entity names/aliases.
@@ -251,6 +256,33 @@ class PipelineConfig(_StrictModel):
     )
 
 
+class OllamaClientConfig(_StrictModel):
+    """Loopback Ollama HTTP options for the 8 GB profile (§11.4)."""
+
+    timeout_s: float = Field(
+        default=DEFAULT_OLLAMA_TIMEOUT_S,
+        ge=5.0,
+        le=3600.0,
+        description="urllib timeout for /api/chat and /api/embed. Default 300 s.",
+    )
+    num_ctx: int | None = Field(
+        default=None,
+        ge=512,
+        le=128_000,
+        description="Override intelligence.context_window for Ollama options.num_ctx.",
+    )
+    num_predict: int = Field(
+        default=DEFAULT_OLLAMA_NUM_PREDICT,
+        ge=16,
+        le=8192,
+        description="Max completion tokens. 768 covers the understanding JSON schema.",
+    )
+    unload_between_phases: bool = Field(
+        default=DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES,
+        description="Unload the chat model before embed and vice versa (one resident model).",
+    )
+
+
 class IntelligenceConfig(_StrictModel):
     """Local inference (plan D6 / ADR 0001). No cloud endpoints."""
 
@@ -274,6 +306,13 @@ class IntelligenceConfig(_StrictModel):
         le=50,
         description="Top-k projects/people retrieved via FTS5 for the understanding prompt.",
     )
+    ollama: OllamaClientConfig = Field(default_factory=OllamaClientConfig)
+
+    def ollama_num_ctx(self) -> int:
+        """Context window sent as Ollama ``options.num_ctx``."""
+        if self.ollama.num_ctx is not None:
+            return int(self.ollama.num_ctx)
+        return int(self.context_window)
 
 
 class WatsonConfig(_StrictModel):

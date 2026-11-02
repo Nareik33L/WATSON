@@ -45,8 +45,19 @@ those frames. There is no way to drop the defaults by replacing
 endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
 `llm_model = "llama3.2:3b"`, `embedding_model = "nomic-embed-text"`,
 `ollama_host = "http://127.0.0.1:11434"`, `vlm_enabled = false`,
-`context_window = 8192`, `keep_alive = "5m"`, `temperature = 0.0`,
+`context_window = 4096`, `keep_alive = "5m"`, `temperature = 0.0`,
 `entity_similarity_threshold = 0.80`, `retrieve_top_k = 5`.
+
+`[intelligence.ollama]` is the HTTP client: `timeout_s = 300` (passed to
+`/api/chat` and `/api/embed`; the urllib default of 120 s is too short for
+llama3.2:3b on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
+`num_predict = 768` (sized to the understanding JSON schema), and
+`unload_between_phases = true` so only one model is resident (§11.4).
+Chat options always send `temperature = 0`, `num_ctx`, and `num_predict`.
+
+The understanding prompt caps numbered merged OCR at **4000 characters**
+(~1000 tokens). With the v1 system prompt, retrieved aliases, the JSON
+schema, and `num_predict = 768`, that fits the default 4096-token window.
 
 `entity_similarity_threshold` is the embedding cosine above which a
 free-text project/people candidate merges into an existing entity
@@ -57,6 +68,12 @@ understanding prompt.
 ```toml
 [intelligence]
 runtime = "ollama"
+context_window = 4096
+
+[intelligence.ollama]
+timeout_s = 300
+num_predict = 768
+unload_between_phases = true
 ```
 
 CI uses `runtime = "fake"` or `WATSON_INTELLIGENCE_RUNTIME=fake` (recorded

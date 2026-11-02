@@ -158,6 +158,19 @@ def _main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Fail on any missed §11.2 threshold (default for --mode record)",
     )
+    evaluate.add_argument(
+        "--rss-pid",
+        action="append",
+        dest="rss_pid",
+        type=int,
+        default=None,
+        help="Sample phys_footprint of this PID into worker+model peak (repeatable)",
+    )
+    evaluate.add_argument(
+        "--measure-model",
+        action="store_true",
+        help="Discover ollama/llama-server PIDs and sample phys_footprint with the worker",
+    )
     evaluate.set_defaults(handler=_cmd_eval)
 
     for name in _STUB_COMMANDS:
@@ -289,6 +302,8 @@ def _cmd_eval(args: argparse.Namespace) -> int:
         out_dir=out_dir,
         key=key,
         config=config,
+        rss_pids=tuple(args.rss_pid or ()),
+        measure_model=bool(args.measure_model),
     )
     print(f"eval_mode: {report.mode}")
     print(f"eval_runtime: {report.runtime}")
@@ -296,6 +311,9 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     print(f"eval_pipeline_passed: {report.pipeline_passed}")
     print(f"eval_wall_seconds: {report.wall_seconds:.3f}")
     print(f"eval_peak_rss_bytes: {report.peak_rss_bytes}")
+    print(f"eval_worker_plus_model_peak_bytes: {report.worker_plus_model_peak_bytes}")
+    if report.failure_reason:
+        print(f"eval_failure_reason: {report.failure_reason}")
     print(f"eval_report: {out_dir / 'report.md'}")
     for key_name, value in report.aggregate.items():
         print(f"{key_name}: {value:.4f}")

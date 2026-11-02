@@ -46,6 +46,11 @@ def test_defaults_use_application_support_path(
     assert config.intelligence.embedding_model == "nomic-embed-text"
     assert config.intelligence.vlm_enabled is False
     assert config.intelligence.ollama_host == "http://127.0.0.1:11434"
+    assert config.intelligence.context_window == 4096
+    assert config.intelligence.ollama.timeout_s == 300.0
+    assert config.intelligence.ollama.num_predict == 768
+    assert config.intelligence.ollama.unload_between_phases is True
+    assert config.intelligence.ollama_num_ctx() == 4096
     assert config.intelligence.entity_similarity_threshold == 0.80
     assert config.intelligence.retrieve_top_k == 5
 
@@ -69,6 +74,12 @@ window_title_days = 14
 [intelligence]
 runtime = "fake"
 context_window = 4096
+
+[intelligence.ollama]
+timeout_s = 180
+num_ctx = 2048
+num_predict = 512
+unload_between_phases = false
 """,
         encoding="utf-8",
     )
@@ -86,6 +97,11 @@ context_window = 4096
     assert config.db_path == data_dir / "watson.db"
     assert config.intelligence.runtime == "fake"
     assert config.intelligence.context_window == 4096
+    assert config.intelligence.ollama.timeout_s == 180
+    assert config.intelligence.ollama.num_ctx == 2048
+    assert config.intelligence.ollama.num_predict == 512
+    assert config.intelligence.ollama.unload_between_phases is False
+    assert config.intelligence.ollama_num_ctx() == 2048
 
 
 def test_bad_key_is_named_in_the_error(data_dir: Path) -> None:
