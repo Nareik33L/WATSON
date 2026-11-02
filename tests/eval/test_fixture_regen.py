@@ -73,3 +73,75 @@ def test_regen_sidecars_and_truth_match_committed(tmp_path: Path, name: str) -> 
             json.loads(left.read_text(encoding="utf-8")),
             json.loads(right.read_text(encoding="utf-8")),
         )
+
+
+@pytest.mark.fixture_regen
+def test_dashboard_pages_fit_1280px(data_dir: Path, key_provider: object) -> None:
+    """Plan §12 M4: every dashboard page is usable at 1280 px (existing Chromium)."""
+    pytest.importorskip("playwright")
+    from fastapi.testclient import TestClient
+
+    from tests.replay_support import open_test_db
+    from tests.unit.test_consolidation import (
+        _insert_claim,
+        _insert_day,
+        _insert_frame,
+        _insert_segment,
+    )
+    from tests.unit.test_dashboard_pages import (
+        _insert_entity,
+        _insert_summary,
+        _observation_with_candidates,
+    )
+    from watson.config import load_config
+    from watson.dashboard.app import PACKAGE_DIR, create_app
+    from watson_fixturegen.layout import VIEWPORT_WIDTH, assert_fits_viewport
+
+    wide = "WideToken" + ("W" * 400)
+    conn = open_test_db(data_dir)
+    try:
+        day_id = _insert_day(conn, date="2026-10-31", state="consolidated")
+        frame_id = _insert_frame(conn, day_id)
+        segment_id = _insert_segment(conn, day_id, frame_id)
+        observation_id = _observation_with_candidates(
+            conn,
+            segment_id,
+            description=wide,
+            projects=[wide],
+            people=[wide],
+        )
+        claim_id = _insert_claim(
+            conn,
+            observation_id,
+            day_id,
+            segment_id,
+            frame_id,
+            kind="activity",
+            assertion="observed",
+            text=wide,
+        )
+        _insert_summary(conn, day_id, f"{wide} [c:{claim_id}].", [claim_id])
+        project_id = _insert_entity(conn, name=wide, alias=wide, typ="project")
+        _insert_entity(conn, name=wide + "-person", alias=wide, typ="person")
+    finally:
+        conn.close()
+
+    # Re-auth after seeding so the app sees the same WATSON_DATA_DIR database.
+    app = create_app(token="layout-token-not-a-secret-for-ci", config=load_config(), port=8000)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+    code = app.state.launch_codes.mint()
+    client.get(f"/auth?code={code}", follow_redirects=False)
+    css = (PACKAGE_DIR / "static" / "status.css").read_text(encoding="utf-8")
+    paths = (
+        "/",
+        "/today",
+        "/history",
+        "/projects",
+        f"/projects/{project_id}",
+        "/people",
+        "/days?date=2026-10-31",
+    )
+    for path in paths:
+        page = client.get(path)
+        assert page.status_code == 200, path
+        assert_fits_viewport(page.text, css=css, width=VIEWPORT_WIDTH)

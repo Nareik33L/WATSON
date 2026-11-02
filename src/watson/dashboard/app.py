@@ -7,7 +7,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -34,6 +34,8 @@ from watson.dashboard.bind import DEFAULT_PORT
 from watson.memory.db import DatabaseError, connect
 from watson.memory.keys import KeyProviderError, get_key_provider
 from watson.pipeline.day_page import DayPage, collect_day_page
+from watson.pipeline.entities_page import EntityPage, EntityType, collect_entities
+from watson.pipeline.history import HistoryPage, collect_history
 from watson.pipeline.status import StatusReport, collect_status
 from watson.pipeline.today import TodayReport, collect_today
 
@@ -184,6 +186,20 @@ def create_app(
         target = f"/days?date={date}" if date else "/days"
         return RedirectResponse(target, status_code=303)
 
+    @app.get("/history", response_class=HTMLResponse)
+    async def history_page(request: Request) -> Response:
+        return _render(request, "history.html")
+
+    @app.get("/projects", response_class=HTMLResponse)
+    @app.get("/projects/{entity_id}", response_class=HTMLResponse)
+    async def projects_page(request: Request, entity_id: str | None = None) -> Response:
+        return _render(request, "entities.html", entity_type="project", entity_id=entity_id)
+
+    @app.get("/people", response_class=HTMLResponse)
+    @app.get("/people/{entity_id}", response_class=HTMLResponse)
+    async def people_page(request: Request, entity_id: str | None = None) -> Response:
+        return _render(request, "entities.html", entity_type="person", entity_id=entity_id)
+
     @app.get("/api/status")
     async def api_status(request: Request) -> JSONResponse:
         return JSONResponse(_report(request).as_dict())
@@ -192,14 +208,41 @@ def create_app(
     async def api_today(request: Request) -> JSONResponse:
         return JSONResponse(_today(request).as_dict())
 
+    @app.get("/api/history")
+    async def api_history(request: Request) -> JSONResponse:
+        return JSONResponse(_history(request).as_dict())
+
+    @app.get("/api/entities")
+    async def api_entities(
+        request: Request,
+        entity_type: str = Query("project", alias="type"),
+        entity_id: str | None = Query(None, alias="id"),
+    ) -> JSONResponse:
+        if entity_type not in {"project", "person"}:
+            return JSONResponse({"error": "type must be project or person"}, status_code=400)
+        return JSONResponse(_entities(request, entity_type, entity_id).as_dict())
+
     return app
 
 
-def _render(request: Request, template_name: str, *, date: str | None = None) -> HTMLResponse:
+def _render(
+    request: Request,
+    template_name: str,
+    *,
+    date: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+) -> HTMLResponse:
     session = request.state.session
     report = _report(request)
     today = _today(request) if "today" in template_name else None
     day = _day(request, date) if "days" in template_name else None
+    history = _history(request) if "history" in template_name else None
+    entities = (
+        _entities(request, entity_type, entity_id)
+        if entity_type in {"project", "person"}
+        else None
+    )
     return _TEMPLATES.TemplateResponse(
         request,
         template_name,
@@ -207,6 +250,9 @@ def _render(request: Request, template_name: str, *, date: str | None = None) ->
             "status": report,
             "today": today,
             "day": day,
+            "history": history,
+            "entities": entities,
+            "entity_id": entity_id,
             "csrf_token": session.csrf,
         },
     )
@@ -333,13 +379,8 @@ def _retry_day(request: Request, working_day_id: str) -> str | None:
 
 
 def _today(request: Request) -> TodayReport:
-    config = getattr(request.app.state, "config", None)
-    if config is None or not config.db_path.is_file():
-        return TodayReport(date=None, segments=())
-    try:
-        key = _cached_db_key(request.app)
-        conn = connect(config.db_path, key, load_vec=False, check_same_thread=False)
-    except (KeyProviderError, DatabaseError, sqlcipher.DatabaseError):
+    conn = _conn(request)
+    if conn is None:
         return TodayReport(date=None, segments=())
     try:
         return collect_today(conn)
@@ -347,6 +388,46 @@ def _today(request: Request) -> TodayReport:
         return TodayReport(date=None, segments=())
     finally:
         conn.close()
+
+
+def _history(request: Request) -> HistoryPage:
+    conn = _conn(request)
+    if conn is None:
+        return HistoryPage(days=())
+    try:
+        return collect_history(conn)
+    except (DatabaseError, sqlcipher.DatabaseError):
+        return HistoryPage(days=())
+    finally:
+        conn.close()
+
+
+def _entities(
+    request: Request, entity_type: str | None, entity_id: str | None
+) -> EntityPage:
+    kind: EntityType = "person" if entity_type == "person" else "project"
+    heading = "People" if kind == "person" else "Projects"
+    empty = EntityPage(entity_type=kind, heading=heading, items=(), selected=None)
+    conn = _conn(request)
+    if conn is None:
+        return empty
+    try:
+        return collect_entities(conn, entity_type=kind, entity_id=entity_id)
+    except (DatabaseError, sqlcipher.DatabaseError):
+        return empty
+    finally:
+        conn.close()
+
+
+def _conn(request: Request) -> sqlcipher.Connection | None:
+    config = getattr(request.app.state, "config", None)
+    if config is None or not config.db_path.is_file():
+        return None
+    try:
+        key = _cached_db_key(request.app)
+        return connect(config.db_path, key, load_vec=False, check_same_thread=False)
+    except (KeyProviderError, DatabaseError, sqlcipher.DatabaseError):
+        return None
 
 
 def _unauthenticated(request: Request) -> Response:

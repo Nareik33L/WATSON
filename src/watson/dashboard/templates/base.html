@@ -13,10 +13,15 @@
   <header class="bar">
     <p class="brand">WATSON</p>
     <p class="tag">local · 127.0.0.1 only</p>
+    {% if status is not none %}
+    <p class="capture-state">{{ status.capture_state }}</p>
+    {% endif %}
     <nav class="nav">
       <a href="/">Status</a>
       <a href="/today">Today</a>
-      <a href="/days">Days</a>
+      <a href="/history">History</a>
+      <a href="/projects">Projects</a>
+      <a href="/people">People</a>
     </nav>
   </header>
   <main>

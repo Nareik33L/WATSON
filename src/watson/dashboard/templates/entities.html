@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}WATSON {{ entities.heading|lower }}{% endblock %}
+{% block content %}
+<section>
+  <h2>{{ entities.heading }}</h2>
+  {% if not entities.items %}
+  <p>no {{ entities.heading|lower }}</p>
+  {% else %}
+  <ul class="entity-list">
+    {% for item in entities.items %}
+    <li>
+      <a href="/{{ entities.heading|lower }}/{{ item.id }}">{{ item.name }}</a>
+      {% if item.provisional %}<span class="label">provisional</span>{% endif %}
+      <span class="label">claims</span> {{ item.claim_count }}
+      {% if item.aliases %}
+      <span class="label">also</span> {{ item.aliases|join(", ") }}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+{% if entities.selected %}
+<section>
+  <h2>{{ entities.selected.name }}</h2>
+  <p>
+    <span class="label">type</span> {{ entities.selected.entity_type }}
+    {% if entities.selected.provisional %}<span class="label">provisional</span>{% endif %}
+  </p>
+  {% if entities.selected.description %}
+  <p>{{ entities.selected.description }}</p>
+  {% endif %}
+  <p>
+    <span class="label">aliases</span>
+    {% if entities.selected.aliases %}
+    {{ entities.selected.aliases|join(", ") }}
+    {% else %}
+    none
+    {% endif %}
+  </p>
+</section>
+
+{% if entities.selected.deltas %}
+<section>
+  <h2>History</h2>
+  <ul>
+    {% for delta in entities.selected.deltas %}
+    <li><span class="label">{{ delta.date }}</span> {{ delta.text }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section>
+  <h2>Claims</h2>
+  {% if not entities.selected.claims %}
+  <p>no linked claims</p>
+  {% else %}
+  <ul class="claims">
+    {% for item in entities.selected.claims %}
+    <li id="claim-{{ item.id }}">
+      <p>
+        {% if item.date %}<a href="/days?date={{ item.date }}">{{ item.date }}</a>{% endif %}
+        <span class="mono">[c:{{ item.id }}]</span>
+        {{ item.kind }}/{{ item.assertion }} — {{ item.text }}
+      </p>
+      {% if item.quotes %}
+      <ul>
+        {% for quote in item.quotes %}
+        <li>{{ quote }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% elif entity_id %}
+<section>
+  <p>not found</p>
+</section>
+{% endif %}
+{% endblock %}

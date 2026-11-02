@@ -14,19 +14,35 @@ html, body {
   color: var(--ink);
   font: 15px/1.45 ui-sans-serif, system-ui, sans-serif;
 }
+html { overflow-x: hidden; }
 .bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 16px;
+  gap: 12px 16px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--line);
   background: var(--card);
 }
 .brand { margin: 0; font-weight: 700; letter-spacing: 0.04em; }
 .tag { margin: 0; color: var(--muted); font-size: 13px; }
-.nav { margin-left: auto; display: flex; gap: 16px; }
+.capture-state { margin: 0; color: var(--muted); font-size: 13px; }
+.nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 12px 16px; }
 .nav a { color: var(--accent); text-decoration: none; }
-main { padding: 24px; max-width: 1100px; }
+main {
+  padding: 24px;
+  max-width: min(1200px, 100%);
+  width: 100%;
+}
+h1, h2, h3, p, li, td, th, a, .narrative, .entity-list {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -38,12 +54,13 @@ article, section {
   border-radius: 8px;
   padding: 16px 18px;
   margin-bottom: 16px;
+  max-width: 100%;
 }
 h2 { margin: 0 0 10px; font-size: 15px; color: var(--accent); }
 ul { margin: 0; padding-left: 18px; }
 p { margin: 0 0 6px; }
 .label { color: var(--muted); margin-right: 8px; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 button {
@@ -62,3 +79,5 @@ button {
 .cite { color: var(--accent); }
 .narrative { white-space: pre-wrap; }
 .claims { list-style: none; padding-left: 0; }
+.entity-list { list-style: none; padding-left: 0; }
+.entity-list li { margin-bottom: 8px; }

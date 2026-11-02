@@ -53,7 +53,25 @@ def test_responses_have_csp_and_no_content_fields(
             today_api = client.get("/api/today")
             today_partial = client.get("/today/partial", headers={"HX-Request": "true"})
             days = client.get("/days")
-        for response in (page, api, partial, today, today_api, today_partial, days):
+            history = client.get("/history")
+            projects = client.get("/projects")
+            people = client.get("/people")
+            history_api = client.get("/api/history")
+            entities_api = client.get("/api/entities?type=project")
+        for response in (
+            page,
+            api,
+            partial,
+            today,
+            today_api,
+            today_partial,
+            days,
+            history,
+            projects,
+            people,
+            history_api,
+            entities_api,
+        ):
             assert response.status_code == 200
             assert response.headers["content-security-policy"] == CSP
             text = response.content.decode("utf-8")
