@@ -8,11 +8,13 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from sqlcipher3 import dbapi2 as sqlcipher
 
 from tests.replay_support import DAY_ACME_Q4, TEST_KEY, open_test_db
 from watson.config.schema import IntelligenceConfig
 from watson.intelligence.eval.recordings import RecordingRuntime
 from watson.intelligence.prompts import load_prompt
+from watson.intelligence.resolver import resolve_candidates as resolve_candidates_impl
 from watson.intelligence.runtime import UNDERSTAND_JOB_KIND, FakeRuntime, JobFailure
 from watson.intelligence.runtime import http as http_mod
 from watson.intelligence.runtime.stats import InferenceStats, TimingRuntime
@@ -794,3 +796,171 @@ def test_deferred_resolve_matches_interleaved_on_acme_q4(tmp_path: Path) -> None
     assert deferred == interleaved
     assert ("person", "Priya Natarajan", "Priya Natarajan") in deferred
     assert ("project", "Internal Onboarding Guide", "Onboarding Guide") in deferred
+
+
+def _prepare_acme_q4(conn: object, spool: Path) -> None:
+    replay_fixture(DAY_ACME_Q4, conn, instant=True, spool_dir=spool)
+    _seed_entity(conn, typ="project", name="Acme Q4 Proposal", alias="the Acme deal")
+    _seed_entity(conn, typ="project", name="Internal Onboarding Guide")
+    _seed_entity(conn, typ="person", name="Tom Ashworth")
+
+
+def _understand_job_states(conn: object) -> set[str]:
+    return {
+        str(row[0])
+        for row in conn.execute("SELECT state FROM jobs WHERE kind = ?", (UNDERSTAND_JOB_KIND,))
+    }
+
+
+def _has_entity(conn: object, *, typ: str, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM entities WHERE type = ? AND canonical_name = ?",
+        (typ, name),
+    ).fetchone()
+    return row is not None
+
+
+def _has_alias(conn: object, *, canonical: str, alias: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM entity_aliases a
+        JOIN entities e ON e.id = a.entity_id
+        WHERE e.canonical_name = ? AND a.alias = ?
+        """,
+        (canonical, alias),
+    ).fetchone()
+    return row is not None
+
+
+def test_crash_before_resolve_batch_reruns_from_raw_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Crash after chat: jobs stay non-complete; rerun resolves from raw_json with 0 chats."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _prepare_acme_q4(conn, tmp_path / "spool-crash")
+        runtime = FakeRuntime(recordings=ACME_RECORDINGS)
+
+        def crash(*_a: object, **_k: object) -> list[object]:
+            raise RuntimeError("injected crash before resolve")
+
+        monkeypatch.setattr("watson.pipeline.understanding.resolve_candidates", crash)
+        with pytest.raises(RuntimeError, match="injected crash"):
+            drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+        assert JobState.COMPLETED.value not in _understand_job_states(conn)
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] >= 1
+        assert not _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert not _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
+        chats = runtime.complete_calls
+        assert chats >= 1
+        monkeypatch.setattr(
+            "watson.pipeline.understanding.resolve_candidates", resolve_candidates_impl
+        )
+        recovered = drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+        assert recovered >= 1
+        assert runtime.complete_calls == chats
+        assert _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
+        recovered_fp = _entity_fingerprint(conn)
+    finally:
+        conn.close()
+
+    clean_path = tmp_path / "clean.db"
+    upgrade_head(clean_path, TEST_KEY)
+    clean = connect(clean_path, TEST_KEY, load_vec=False)
+    try:
+        _prepare_acme_q4(clean, tmp_path / "spool-clean")
+        runtime = FakeRuntime(recordings=ACME_RECORDINGS)
+        drain_understand_jobs(clean, runtime=runtime, embedding=runtime)
+        assert _entity_fingerprint(clean) == recovered_fp
+    finally:
+        clean.close()
+
+
+def test_database_locked_during_resolve_batch_reruns_from_raw_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _prepare_acme_q4(conn, tmp_path / "spool-lock")
+        runtime = FakeRuntime(recordings=ACME_RECORDINGS)
+
+        def locked(*_a: object, **_k: object) -> list[object]:
+            raise sqlcipher.DatabaseError("database is locked")
+
+        monkeypatch.setattr("watson.pipeline.understanding.resolve_candidates", locked)
+        with pytest.raises(sqlcipher.DatabaseError, match="database is locked"):
+            drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+        assert JobState.COMPLETED.value not in _understand_job_states(conn)
+        assert not _has_entity(conn, typ="person", name="Priya Natarajan")
+        chats = runtime.complete_calls
+        monkeypatch.setattr(
+            "watson.pipeline.understanding.resolve_candidates", resolve_candidates_impl
+        )
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) >= 1
+        assert runtime.complete_calls == chats
+        assert _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
+    finally:
+        conn.close()
+
+
+def test_resolve_batch_commit_visible_on_fresh_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D6: batch results are committed even if complete() then crashes."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _prepare_acme_q4(conn, tmp_path / "spool-d6")
+        runtime = FakeRuntime(recordings=ACME_RECORDINGS)
+
+        def boom_complete(*_a: object, **_k: object) -> object:
+            raise RuntimeError("crash after resolve commit")
+
+        monkeypatch.setattr("watson.pipeline.understanding.complete", boom_complete)
+        with pytest.raises(RuntimeError, match="crash after resolve commit"):
+            drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+        assert JobState.COMPLETED.value not in _understand_job_states(conn)
+    finally:
+        conn.close()
+    fresh = connect(path, TEST_KEY, load_vec=False)
+    try:
+        assert _has_entity(fresh, typ="person", name="Priya Natarajan")
+        assert _has_alias(fresh, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
+        assert fresh.execute("SELECT COUNT(*) FROM observations").fetchone()[0] >= 1
+    finally:
+        fresh.close()
+
+
+def test_successful_drain_is_idempotent_and_creates_no_duplicates(tmp_path: Path) -> None:
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _prepare_acme_q4(conn, tmp_path / "spool-idemp")
+        runtime = FakeRuntime(recordings=ACME_RECORDINGS)
+        first = drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+        assert first >= 1
+        assert JobState.PENDING.value not in _understand_job_states(conn)
+        assert JobState.CLAIMED.value not in _understand_job_states(conn)
+        fingerprint = _entity_fingerprint(conn)
+        obs = int(conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0])
+        entities = int(conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0])
+        aliases = int(conn.execute("SELECT COUNT(*) FROM entity_aliases").fetchone()[0])
+        chats = runtime.complete_calls
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 0
+        assert runtime.complete_calls == chats
+        assert _entity_fingerprint(conn) == fingerprint
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == obs
+        assert conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0] == entities
+        assert conn.execute("SELECT COUNT(*) FROM entity_aliases").fetchone()[0] == aliases
+        assert _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
+    finally:
+        conn.close()

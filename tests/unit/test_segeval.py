@@ -27,3 +27,17 @@ def test_merge_counts_as_under_segmentation() -> None:
     pred = [["a", "b"]]
     assert over_segmentation_rate(pred, truth) == 0.0
     assert under_segmentation_rate(pred, truth) == 1.0
+
+
+def test_unmatched_predicted_segment_counts_as_over_segmentation() -> None:
+    """D3d: a predicted fragment that hits no truth frame is one extra split."""
+    truth = [["a", "b"]]
+    pred = [["a", "b"], ["orphan"]]
+    assert over_segmentation_rate(pred, truth) == 1.0
+    assert score_segmentation(pred, truth)["over_segmentation"] == 1.0
+
+
+def test_empty_truth_with_predictions_is_over_segmented() -> None:
+    """D4: predicted-only output is over-segmentation 1.0, not a vacuous 0."""
+    assert over_segmentation_rate([["a"]], []) == 1.0
+    assert over_segmentation_rate([], []) == 0.0

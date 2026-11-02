@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from pydantic import ValidationError
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from watson.config.schema import (
@@ -48,7 +49,16 @@ from watson.intelligence.structured import complete_structured
 from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
-from watson.pipeline.jobs import Job, JobLeaseError, JobState, claim, complete, enqueue, fail
+from watson.pipeline.jobs import (
+    DEFAULT_LEASE_SECONDS,
+    Job,
+    JobLeaseError,
+    JobState,
+    claim,
+    complete,
+    enqueue,
+    fail,
+)
 from watson.privacy.logging import ContentField
 
 log = logging.getLogger("watson.pipeline.understanding")
@@ -56,6 +66,8 @@ log = logging.getLogger("watson.pipeline.understanding")
 WORKER_ID = "watson-understand"
 PROMPT_TASK = "understanding"
 PROMPT_VERSION = "v2"
+# Chat + deferred embed for a day's segments can exceed the default 60s lease.
+UNDERSTAND_LEASE_SECONDS = max(DEFAULT_LEASE_SECONDS, 3600)
 # Numbered merged OCR in the understanding user message. 4000 characters is
 # ~1000 tokens; with the v2 system prompt, retrieved aliases, JSON schema,
 # and num_predict=768 this fits the default 4096-token Ollama context.
@@ -180,7 +192,10 @@ def drain_understand_jobs(
     """Claim and complete at most ``limit`` understand jobs.
 
     Chat completions run first with only the LLM loaded. Resolver embeddings
-    are a deferred batch after that sub-phase unloads (§11.4). A missing
+    are a deferred batch after that sub-phase unloads (§11.4). A job is
+    marked completed only after that batch commits. Chat-done work stays
+    claimed until then; a crash parks it ``pending`` so a rerun resolves
+    from ``observations.raw_json`` without calling the LLM. A missing
     runtime leaves jobs ``pending`` with a reason and returns 0.
     """
     if limit < 1:
@@ -192,9 +207,16 @@ def drain_understand_jobs(
         return 0
     completed = 0
     pending: list[_PendingResolve] = []
+    held: list[Job] = []
     try:
-        while completed < limit:
-            job = claim(conn, worker_id=worker_id, kind=UNDERSTAND_JOB_KIND, now=now)
+        while len(held) < limit:
+            job = claim(
+                conn,
+                worker_id=worker_id,
+                kind=UNDERSTAND_JOB_KIND,
+                lease_seconds=UNDERSTAND_LEASE_SECONDS,
+                now=now,
+            )
             if job is None:
                 break
             try:
@@ -203,8 +225,7 @@ def drain_understand_jobs(
                 )
                 if isinstance(work, _PendingResolve):
                     pending.append(work)
-                complete(conn, job.id, worker_id=worker_id, now=now)
-                completed += 1
+                held.append(job)
             except JobLeaseError:
                 raise
             except RuntimeUnavailable as exc:
@@ -231,6 +252,19 @@ def drain_understand_jobs(
                     seen_at=str(item.segment["ended_at"]),
                 )
             conn.commit()
+        remaining = list(held)
+        for job in remaining:
+            complete(conn, job.id, worker_id=worker_id, now=now)
+            held.remove(job)
+            completed += 1
+    except Exception:
+        try:
+            conn.rollback()
+        except sqlcipher.DatabaseError:
+            pass
+        for job in held:
+            _park_claimed_understand_job(conn, job, worker_id, now=now)
+        raise
     finally:
         _end_phase(language, embedder)
     if completed:
@@ -286,10 +320,13 @@ def understand_segment(
     """Build input, call the LLM, persist observation/claims/evidence, resolve entities."""
     cfg = settings or UnderstandSettings()
     existing = conn.execute(
-        "SELECT id FROM observations WHERE segment_id = ? AND pipeline_version = ?",
+        "SELECT id, raw_json FROM observations WHERE segment_id = ? AND pipeline_version = ?",
         (segment_id, cfg.pipeline_version),
     ).fetchone()
     if existing is not None:
+        if defer_resolve:
+            rebuilt = _pending_from_stored(conn, segment_id, str(existing["raw_json"]), cfg=cfg)
+            return rebuilt if rebuilt is not None else str(existing["id"])
         return str(existing["id"])
 
     started = time.perf_counter()
@@ -362,11 +399,15 @@ def _understand_segment_body(
     except sqlcipher.IntegrityError:
         conn.rollback()
         row = conn.execute(
-            "SELECT id FROM observations WHERE segment_id = ? AND pipeline_version = ?",
+            "SELECT id, raw_json FROM observations WHERE segment_id = ? AND pipeline_version = ?",
             (segment_id, cfg.pipeline_version),
         ).fetchone()
         if row is None:
             raise
+        if defer_resolve:
+            rebuilt = _pending_from_stored(conn, segment_id, str(row["raw_json"]), cfg=cfg)
+            if rebuilt is not None:
+                return rebuilt
         return str(row["id"])
     except Exception:
         conn.rollback()
@@ -482,6 +523,45 @@ def _end_phase(language: LanguageRuntime, embedder: EmbeddingRuntime) -> None:
     end_runtime_phase(language)
     if id(embedder) != id(language):
         end_runtime_phase(embedder)
+
+
+def _pending_from_stored(
+    conn: sqlcipher.Connection,
+    segment_id: str,
+    raw_json: str,
+    *,
+    cfg: UnderstandSettings,
+) -> _PendingResolve | None:
+    """Rebuild resolver work from a persisted observation. No chat call."""
+    segment = _load_segment(conn, segment_id)
+    if segment is None:
+        return None
+    try:
+        payload = json.loads(raw_json)
+        output = UnderstandingOutput.model_validate(payload)
+    except (ValueError, TypeError, ValidationError):
+        return None
+    return _PendingResolve(output=output, segment=segment, settings=cfg)
+
+
+def _park_claimed_understand_job(
+    conn: sqlcipher.Connection,
+    job: Job,
+    worker_id: str,
+    *,
+    now: datetime | None,
+) -> None:
+    """Return a chat-done claim to pending without burning attempts or completing."""
+    stamp = iso_now(now)
+    conn.execute(
+        """
+        UPDATE jobs
+        SET state = ?, claimed_by = NULL, leased_until = NULL, updated_at = ?
+        WHERE id = ? AND claimed_by = ? AND state = ?
+        """,
+        (JobState.PENDING.value, stamp, job.id, worker_id, JobState.CLAIMED.value),
+    )
+    conn.commit()
 
 
 def _load_segment(conn: sqlcipher.Connection, segment_id: str) -> dict[str, Any] | None:
