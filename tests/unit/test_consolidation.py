@@ -23,6 +23,7 @@ from watson.pipeline.consolidation import (
     CONSOLIDATE_JOB_KIND,
     ConsolidationError,
     ConsolidationWait,
+    _achievement_key,
     _insert_achievements,
     _understand_jobs_for_day,
     catch_up_on_launch,
@@ -143,16 +144,22 @@ def _insert_observation(
     *,
     description: str = "Editing Acme",
     pipeline_version: int = 1,
+    project_candidates: list[str] | None = None,
 ) -> str:
     obs_id, stamp = new_id(), "2026-10-31T10:00:00Z"
+    raw_json = (
+        "{}"
+        if project_candidates is None
+        else json.dumps({"project_candidates": project_candidates})
+    )
     conn.execute(
         """
         INSERT INTO observations (
             id, created_at, updated_at, segment_id, activity_type, description,
             confidence, model_id, prompt_version, pipeline_version, raw_json
-        ) VALUES (?, ?, ?, ?, 'knowledge_work', ?, 0.8, 'fake', 'understanding/v1', ?, '{}')
+        ) VALUES (?, ?, ?, ?, 'knowledge_work', ?, 0.8, 'fake', 'understanding/v1', ?, ?)
         """,
-        (obs_id, stamp, stamp, segment_id, description, pipeline_version),
+        (obs_id, stamp, stamp, segment_id, description, pipeline_version, raw_json),
     )
     conn.commit()
     return obs_id
@@ -170,6 +177,7 @@ def _insert_claim(
     text: str,
     evidence: bool = True,
     pipeline_version: int = 1,
+    snippet: str = "Still editing: Acme proposal appendix",
 ) -> str:
     claim_id, stamp = new_id(), "2026-10-31T10:00:00Z"
     conn.execute(
@@ -187,9 +195,9 @@ def _insert_claim(
             INSERT INTO claim_evidence (
                 id, created_at, updated_at, claim_id, segment_id, frame_id,
                 snippet, snippet_kind, line_start, line_end
-            ) VALUES (?, ?, ?, ?, ?, ?, 'Still editing: Acme proposal appendix', 'ocr', 1, 1)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ocr', 1, 1)
             """,
-            (new_id(), stamp, stamp, claim_id, segment_id, frame_id),
+            (new_id(), stamp, stamp, claim_id, segment_id, frame_id, snippet),
         )
     conn.commit()
     return claim_id
@@ -431,6 +439,245 @@ def _four_same_achievements(conn: object, *, distinct: bool = True) -> dict[str,
             text="Closed the pricing thread",
         )
     return {"day_id": day_id, "claim_ids": claim_ids, "other_id": other_id}
+
+
+def _insert_eligible_achievement(
+    conn: object,
+    day_id: str,
+    *,
+    text: str,
+    pipeline_version: int = 1,
+    project_candidates: list[str] | None = None,
+    captured_at: str = "2026-10-31T09:00:00Z",
+    snippet: str | None = None,
+) -> str:
+    frame_id = _insert_frame(conn, day_id, captured_at=captured_at)
+    segment_id = _insert_segment(conn, day_id, frame_id, started_at=captured_at, line_changes=3)
+    observation_id = _insert_observation(
+        conn,
+        segment_id,
+        description=text,
+        pipeline_version=pipeline_version,
+        project_candidates=project_candidates,
+    )
+    return _insert_claim(
+        conn,
+        observation_id,
+        day_id,
+        segment_id,
+        frame_id,
+        kind="outcome",
+        assertion="observed",
+        text=text,
+        pipeline_version=pipeline_version,
+        snippet=snippet or text,
+    )
+
+
+def _candidate_links(conn: object, candidate_id: str) -> set[str]:
+    return {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT claim_id FROM achievement_candidate_claims WHERE candidate_id = ?",
+            (candidate_id,),
+        )
+    }
+
+
+def test_achievement_key_folds_case_whitespace_and_punctuation() -> None:
+    folded = "onboarding guide section 3 published"
+    assert _achievement_key("Onboarding Guide section 3 published.") == folded
+    assert _achievement_key("onboarding  guide  SECTION 3 published") == folded
+    assert _achievement_key("Onboarding-Guide, section 3 published!") == folded
+    assert _achievement_key("Onboarding Guide section 4 published.") == (
+        "onboarding guide section 4 published"
+    )
+    assert _achievement_key("Onboarding Guide section 4 published.") != folded
+
+
+def test_folded_achievement_texts_merge_and_near_misses_stay_separate(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        variants = [
+            "Onboarding Guide section 3 published.",
+            "onboarding  guide  SECTION 3 published",
+            "Onboarding-Guide, section 3 published!",
+        ]
+        merged_ids = [
+            _insert_eligible_achievement(
+                conn,
+                day_id,
+                text=text,
+                captured_at=f"2026-10-31T09:{index:02d}:00Z",
+                snippet=f"fold-evidence-{index}",
+            )
+            for index, text in enumerate(variants)
+        ]
+        near_miss = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text="Onboarding Guide section 4 published.",
+            captured_at="2026-10-31T09:10:00Z",
+            snippet="near-miss-section-4",
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute(
+            "SELECT id, text FROM achievement_candidates ORDER BY text, id"
+        ).fetchall()
+        assert len(rows) == 2
+        by_section = {
+            "3": [row for row in rows if "section 3" in str(row["text"]).casefold()],
+            "4": [row for row in rows if "section 4" in str(row["text"]).casefold()],
+        }
+        assert len(by_section["3"]) == 1
+        assert len(by_section["4"]) == 1
+        assert _candidate_links(conn, str(by_section["3"][0]["id"])) == set(merged_ids)
+        assert _candidate_links(conn, str(by_section["4"][0]["id"])) == {near_miss}
+        reachable = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT e.snippet FROM achievement_candidate_claims l
+                JOIN claim_evidence e ON e.claim_id = l.claim_id
+                WHERE l.candidate_id = ?
+                """,
+                (str(by_section["3"][0]["id"]),),
+            )
+        }
+        assert reachable == {f"fold-evidence-{index}" for index in range(3)}
+    finally:
+        conn.close()
+
+
+def test_same_text_in_different_projects_does_not_merge(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _insert_entity(conn, name="Acme Q4 Proposal")
+        _insert_entity(conn, name="Onboarding Guide")
+        text = "Section 3 published."
+        acme = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:00:00Z",
+        )
+        onboarding = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Onboarding Guide"],
+            captured_at="2026-10-31T09:01:00Z",
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT id FROM achievement_candidates ORDER BY id").fetchall()
+        assert len(rows) == 2
+        link_sets = {frozenset(_candidate_links(conn, str(row["id"]))) for row in rows}
+        assert link_sets == {frozenset({acme}), frozenset({onboarding})}
+    finally:
+        conn.close()
+
+
+def test_same_text_in_same_project_merges(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        _insert_entity(conn, name="Acme Q4 Proposal")
+        text = "Section 3 published."
+        first = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:00:00Z",
+        )
+        second = _insert_eligible_achievement(
+            conn,
+            day_id,
+            text=text,
+            project_candidates=["Acme Q4 Proposal"],
+            captured_at="2026-10-31T09:01:00Z",
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute("SELECT id FROM achievement_candidates").fetchall()
+        assert len(rows) == 1
+        assert _candidate_links(conn, str(rows[0]["id"])) == {first, second}
+    finally:
+        conn.close()
+
+
+def test_achievements_do_not_merge_across_pipeline_versions(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        text = "Onboarding Guide section 3 published."
+        v1 = _insert_eligible_achievement(
+            conn, day_id, text=text, pipeline_version=1, captured_at="2026-10-31T09:00:00Z"
+        )
+        v2 = _insert_eligible_achievement(
+            conn, day_id, text=text, pipeline_version=2, captured_at="2026-10-31T09:01:00Z"
+        )
+        _insert_achievements(conn, day_id, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        v1_rows = conn.execute(
+            "SELECT id, pipeline_version FROM achievement_candidates WHERE pipeline_version = 1"
+        ).fetchall()
+        assert len(v1_rows) == 1
+        assert _candidate_links(conn, str(v1_rows[0]["id"])) == {v1}
+        assert v2 not in _candidate_links(conn, str(v1_rows[0]["id"]))
+        _insert_achievements(conn, day_id, pipeline_version=2, stamp="2026-10-31T18:31:00Z")
+        conn.commit()
+        rows = conn.execute(
+            """
+            SELECT id, pipeline_version FROM achievement_candidates
+            ORDER BY pipeline_version, id
+            """
+        ).fetchall()
+        assert [int(row["pipeline_version"]) for row in rows] == [1, 2]
+        by_version = {int(row["pipeline_version"]): str(row["id"]) for row in rows}
+        assert _candidate_links(conn, by_version[1]) == {v1}
+        assert _candidate_links(conn, by_version[2]) == {v2}
+    finally:
+        conn.close()
+
+
+def test_achievements_do_not_merge_across_working_days(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_one = _insert_day(conn, date="2026-10-30")
+        day_two = _insert_day(conn, date="2026-10-31")
+        text = "Onboarding Guide section 3 published."
+        first = _insert_eligible_achievement(
+            conn, day_one, text=text, captured_at="2026-10-30T09:00:00Z"
+        )
+        second = _insert_eligible_achievement(
+            conn, day_two, text=text, captured_at="2026-10-31T09:00:00Z"
+        )
+        _insert_achievements(conn, day_one, pipeline_version=1, stamp="2026-10-30T18:30:00Z")
+        conn.commit()
+        day_one_rows = conn.execute(
+            "SELECT id FROM achievement_candidates WHERE working_day_id = ?",
+            (day_one,),
+        ).fetchall()
+        assert len(day_one_rows) == 1
+        assert _candidate_links(conn, str(day_one_rows[0]["id"])) == {first}
+        assert second not in _candidate_links(conn, str(day_one_rows[0]["id"]))
+        _insert_achievements(conn, day_two, pipeline_version=1, stamp="2026-10-31T18:30:00Z")
+        conn.commit()
+        rows = conn.execute(
+            "SELECT id, working_day_id FROM achievement_candidates ORDER BY working_day_id, id"
+        ).fetchall()
+        assert len(rows) == 2
+        by_day = {str(row["working_day_id"]): str(row["id"]) for row in rows}
+        assert _candidate_links(conn, by_day[day_one]) == {first}
+        assert _candidate_links(conn, by_day[day_two]) == {second}
+    finally:
+        conn.close()
 
 
 def test_duplicate_achievements_collapse_to_one_candidate_with_all_links(
