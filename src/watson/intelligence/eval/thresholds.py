@@ -46,11 +46,14 @@ def load_duplicate_jaccard_min(path: Path | None = None) -> float:
     spec = raw.get("duplicate_observation_rate")
     if not isinstance(spec, dict) or "jaccard_min" not in spec:
         raise ValueError("duplicate_observation_rate.jaccard_min is required")
-    value = float(spec["jaccard_min"])
-    if not 0 < value <= 1:
+    raw_value = spec["jaccard_min"]
+    if isinstance(raw_value, bool) or not isinstance(raw_value, int | float):
         raise ValueError(
-            f"duplicate_observation_rate.jaccard_min must be in (0, 1], got {value:g}"
+            f"duplicate_observation_rate.jaccard_min must be in (0, 1], got {raw_value!r}"
         )
+    value = float(raw_value)
+    if not 0 < value <= 1:
+        raise ValueError(f"duplicate_observation_rate.jaccard_min must be in (0, 1], got {value:g}")
     return value
 
 

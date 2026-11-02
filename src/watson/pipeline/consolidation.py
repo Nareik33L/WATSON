@@ -4,13 +4,17 @@ Idempotent by ``(working_day_id, pipeline_version)``: a re-run deletes the
 previous derived rows in one transaction and inserts replacements. Daily
 narrative (step 7) cites claim ids inline; a post-processor strips invalid
 citations. Achievement candidates are rule-based: observed outcomes with
-change evidence, never ``inferred`` alone.
+change evidence, never ``inferred`` alone. Identical texts on one
+``(working_day_id, pipeline_version, project entity or NULL)`` collapse
+to one candidate that keeps every supporting claim through
+``achievement_candidate_claims``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -901,6 +905,34 @@ def _insert_extract(
         )
 
 
+_ACHIEVEMENT_KEY = re.compile(r"[^a-z0-9]+")
+
+
+def _achievement_key(text: str) -> str:
+    """Case/punctuation-folded identity for collapsing duplicate achievements."""
+    return " ".join(_ACHIEVEMENT_KEY.sub(" ", text.casefold()).split())
+
+
+def _project_bucket(conn: sqlcipher.Connection, raw_json: str) -> str | None:
+    """First resolved project entity on the observation, else the NULL bucket."""
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    names = payload.get("project_candidates")
+    if not isinstance(names, list):
+        return None
+    for name in names:
+        if not isinstance(name, str):
+            continue
+        entity_id = _match_entity(conn, name, "project")
+        if entity_id is not None:
+            return entity_id
+    return None
+
+
 def _insert_achievements(
     conn: sqlcipher.Connection,
     working_day_id: str,
@@ -908,10 +940,15 @@ def _insert_achievements(
     pipeline_version: int,
     stamp: str,
 ) -> None:
-    """Observed outcomes/achievements with change evidence. Never inferred-only."""
+    """Observed outcomes/achievements with change evidence. Never inferred-only.
+
+    Duplicate texts on the same day, pipeline version, and project (or the
+    NULL bucket when no project resolves) become one candidate that keeps
+    every supporting claim (and that claim's evidence) as links.
+    """
     rows = conn.execute(
         """
-        SELECT c.id, c.text
+        SELECT c.id, c.text, o.id AS observation_id, o.raw_json
         FROM claims c
         JOIN observations o ON o.id = c.observation_id
         JOIN segments s ON s.id = o.segment_id
@@ -925,7 +962,25 @@ def _insert_achievements(
         """,
         (working_day_id, pipeline_version),
     ).fetchall()
+    groups: dict[tuple[str | None, str], list[Any]] = {}
+    order: list[tuple[str | None, str]] = []
+    buckets: dict[str, str | None] = {}
     for row in rows:
+        folded = _achievement_key(str(row["text"]))
+        if not folded:
+            continue
+        observation_id = str(row["observation_id"])
+        if observation_id not in buckets:
+            buckets[observation_id] = _project_bucket(conn, str(row["raw_json"]))
+        key = (buckets[observation_id], folded)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(row)
+    for key in order:
+        members = groups[key]
+        first = members[0]
+        candidate_id = new_id()
         conn.execute(
             """
             INSERT INTO achievement_candidates (
@@ -933,15 +988,24 @@ def _insert_achievements(
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                new_id(),
+                candidate_id,
                 stamp,
                 stamp,
                 working_day_id,
-                str(row["id"]),
-                str(row["text"]),
+                str(first["id"]),
+                str(first["text"]),
                 pipeline_version,
             ),
         )
+        for member in members:
+            conn.execute(
+                """
+                INSERT INTO achievement_candidate_claims (
+                    id, created_at, updated_at, candidate_id, claim_id
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (new_id(), stamp, stamp, candidate_id, str(member["id"])),
+            )
 
 
 def _insert_summary(
