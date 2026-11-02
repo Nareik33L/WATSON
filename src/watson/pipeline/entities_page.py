@@ -46,6 +46,15 @@ class EntityDeltaView:
 
 
 @dataclass(frozen=True)
+class _ObservationCandidates:
+    """Parsed observation candidates. JSON is loaded once per page."""
+
+    id: str
+    projects: frozenset[str]
+    people: frozenset[str]
+
+
+@dataclass(frozen=True)
 class EntityDetail:
     id: str
     name: str
@@ -115,6 +124,7 @@ def collect_entities(
     """Load projects or people, optionally one entity's claims and aliases."""
     heading = HEADINGS[entity_type]
     aliases_by_id = _aliases(conn)
+    observations = _observation_candidates(conn, pipeline_version)
     rows = conn.execute(
         """
         SELECT id, canonical_name, description, provisional
@@ -139,6 +149,7 @@ def collect_entities(
             aliases=aliases_by_id.get(ident, ()),
             names=names,
             pipeline_version=pipeline_version,
+            observations=observations,
         )
         details[ident] = detail
         items.append(
@@ -173,6 +184,38 @@ def _aliases(conn: sqlcipher.Connection) -> dict[str, tuple[str, ...]]:
     return {key: tuple(values) for key, values in out.items()}
 
 
+def _observation_candidates(
+    conn: sqlcipher.Connection, pipeline_version: int
+) -> tuple[_ObservationCandidates, ...]:
+    rows = conn.execute(
+        "SELECT id, raw_json FROM observations WHERE pipeline_version = ?",
+        (pipeline_version,),
+    ).fetchall()
+    out: list[_ObservationCandidates] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["raw_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        out.append(
+            _ObservationCandidates(
+                id=str(row["id"]),
+                projects=_candidate_names(payload, "project_candidates"),
+                people=_candidate_names(payload, "people_candidates"),
+            )
+        )
+    return tuple(out)
+
+
+def _candidate_names(payload: dict[str, Any], key: str) -> frozenset[str]:
+    raw = payload.get(key) or []
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(normalize_alias(str(name)) for name in raw if name)
+
+
 def _detail(
     conn: sqlcipher.Connection,
     entity_id: str,
@@ -184,8 +227,11 @@ def _detail(
     aliases: tuple[str, ...],
     names: tuple[str, ...],
     pipeline_version: int,
+    observations: tuple[_ObservationCandidates, ...],
 ) -> EntityDetail:
-    claim_ids = _linked_claim_ids(conn, entity_id, entity_type, names, pipeline_version)
+    claim_ids = _linked_claim_ids(
+        conn, entity_id, entity_type, names, pipeline_version, observations
+    )
     return EntityDetail(
         id=entity_id,
         name=name,
@@ -204,6 +250,7 @@ def _linked_claim_ids(
     entity_type: str,
     names: tuple[str, ...],
     pipeline_version: int,
+    observations: tuple[_ObservationCandidates, ...],
 ) -> tuple[str, ...]:
     wanted = {normalize_alias(name) for name in names if name}
     ordered: list[str] = []
@@ -227,24 +274,11 @@ def _linked_claim_ids(
             for item in loaded:
                 add(str(item))
 
-    key = "project_candidates" if entity_type == "project" else "people_candidates"
-    observations = conn.execute(
-        "SELECT id, raw_json FROM observations WHERE pipeline_version = ?",
-        (pipeline_version,),
-    ).fetchall()
     matching: list[str] = []
-    for row in observations:
-        try:
-            payload = json.loads(row["raw_json"] or "{}")
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        candidates = payload.get(key) or []
-        if not isinstance(candidates, list):
-            continue
-        if any(normalize_alias(str(name)) in wanted for name in candidates if name):
-            matching.append(str(row["id"]))
+    for item in observations:
+        nameset = item.projects if entity_type == "project" else item.people
+        if nameset & wanted:
+            matching.append(item.id)
     if matching:
         placeholders = ",".join("?" * len(matching))
         for row in conn.execute(

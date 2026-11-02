@@ -239,10 +239,11 @@ def _render(
     day = _day(request, date) if "days" in template_name else None
     history = _history(request) if "history" in template_name else None
     entities = (
-        _entities(request, entity_type, entity_id)
-        if entity_type in {"project", "person"}
-        else None
+        _entities(request, entity_type, entity_id) if entity_type in {"project", "person"} else None
     )
+    status_code = 200
+    if entity_id and entities is not None and entities.selected is None:
+        status_code = 404
     return _TEMPLATES.TemplateResponse(
         request,
         template_name,
@@ -255,6 +256,7 @@ def _render(
             "entity_id": entity_id,
             "csrf_token": session.csrf,
         },
+        status_code=status_code,
     )
 
 
@@ -402,9 +404,7 @@ def _history(request: Request) -> HistoryPage:
         conn.close()
 
 
-def _entities(
-    request: Request, entity_type: str | None, entity_id: str | None
-) -> EntityPage:
+def _entities(request: Request, entity_type: str | None, entity_id: str | None) -> EntityPage:
     kind: EntityType = "person" if entity_type == "person" else "project"
     heading = "People" if kind == "person" else "Projects"
     empty = EntityPage(entity_type=kind, heading=heading, items=(), selected=None)
