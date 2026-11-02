@@ -30,6 +30,7 @@ from watson.intelligence.runtime.http import (
     direct_opener,
     request_json,
 )
+from watson.intelligence.runtime.stats import InferenceStats, TimingRuntime
 from watson.intelligence.schemas import UNDERSTANDING_JSON_SCHEMA, UnderstandingOutput
 from watson.memory.db import connect
 from watson.memory.migrate import upgrade_head
@@ -250,9 +251,7 @@ def test_missing_runtime_holds_understand_jobs(
         conn.close()
 
 
-def test_ollama_unloads_only_at_phase_end_not_between_chat_and_embed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_ollama_unloads_other_model_before_switch(monkeypatch: pytest.MonkeyPatch) -> None:
     opened = _install_transport(
         monkeypatch,
         {
@@ -264,45 +263,61 @@ def test_ollama_unloads_only_at_phase_end_not_between_chat_and_embed(
     runtime = _ollama()
     runtime.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)
     runtime.embed(["a"])
-    runtime.complete([{"role": "user", "content": "y"}], UNDERSTANDING_JSON_SCHEMA)
-    runtime.embed(["b"])
     paths = [req.full_url.rsplit("/", 1)[-1] for req in opened]
-    assert paths == ["chat", "embed", "chat", "embed"]
+    assert paths == ["chat", "generate", "embed"]
+    assert json.loads(opened[1].data or b"{}") == {"model": "llama3.2:3b", "keep_alive": 0}
     runtime.end_phase()
     paths = [req.full_url.rsplit("/", 1)[-1] for req in opened]
-    assert paths == ["chat", "embed", "chat", "embed", "generate", "generate"]
-    unload_chat = json.loads(opened[4].data or b"{}")
-    unload_embed = json.loads(opened[5].data or b"{}")
-    assert unload_chat == {"model": "llama3.2:3b", "keep_alive": 0}
-    assert unload_embed == {"model": "nomic-embed-text", "keep_alive": 0}
+    assert paths == ["chat", "generate", "embed", "generate"]
+    assert json.loads(opened[3].data or b"{}") == {"model": "nomic-embed-text", "keep_alive": 0}
+
+
+def _apply_http(resident: set[str], req: Request) -> None:
+    name = req.full_url.rsplit("/", 1)[-1]
+    if name == "generate":
+        body = json.loads(req.data or b"{}")
+        if body.get("keep_alive") == 0:
+            model = str(body.get("model") or "")
+            if model == "llama3.2:3b":
+                resident.discard("chat")
+            if model == "nomic-embed-text":
+                resident.discard("embed")
+        return
+    if name == "chat":
+        resident.add("chat")
+    elif name == "embed":
+        resident.add("embed")
 
 
 def _phase_loads(opened: list[Request]) -> dict[str, int]:
-    """Count model loads (first use after unload or start) and mid-phase unloads."""
+    """Count model loads (first use after unload or start) and unloads."""
     resident: set[str] = set()
     loads = {"chat": 0, "embed": 0, "unloads": 0}
     for req in opened:
         name = req.full_url.rsplit("/", 1)[-1]
-        if name == "generate":
-            body = json.loads(req.data or b"{}")
-            if body.get("keep_alive") == 0:
-                loads["unloads"] += 1
-                model = str(body.get("model") or "")
-                if model == "llama3.2:3b":
-                    resident.discard("chat")
-                if model == "nomic-embed-text":
-                    resident.discard("embed")
+        before = set(resident)
+        _apply_http(resident, req)
+        if name == "generate" and json.loads(req.data or b"{}").get("keep_alive") == 0:
+            loads["unloads"] += 1
             continue
         kind = "chat" if name == "chat" else "embed" if name == "embed" else None
         if kind is None:
             continue
-        if kind not in resident:
+        if kind not in before:
             loads[kind] += 1
-            resident.add(kind)
     return loads
 
 
-def test_one_load_per_phase_and_zero_mid_phase_switches(monkeypatch: pytest.MonkeyPatch) -> None:
+def _resident_sizes(opened: list[Request]) -> list[int]:
+    resident: set[str] = set()
+    sizes: list[int] = []
+    for req in opened:
+        _apply_http(resident, req)
+        sizes.append(len(resident))
+    return sizes
+
+
+def test_one_load_per_subphase_chat_then_embed(monkeypatch: pytest.MonkeyPatch) -> None:
     opened = _install_transport(
         monkeypatch,
         {
@@ -321,12 +336,21 @@ def test_one_load_per_phase_and_zero_mid_phase_switches(monkeypatch: pytest.Monk
         return chunk
 
     runtime.complete([{"role": "user", "content": "u1"}], UNDERSTANDING_JSON_SCHEMA)
-    runtime.embed(["e1"])
     runtime.complete([{"role": "user", "content": "u2"}], UNDERSTANDING_JSON_SCHEMA)
-    runtime.embed(["e2"])
-    understanding = take()
-    stats = _phase_loads(understanding)
+    chat_phase = take()
+    stats = _phase_loads(chat_phase)
     assert stats["chat"] == 1
+    assert stats["embed"] == 0
+    assert stats["unloads"] == 0
+    runtime.end_phase()
+    unload_chat = take()
+    assert _phase_loads(unload_chat)["unloads"] == 1
+
+    runtime.embed(["e1"])
+    runtime.embed(["e2"])
+    embed_phase = take()
+    stats = _phase_loads(embed_phase)
+    assert stats["chat"] == 0
     assert stats["embed"] == 1
     assert stats["unloads"] == 0
     runtime.end_phase()
@@ -348,6 +372,56 @@ def test_one_load_per_phase_and_zero_mid_phase_switches(monkeypatch: pytest.Monk
     assert stats["chat"] == 1
     assert stats["unloads"] == 0
     runtime.end_phase()
+    assert max(_resident_sizes(opened)) <= 1
+
+
+def test_resident_set_never_exceeds_one_model_even_when_interleaved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened = _install_transport(
+        monkeypatch,
+        {
+            "/api/chat": {"message": {"content": json.dumps(_STUB_CHAT)}},
+            "/api/embed": {"embeddings": [[0.0, 1.0]]},
+            "/api/generate": {},
+        },
+    )
+    runtime = _ollama()
+    runtime.complete([{"role": "user", "content": "u1"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.embed(["e1"])
+    runtime.complete([{"role": "user", "content": "u2"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.embed(["e2"])
+    runtime.end_phase()
+    sizes = _resident_sizes(opened)
+    assert sizes
+    assert max(sizes) <= 1
+
+
+def test_end_phase_clears_used_so_next_phase_unloads_only_new_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """U13: skipping ``_used.clear()`` would unload chat again after an embed-only phase."""
+    opened = _install_transport(
+        monkeypatch,
+        {
+            "/api/chat": {"message": {"content": json.dumps(_STUB_CHAT)}},
+            "/api/embed": {"embeddings": [[0.0, 1.0]]},
+            "/api/generate": {},
+        },
+    )
+    runtime = _ollama()
+    runtime.complete([{"role": "user", "content": "u1"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.end_phase()
+    after_chat = [req for req in opened if req.full_url.endswith("/api/generate")]
+    assert len(after_chat) == 1
+    assert json.loads(after_chat[0].data or b"{}") == {"model": "llama3.2:3b", "keep_alive": 0}
+    mark = len(opened)
+    runtime.embed(["e1"])
+    runtime.end_phase()
+    new = opened[mark:]
+    generates = [req for req in new if req.full_url.endswith("/api/generate")]
+    assert len(generates) == 1
+    assert json.loads(generates[0].data or b"{}") == {"model": "nomic-embed-text", "keep_alive": 0}
 
 
 def test_ollama_skips_unload_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -404,6 +478,48 @@ def test_ollama_timeout_is_a_call_error(monkeypatch: pytest.MonkeyPatch) -> None
     runtime = _ollama()
     with pytest.raises(RuntimeCallError, match="timed out"):
         runtime.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)
+
+
+def test_timing_runtime_increments_timeout_counter() -> None:
+    """T6: timeouts must increment on TimeoutError and 'timed out' call errors."""
+
+    class Boom:
+        name = "boom"
+
+        def complete(self, messages: object, schema: object) -> dict[str, object]:
+            del messages, schema
+            raise RuntimeCallError("Ollama POST /api/chat timed out")
+
+        def embed(self, texts: object) -> list[list[float]]:
+            del texts
+            raise TimeoutError("embed timed out")
+
+    stats = InferenceStats()
+    runtime = TimingRuntime(Boom(), stats)
+    with pytest.raises(RuntimeCallError, match="timed out"):
+        runtime.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)
+    assert stats.timeouts == 1
+    with pytest.raises(TimeoutError, match="timed out"):
+        runtime.embed(["x"])
+    assert stats.timeouts == 2
+
+    class Other:
+        name = "other"
+
+        def complete(self, messages: object, schema: object) -> dict[str, object]:
+            del messages, schema
+            raise RuntimeCallError("Ollama chat returned a non-object JSON value")
+
+        def embed(self, texts: object) -> list[list[float]]:
+            return [[0.0] for _ in list(texts)]
+
+    other_stats = InferenceStats()
+    other = TimingRuntime(Other(), other_stats)
+    with pytest.raises(RuntimeCallError, match="non-object"):
+        other.complete([{"role": "user", "content": "x"}], UNDERSTANDING_JSON_SCHEMA)
+    assert other_stats.timeouts == 0
+    other.embed(["x"])
+    assert other_stats.timeouts == 0
 
 
 def test_urlerror_timeout_is_a_call_error(monkeypatch: pytest.MonkeyPatch) -> None:

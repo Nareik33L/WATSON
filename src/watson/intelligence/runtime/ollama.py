@@ -20,9 +20,10 @@ Phase = Literal["chat", "embed"]
 class OllamaRuntime:
     """``complete`` / ``embed`` against a local Ollama server via ``format``.
 
-    When ``unload_between_phases`` is on, ``keep_alive: 0`` runs only at
-    phase boundaries (understanding → consolidation → summary), never
-    between chat and embed inside a phase.
+    When ``unload_between_phases`` is on, at most one model is resident
+    (§11.4). ``keep_alive: 0`` runs at sub-phase boundaries (understanding
+    chat → understanding embed → consolidation → summary) and whenever a
+    call would otherwise load a second model.
     """
 
     name = "ollama"
@@ -50,7 +51,7 @@ class OllamaRuntime:
             )
 
     def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
-        self._used.add("chat")
+        self._ensure_resident("chat")
         payload: dict[str, Any] = {
             "model": self.llm_model,
             "messages": [dict(item) for item in messages],
@@ -76,7 +77,7 @@ class OllamaRuntime:
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
-        self._used.add("embed")
+        self._ensure_resident("embed")
         body = request_json(
             self.base_url,
             "POST",
@@ -97,7 +98,7 @@ class OllamaRuntime:
         return float(self._settings.ollama.timeout_s)
 
     def end_phase(self) -> None:
-        """Unload models used in this phase. No-op when unloading is disabled."""
+        """Unload models used in this sub-phase. No-op when unloading is disabled."""
         if not self._settings.ollama.unload_between_phases:
             self._used.clear()
             return
@@ -106,6 +107,14 @@ class OllamaRuntime:
         if "embed" in self._used:
             self._unload(self.embedding_model)
         self._used.clear()
+
+    def _ensure_resident(self, kind: Phase) -> None:
+        """Unload the other model before loading ``kind`` so the set never exceeds one."""
+        other: Phase = "embed" if kind == "chat" else "chat"
+        if other in self._used and self._settings.ollama.unload_between_phases:
+            self._unload(self.llm_model if other == "chat" else self.embedding_model)
+            self._used.discard(other)
+        self._used.add(kind)
 
     def _unload(self, model: str) -> None:
         """Drop a resident model (Ollama ``keep_alive: 0``)."""

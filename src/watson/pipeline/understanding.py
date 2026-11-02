@@ -49,6 +49,7 @@ from watson.memory.db import iso_now
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import Job, JobLeaseError, JobState, claim, complete, enqueue, fail
+from watson.privacy.logging import ContentField
 
 log = logging.getLogger("watson.pipeline.understanding")
 
@@ -92,6 +93,15 @@ class UnderstandSettings:
             entity_similarity_threshold=float(intel.entity_similarity_threshold),
             model_id=model_id or intel.llm_model,
         )
+
+
+@dataclass(frozen=True)
+class _PendingResolve:
+    """Chat persisted; resolver embeddings run after the LLM is unloaded."""
+
+    output: UnderstandingOutput
+    segment: dict[str, Any]
+    settings: UnderstandSettings
 
 
 def understand_idempotency_key(segment_id: str, pipeline_version: int = PIPELINE_VERSION) -> str:
@@ -169,7 +179,9 @@ def drain_understand_jobs(
 ) -> int:
     """Claim and complete at most ``limit`` understand jobs.
 
-    A missing runtime leaves jobs ``pending`` with a reason and returns 0.
+    Chat completions run first with only the LLM loaded. Resolver embeddings
+    are a deferred batch after that sub-phase unloads (§11.4). A missing
+    runtime leaves jobs ``pending`` with a reason and returns 0.
     """
     if limit < 1:
         raise ValueError("understand batch limit must be >= 1")
@@ -179,13 +191,18 @@ def drain_understand_jobs(
     if language is None or embedder is None:
         return 0
     completed = 0
+    pending: list[_PendingResolve] = []
     try:
         while completed < limit:
             job = claim(conn, worker_id=worker_id, kind=UNDERSTAND_JOB_KIND, now=now)
             if job is None:
                 break
             try:
-                understand_job(conn, job, language, embedder, settings=settings, now=now)
+                work = understand_job(
+                    conn, job, language, embedder, settings=settings, now=now, defer_resolve=True
+                )
+                if isinstance(work, _PendingResolve):
+                    pending.append(work)
                 complete(conn, job.id, worker_id=worker_id, now=now)
                 completed += 1
             except JobLeaseError:
@@ -201,8 +218,21 @@ def drain_understand_jobs(
             except (OSError, ValueError, RuntimeError, sqlcipher.DatabaseError) as exc:
                 fail(conn, job.id, type(exc).__name__, worker_id=worker_id, now=now)
                 raise
+        if pending:
+            # Chat sub-phase done. Unload the LLM before any resolver embeddings.
+            _end_phase(language, embedder)
+            for item in pending:
+                resolve_candidates(
+                    conn,
+                    embedder,
+                    project_candidates=item.output.project_candidates,
+                    people_candidates=item.output.people_candidates,
+                    threshold=item.settings.entity_similarity_threshold,
+                    seen_at=str(item.segment["ended_at"]),
+                )
+            conn.commit()
     finally:
-        end_runtime_phase(language)
+        _end_phase(language, embedder)
     if completed:
         log.info("drained understand jobs", extra={"completed": completed, "limit": limit})
     return completed
@@ -216,27 +246,30 @@ def understand_job(
     *,
     settings: UnderstandSettings | None = None,
     now: datetime | None = None,
-) -> str | None:
-    """Run one understand job. Returns the observation id, or None if skipped."""
+    defer_resolve: bool = False,
+) -> str | _PendingResolve | None:
+    """Run one understand job. Returns pending resolver work when chat persisted."""
     cfg = settings or UnderstandSettings()
     segment_id = str(job.payload.get("segment_id") or "")
     if not segment_id:
         raise JobFailure("understand job is missing segment_id", retryable=False)
     pipeline_version = int(job.payload.get("pipeline_version") or cfg.pipeline_version)
+    job_settings = UnderstandSettings(
+        pipeline_version=pipeline_version,
+        close_after_seconds=cfg.close_after_seconds,
+        retrieve_top_k=cfg.retrieve_top_k,
+        entity_similarity_threshold=cfg.entity_similarity_threshold,
+        merged_text_max_chars=cfg.merged_text_max_chars,
+        model_id=cfg.model_id,
+    )
     return understand_segment(
         conn,
         segment_id,
         language,
         embedding,
-        settings=UnderstandSettings(
-            pipeline_version=pipeline_version,
-            close_after_seconds=cfg.close_after_seconds,
-            retrieve_top_k=cfg.retrieve_top_k,
-            entity_similarity_threshold=cfg.entity_similarity_threshold,
-            merged_text_max_chars=cfg.merged_text_max_chars,
-            model_id=cfg.model_id,
-        ),
+        settings=job_settings,
         now=now,
+        defer_resolve=defer_resolve,
     )
 
 
@@ -248,7 +281,8 @@ def understand_segment(
     *,
     settings: UnderstandSettings | None = None,
     now: datetime | None = None,
-) -> str | None:
+    defer_resolve: bool = False,
+) -> str | _PendingResolve | None:
     """Build input, call the LLM, persist observation/claims/evidence, resolve entities."""
     cfg = settings or UnderstandSettings()
     existing = conn.execute(
@@ -260,7 +294,15 @@ def understand_segment(
 
     started = time.perf_counter()
     try:
-        return _understand_segment_body(conn, segment_id, language, embedding, cfg=cfg, now=now)
+        return _understand_segment_body(
+            conn,
+            segment_id,
+            language,
+            embedding,
+            cfg=cfg,
+            now=now,
+            defer_resolve=defer_resolve,
+        )
     finally:
         record_understand_segment(time.perf_counter() - started)
 
@@ -273,11 +315,16 @@ def _understand_segment_body(
     *,
     cfg: UnderstandSettings,
     now: datetime | None,
-) -> str | None:
+    defer_resolve: bool,
+) -> str | _PendingResolve | None:
     segment = _load_segment(conn, segment_id)
     if segment is None:
         raise JobFailure(f"understand job refers to missing segment {segment_id}", retryable=False)
 
+    log.info(
+        "understand segment",
+        extra={"merged_text": ContentField(str(segment.get("merged_text") or ""))},
+    )
     prompt = load_prompt(PROMPT_TASK, PROMPT_VERSION)
     memory = retrieve_entity_context(conn, str(segment["merged_text"]), top_k=cfg.retrieve_top_k)
     user = build_understand_user_message(
@@ -311,14 +358,6 @@ def _understand_segment_body(
             model_id=cfg.model_id,
             stamp=stamp,
         )
-        resolve_candidates(
-            conn,
-            embedding,
-            project_candidates=output.project_candidates,
-            people_candidates=output.people_candidates,
-            threshold=cfg.entity_similarity_threshold,
-            seen_at=str(segment["ended_at"]),
-        )
         conn.commit()
     except sqlcipher.IntegrityError:
         conn.rollback()
@@ -332,7 +371,27 @@ def _understand_segment_body(
     except Exception:
         conn.rollback()
         raise
-    return observation_id
+
+    if defer_resolve:
+        return _PendingResolve(output=output, segment=segment, settings=cfg)
+
+    try:
+        _end_phase(language, embedding)
+        resolve_candidates(
+            conn,
+            embedding,
+            project_candidates=output.project_candidates,
+            people_candidates=output.people_candidates,
+            threshold=cfg.entity_similarity_threshold,
+            seen_at=str(segment["ended_at"]),
+        )
+        conn.commit()
+        return observation_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _end_phase(language, embedding)
 
 
 def build_understand_user_message(
@@ -416,6 +475,13 @@ def _as_embedder(runtime: LanguageRuntime) -> EmbeddingRuntime:
     if callable(embed):
         return runtime  # type: ignore[return-value]
     return FakeRuntime()
+
+
+def _end_phase(language: LanguageRuntime, embedder: EmbeddingRuntime) -> None:
+    """Unload at a sub-phase boundary. Same object is only ended once."""
+    end_runtime_phase(language)
+    if id(embedder) != id(language):
+        end_runtime_phase(embedder)
 
 
 def _load_segment(conn: sqlcipher.Connection, segment_id: str) -> dict[str, Any] | None:

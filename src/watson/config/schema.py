@@ -280,8 +280,9 @@ class OllamaClientConfig(_StrictModel):
     unload_between_phases: bool = Field(
         default=DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES,
         description=(
-            "Unload resident models at phase boundaries "
-            "(understanding → consolidation → summary), never mid-phase."
+            "Unload resident models at sub-phase boundaries "
+            "(understanding chat → understanding embed → consolidation → summary). "
+            "At most one model is resident."
         ),
     )
 

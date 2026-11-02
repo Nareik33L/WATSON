@@ -6,11 +6,14 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from tests.replay_support import TEST_KEY
 from watson.intelligence.eval.recordings import RecordingRuntime
 from watson.intelligence.eval.run import DayEval, run_eval
 from watson.intelligence.runtime.types import RuntimeUnavailable
 from watson.pipeline.consolidation import ConsolidationWait
+from watson.pipeline.redaction import redact_ocr_text
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures"
@@ -137,13 +140,14 @@ def test_eval_saves_recordings_on_abort(
     assert payload["complete"][0]["match"] == "R7 abort sentinel"
 
 
-P1_SENTINEL = "WATSON_P1_SENTINEL_OCR_9f3c2a1b7e44"
+P1_SENTINEL = "plain pocket calendar marker for report privacy"
 
 
 def test_eval_report_files_do_not_contain_ocr_sentinel(
-    tmp_path: Path, key_provider: object
+    tmp_path: Path, key_provider: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """P1: report.json must never contain raw OCR / prompt bodies."""
+    """P1: low-entropy OCR reaches the model prompt, then stays out of reports."""
+    assert redact_ocr_text(P1_SENTINEL) == P1_SENTINEL
     src = FIXTURES / "day_near_empty"
     fixtures_root = tmp_path / "fixtures"
     dest = fixtures_root / "day_near_empty"
@@ -153,7 +157,7 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         if sidecar.name == "manifest.json":
             continue
         data = json.loads(sidecar.read_text(encoding="utf-8"))
-        lines = ((data.get("ocr") or {}).get("lines") or [])
+        lines = (data.get("ocr") or {}).get("lines") or []
         if not lines:
             continue
         lines[0]["text"] = f"{lines[0].get('text', '')} {P1_SENTINEL}"
@@ -161,6 +165,15 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         injected = True
         break
     assert injected
+    prompts: list[str] = []
+    original = RecordingRuntime.complete
+
+    def spy_complete(self: RecordingRuntime, messages: object, schema: object) -> dict[str, object]:
+        blob = "\n".join(item["content"] for item in messages)  # type: ignore[index]
+        prompts.append(blob)
+        return original(self, messages, schema)
+
+    monkeypatch.setattr(RecordingRuntime, "complete", spy_complete)
     out = tmp_path / "eval"
     run_eval(
         fixtures_root=fixtures_root,
@@ -171,11 +184,8 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         out_dir=out,
         key=TEST_KEY,
     )
-    report_files = [
-        *out.glob("report.json"),
-        *out.glob("report.md"),
-        *out.rglob("*.log"),
-    ]
+    assert prompts
+    assert any(P1_SENTINEL in blob for blob in prompts)
     assert (out / "report.json").is_file()
     payload = json.loads((out / "report.json").read_text(encoding="utf-8"))
     allowed = {
@@ -193,6 +203,8 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         "days",
     }
     assert set(payload) <= allowed
-    for path in report_files:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        assert P1_SENTINEL not in text, path
+    needle = P1_SENTINEL.encode("utf-8")
+    for path in out.rglob("*"):
+        if not path.is_file():
+            continue
+        assert needle not in path.read_bytes(), path

@@ -2285,3 +2285,52 @@ def test_requeue_resets_completed_understand_with_other_version_observation(
         assert row["attempts"] == 0
     finally:
         conn.close()
+
+
+class _PhaseSequenceSpy:
+    """Drive the real consolidator and record complete/end_phase order."""
+
+    def __init__(self, inner: FakeRuntime) -> None:
+        self.inner = inner
+        self.name = getattr(inner, "name", "spy")
+        self.events: list[str] = []
+
+    def complete(self, messages: object, schema: object) -> object:
+        blob = "\n".join(item["content"] for item in messages)  # type: ignore[index]
+        if "Cluster these observations" in blob:
+            tag = "cluster"
+        elif "Extract cross-segment" in blob:
+            tag = "extract"
+        elif "Write the daily narrative" in blob:
+            tag = "summary"
+        else:
+            tag = "understand"
+        self.events.append(f"complete:{tag}")
+        return self.inner.complete(messages, schema)
+
+    def embed(self, texts: object) -> object:
+        self.events.append("embed")
+        return self.inner.embed(texts)
+
+    def end_phase(self) -> None:
+        self.events.append("end_phase")
+        self.inner.end_phase()
+
+
+def test_consolidate_unloads_after_extract_and_after_summary(tmp_path: Path) -> None:
+    """U9/U10: real consolidate_working_day must end_phase after extract and after summary."""
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_day(conn)
+        spy = _PhaseSequenceSpy(_runtime())
+        consolidate_working_day(conn, seeded["day_id"], runtime=spy, embedding=spy, now=NOW)
+        start = spy.events.index("complete:cluster")
+        assert spy.events[start:] == [
+            "complete:cluster",
+            "complete:extract",
+            "end_phase",
+            "complete:summary",
+            "end_phase",
+        ]
+    finally:
+        conn.close()

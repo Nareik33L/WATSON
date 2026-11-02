@@ -34,16 +34,16 @@ class FakeRuntime:
         self._recordings = _load_recordings(recordings)
         self._queue = list(complete_queue or [])
         self.complete_calls = 0
+        self.embed_calls = 0
+        self.end_phase_count = 0
 
     def probe(self) -> None:
         return None
 
     def end_phase(self) -> None:
-        return None
+        self.end_phase_count += 1
 
-    def complete(
-        self, messages: Sequence[Message], schema: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    def complete(self, messages: Sequence[Message], schema: Mapping[str, Any]) -> dict[str, Any]:
         del schema
         self.complete_calls += 1
         if self._queue:
@@ -63,6 +63,7 @@ class FakeRuntime:
         return dict(default) if isinstance(default, dict) else dict(_DEFAULT_COMPLETE)
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        self.embed_calls += 1
         stored = self._recordings.get("embeddings")
         out: list[list[float]] = []
         for index, text in enumerate(texts):

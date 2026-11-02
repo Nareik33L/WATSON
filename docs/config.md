@@ -52,8 +52,10 @@ endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
 `/api/chat` and `/api/embed`; the urllib default of 120 s is too short for
 llama3.2:3b on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
 `num_predict = 768` (sized to the understanding JSON schema), and
-`unload_between_phases = true` unloads resident models at phase
-boundaries (understanding → consolidation → summary), never mid-phase.
+`unload_between_phases = true` unloads resident models at sub-phase
+boundaries (understanding chat → understanding embed → consolidation →
+summary). At most one model is resident; chat completions for a batch run
+before any resolver embeddings.
 Chat options always send `temperature = 0`, `num_ctx`, and `num_predict`.
 
 The understanding **v2** prompt (`prompt_version = understanding/v2`,

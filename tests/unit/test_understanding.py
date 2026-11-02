@@ -11,9 +11,11 @@ from pydantic import ValidationError
 
 from tests.replay_support import DAY_ACME_Q4, TEST_KEY, open_test_db
 from watson.config.schema import IntelligenceConfig
+from watson.intelligence.eval.recordings import RecordingRuntime
 from watson.intelligence.prompts import load_prompt
 from watson.intelligence.runtime import UNDERSTAND_JOB_KIND, FakeRuntime, JobFailure
 from watson.intelligence.runtime import http as http_mod
+from watson.intelligence.runtime.stats import InferenceStats, TimingRuntime
 from watson.intelligence.runtime.types import RuntimeUnavailable
 from watson.intelligence.schemas.understanding import (
     ActivityType,
@@ -89,18 +91,26 @@ _EMPTY_EVIDENCE_OUTPUT: dict[str, Any] = {
 }
 
 
-def _closed_segment(conn: object, *, merged: str = _LINE) -> str:
-    day_id, frame_id, segment_id = new_id(), new_id(), new_id()
-    stamp = "2026-10-31T09:00:00Z"
-    conn.execute(
-        """
-        INSERT INTO working_days (
-            id, created_at, updated_at, date, started_at, ended_at,
-            state, consolidation_error, pipeline_version
-        ) VALUES (?, ?, ?, '2026-10-31', ?, NULL, 'open', NULL, 1)
-        """,
-        (day_id, stamp, stamp, stamp),
-    )
+def _closed_segment(
+    conn: object,
+    *,
+    merged: str = _LINE,
+    day_id: str | None = None,
+    started_at: str = "2026-10-31T09:00:00Z",
+) -> str:
+    frame_id, segment_id = new_id(), new_id()
+    stamp = started_at
+    if day_id is None:
+        day_id = new_id()
+        conn.execute(
+            """
+            INSERT INTO working_days (
+                id, created_at, updated_at, date, started_at, ended_at,
+                state, consolidation_error, pipeline_version
+            ) VALUES (?, ?, ?, '2026-10-31', ?, NULL, 'open', NULL, 1)
+            """,
+            (day_id, stamp, stamp, stamp),
+        )
     conn.execute(
         """
         INSERT INTO frames (
@@ -201,6 +211,22 @@ def test_merged_text_prompt_max_keeps_4000_truncates_4001_and_empty() -> None:
     assert truncated.endswith("(truncated)")
     assert len(body) == MERGED_TEXT_PROMPT_MAX
     assert body == f"1. {over}"[:MERGED_TEXT_PROMPT_MAX]
+
+
+def test_merged_text_cap_counts_newlines_across_two_lines() -> None:
+    """C1: ``>=`` vs ``>`` is visible when two numbered lines plus a newline hit 4000."""
+    max_chars = MERGED_TEXT_PROMPT_MAX
+    first = "a" * 2000
+    second = "b" * 1993
+    kept = number_merged_text(f"{first}\n{second}", max_chars=max_chars)
+    expected = f"1. {first}\n2. {second}"
+    assert kept == expected
+    assert len(kept) == max_chars
+    assert "\n" in kept
+    assert "(truncated)" not in kept
+    over = number_merged_text(f"{first}\n{second}x", max_chars=max_chars)
+    assert over == f"1. {first}\n(truncated)"
+    assert over.count("\n") == 1
 
 
 def test_eligibility_closed_or_twenty_minutes(tmp_path: Path) -> None:
@@ -616,3 +642,155 @@ def test_new_understand_run_records_v2_and_preserves_v1_rows(tmp_path: Path) -> 
         assert "capped at 4000" in v2_prompt.text
     finally:
         conn.close()
+
+
+_RESOLVE_OUTPUT: dict[str, Any] = {
+    "activity_type": "knowledge_work",
+    "description": "No completion evidence is visible.",
+    "confidence": 0.7,
+    "claims": [],
+    "project_candidates": ["Harbor planning"],
+    "people_candidates": ["Priya Natarajan"],
+}
+
+
+class _ResidentSpy:
+    """Records the resident-model set at every complete/embed without auto-unloading."""
+
+    def __init__(self, inner: FakeRuntime) -> None:
+        self.inner = inner
+        self.name = getattr(inner, "name", "spy")
+        self.events: list[str] = []
+        self.resident: set[str] = set()
+        self.snapshots: list[frozenset[str]] = []
+        self.complete_blobs: list[str] = []
+        self.end_phase_count = 0
+        self.complete_calls = 0
+
+    def complete(self, messages: Any, schema: Any) -> dict[str, Any]:
+        self.resident.add("chat")
+        self.snapshots.append(frozenset(self.resident))
+        self.events.append("complete")
+        self.complete_calls += 1
+        self.complete_blobs.append("\n".join(item["content"] for item in messages))
+        return self.inner.complete(messages, schema)
+
+    def embed(self, texts: Any) -> list[list[float]]:
+        self.resident.add("embed")
+        self.snapshots.append(frozenset(self.resident))
+        self.events.append("embed")
+        return self.inner.embed(texts)
+
+    def end_phase(self) -> None:
+        self.events.append("end_phase")
+        self.end_phase_count += 1
+        self.resident.clear()
+        self.inner.end_phase()
+
+    def probe(self) -> None:
+        self.inner.probe()
+
+
+def _entity_fingerprint(conn: object) -> set[tuple[str, str, str]]:
+    return {
+        (str(row[0]), str(row[1]), str(row[2]))
+        for row in conn.execute(
+            """
+            SELECT e.type, e.canonical_name, a.alias
+            FROM entities e
+            JOIN entity_aliases a ON a.entity_id = e.id
+            """
+        )
+    }
+
+
+def test_drain_one_resident_model_and_single_chat_to_embed_switch(tmp_path: Path) -> None:
+    """§11.4: chat-all, one unload, then deferred embeds. U8: drain finally end_phase."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        first = _closed_segment(conn, merged="alpha ocr still editing")
+        day_id = str(
+            conn.execute("SELECT working_day_id FROM segments WHERE id = ?", (first,)).fetchone()[0]
+        )
+        _closed_segment(
+            conn,
+            merged="beta ocr still editing",
+            day_id=day_id,
+            started_at="2026-10-31T10:00:00Z",
+        )
+        _seed_entity(conn, typ="project", name="Harbor Safety Audit")
+        _seed_entity(conn, typ="person", name="Tom Ashworth")
+        enqueue_eligible_understand_jobs(conn)
+        inner = FakeRuntime(complete_queue=[dict(_RESOLVE_OUTPUT), dict(_RESOLVE_OUTPUT)])
+        spy = _ResidentSpy(inner)
+        assert drain_understand_jobs(conn, runtime=spy, embedding=spy) == 2
+        assert spy.snapshots
+        assert all(len(item) <= 1 for item in spy.snapshots)
+        kinds = [event for event in spy.events if event in {"complete", "embed"}]
+        assert kinds[0] == "complete"
+        assert "embed" in kinds
+        assert kinds[-1] == "embed"
+        transitions = sum(1 for left, right in zip(kinds, kinds[1:], strict=False) if left != right)
+        assert transitions == 1
+        last_complete = max(i for i, event in enumerate(spy.events) if event == "complete")
+        first_embed = spy.events.index("embed")
+        assert last_complete < first_embed
+        assert "end_phase" in spy.events[last_complete + 1 : first_embed]
+        assert spy.events[-1] == "end_phase"
+        assert spy.end_phase_count == 2
+    finally:
+        conn.close()
+
+
+def test_drain_end_phase_forwards_through_timing_and_recording(tmp_path: Path) -> None:
+    """U8, U11, U12: real drain → TimingRuntime → RecordingRuntime → FakeRuntime.end_phase."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        first = _closed_segment(conn)
+        day_id = str(
+            conn.execute("SELECT working_day_id FROM segments WHERE id = ?", (first,)).fetchone()[0]
+        )
+        _closed_segment(conn, day_id=day_id, started_at="2026-10-31T10:00:00Z")
+        enqueue_eligible_understand_jobs(conn)
+        inner = FakeRuntime()
+        recording = RecordingRuntime(path=tmp_path / "rec.json", inner=inner, mode="record")
+        wrapped = TimingRuntime(recording, InferenceStats())
+        assert drain_understand_jobs(conn, runtime=wrapped, embedding=wrapped) == 2
+        assert inner.end_phase_count == 2
+    finally:
+        conn.close()
+
+
+def test_deferred_resolve_matches_interleaved_on_acme_q4(tmp_path: Path) -> None:
+    def run(db_path: Path, *, deferred: bool) -> set[tuple[str, str, str]]:
+        upgrade_head(db_path, TEST_KEY)
+        conn = connect(db_path, TEST_KEY, load_vec=False)
+        try:
+            replay_fixture(
+                DAY_ACME_Q4,
+                conn,
+                instant=True,
+                spool_dir=db_path.parent / ("spool-d" if deferred else "spool-i"),
+            )
+            _seed_entity(conn, typ="project", name="Acme Q4 Proposal", alias="the Acme deal")
+            _seed_entity(conn, typ="project", name="Internal Onboarding Guide")
+            _seed_entity(conn, typ="person", name="Tom Ashworth")
+            runtime = FakeRuntime(recordings=ACME_RECORDINGS)
+            if deferred:
+                drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+            else:
+                for segment_id in eligible_segment_ids(conn):
+                    understand_segment(conn, segment_id, runtime, runtime)
+            return _entity_fingerprint(conn)
+        finally:
+            conn.close()
+
+    deferred = run(tmp_path / "deferred.db", deferred=True)
+    interleaved = run(tmp_path / "interleaved.db", deferred=False)
+    assert deferred == interleaved
+    assert ("person", "Priya Natarajan", "Priya Natarajan") in deferred
+    assert ("project", "Internal Onboarding Guide", "Onboarding Guide") in deferred
