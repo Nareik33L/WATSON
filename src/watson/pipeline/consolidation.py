@@ -482,26 +482,23 @@ def consolidate_working_day(
             working_day_id=working_day_id,
             now=moment,
         )
+        if _understand_has_claimed(conn, working_day_id, pipeline_version=cfg.pipeline_version):
+            raise ConsolidationWait("understanding held")
         drain_understand_jobs(
             conn,
             runtime=language,
             embedding=embedder,
             now=moment,
         )
-        pending = eligible_segment_ids(
+        blocked = _understand_incomplete(
             conn,
+            working_day_id,
             pipeline_version=cfg.pipeline_version,
             close_after_seconds=cfg.close_after_seconds,
-            working_day_id=working_day_id,
         )
-        if pending:
-            if _understand_is_held(
-                conn,
-                working_day_id,
-                pipeline_version=cfg.pipeline_version,
-                close_after_seconds=cfg.close_after_seconds,
-            ):
-                raise ConsolidationWait("understanding held")
+        if blocked == "wait":
+            raise ConsolidationWait("understanding held")
+        if blocked == "error":
             raise ConsolidationError("pending understanding")
         counts = _replace_derived(
             conn,
@@ -1293,6 +1290,52 @@ def _understand_jobs_for_day(
             continue
         out.append(job)
     return out
+
+
+def _understand_has_claimed(
+    conn: sqlcipher.Connection, working_day_id: str, *, pipeline_version: int
+) -> bool:
+    """True when a prior worker still holds an understand lease for this day."""
+    return any(
+        job.state is JobState.CLAIMED
+        for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version)
+    )
+
+
+def _understand_incomplete(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    *,
+    pipeline_version: int,
+    close_after_seconds: int,
+) -> str | None:
+    """``wait`` / ``error`` while understand work for this day is unfinished.
+
+    Claimed, pending, or chat-done-but-unresolved jobs defer consolidation
+    (``ConsolidationWait``) so a SIGKILL inside the lease cannot mark the
+    day consolidated with missing entities. Failed jobs flag the day.
+    """
+    states = {job.state for job in _understand_jobs_for_day(conn, working_day_id, pipeline_version)}
+    if JobState.CLAIMED in states or JobState.PENDING in states:
+        return "wait"
+    if JobState.FAILED in states:
+        return "error"
+    if _understand_is_held(
+        conn,
+        working_day_id,
+        pipeline_version=pipeline_version,
+        close_after_seconds=close_after_seconds,
+    ):
+        return "wait"
+    pending = eligible_segment_ids(
+        conn,
+        pipeline_version=pipeline_version,
+        close_after_seconds=close_after_seconds,
+        working_day_id=working_day_id,
+    )
+    if pending:
+        return "error"
+    return None
 
 
 def _understand_is_held(

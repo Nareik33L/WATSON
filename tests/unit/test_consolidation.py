@@ -16,7 +16,7 @@ from watson.intelligence.runtime import (
     JobFailure,
     RuntimeUnavailable,
 )
-from watson.memory.db import connect
+from watson.memory.db import connect, iso_now
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.consolidation import (
@@ -1808,6 +1808,48 @@ def test_pending_understanding_for_this_day_blocks_consolidation(
             ).fetchone()
             is not None
         )
+    finally:
+        conn.close()
+
+
+def test_claimed_understand_jobs_hold_day_even_with_observations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SIGKILL window: claimed jobs with observations must not consolidate the day."""
+    monkeypatch.setattr("watson.pipeline.consolidation.drain_understand_jobs", lambda *_a, **_k: 0)
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        _insert_observation(conn, segment_id)
+        job = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
+            now=NOW,
+        )
+        conn.execute(
+            """
+            UPDATE jobs
+            SET state = ?, claimed_by = 'dead-worker', leased_until = ?
+            WHERE id = ?
+            """,
+            (JobState.CLAIMED.value, iso_now(NOW + timedelta(hours=1)), job.id),
+        )
+        conn.commit()
+        runtime = _runtime()
+        with pytest.raises(ConsolidationWait, match="understanding held"):
+            consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        day = conn.execute(
+            "SELECT state, consolidation_error, consolidated_at FROM working_days WHERE id = ?",
+            (day_id,),
+        ).fetchone()
+        assert day["state"] == "closing"
+        assert day["consolidation_error"] == "ConsolidationWait"
+        assert day["consolidated_at"] is None
+        held = conn.execute("SELECT state FROM jobs WHERE id = ?", (job.id,)).fetchone()
+        assert held["state"] == JobState.CLAIMED.value
+        assert derived_counts(conn, day_id)["activities"] == 0
     finally:
         conn.close()
 

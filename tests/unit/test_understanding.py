@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import os
+import signal
+import subprocess
+import sys
+import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -27,16 +34,26 @@ from watson.intelligence.schemas.understanding import (
     EvidenceCitation,
     UnderstandingOutput,
 )
-from watson.memory.db import connect
+from watson.memory.db import DatabaseError, connect
 from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.backlog import drain_backlog
+from watson.pipeline.consolidation import ConsolidationWait, consolidate_working_day, derived_counts
 from watson.pipeline.frames import PIPELINE_VERSION
-from watson.pipeline.jobs import JobState, claim, enqueue, get_job
+from watson.pipeline.jobs import (
+    DEFAULT_LEASE_SECONDS,
+    JobState,
+    claim,
+    enqueue,
+    get_job,
+    recover_expired_leases,
+)
 from watson.pipeline.replay import replay_fixture
+from watson.pipeline.segmentation import close_open_segments
 from watson.pipeline.understanding import (
     MERGED_TEXT_PROMPT_MAX,
     PROMPT_VERSION,
+    UNDERSTAND_LEASE_SECONDS,
     UnderstandSettings,
     _citation_supported,
     _load_segment,
@@ -48,8 +65,14 @@ from watson.pipeline.understanding import (
     understand_idempotency_key,
     understand_segment,
 )
+from watson.privacy.audit import KIND_CONSOLIDATED
 
 ACME_RECORDINGS = Path(__file__).resolve().parents[1] / "fixtures" / "runtime" / "acme_q4.json"
+CONSOLIDATION_RECORDINGS = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "runtime" / "consolidation.json"
+)
+_SIGKILL_WORKER = Path(__file__).resolve().parent / "sigkill_drain_worker.py"
+_NOW = datetime(2026, 10, 31, 20, 0, tzinfo=UTC)
 
 
 def _counts(conn: object) -> tuple[int, int, int, int, int]:
@@ -964,3 +987,358 @@ def test_successful_drain_is_idempotent_and_creates_no_duplicates(tmp_path: Path
         assert _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
     finally:
         conn.close()
+
+
+def _working_day_id(conn: object, segment_id: str) -> str:
+    row = conn.execute("SELECT working_day_id FROM segments WHERE id = ?", (segment_id,)).fetchone()
+    assert row is not None
+    return str(row[0])
+
+
+def _day_row(conn: object, day_id: str) -> Any:
+    return conn.execute(
+        "SELECT state, consolidation_error, consolidated_at FROM working_days WHERE id = ?",
+        (day_id,),
+    ).fetchone()
+
+
+def _consolidated_audit_count(conn: object) -> int:
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE kind = ?", (KIND_CONSOLIDATED,)
+        ).fetchone()[0]
+    )
+
+
+def _drain_acme(conn: object, *, now: datetime | None = None) -> int:
+    close_open_segments(conn)
+    enqueue_eligible_understand_jobs(conn, now=now)
+    runtime = FakeRuntime(recordings=ACME_RECORDINGS)
+    return drain_understand_jobs(conn, runtime=runtime, embedding=runtime, now=now)
+
+
+def test_drain_uses_hour_long_understand_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E7: drain must claim understand jobs with UNDERSTAND_LEASE_SECONDS, not 60s."""
+    seen: list[int] = []
+    real_claim = claim
+
+    def spy_claim(*args: object, **kwargs: object) -> object:
+        lease = kwargs.get("lease_seconds")
+        if isinstance(lease, int):
+            seen.append(lease)
+        return real_claim(*args, **kwargs)
+
+    monkeypatch.setattr("watson.pipeline.understanding.claim", spy_claim)
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _closed_segment(conn)
+        enqueue_eligible_understand_jobs(conn)
+        runtime = FakeRuntime()
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 1
+        assert seen
+        assert seen[0] == UNDERSTAND_LEASE_SECONDS
+        assert seen[0] == 3600
+        assert seen[0] != DEFAULT_LEASE_SECONDS
+    finally:
+        conn.close()
+
+
+def test_retryable_job_failure_stops_drain_without_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D4: retryable JobFailure fails the job, stops the loop, and does not raise."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        first = _closed_segment(conn)
+        day_id = _working_day_id(conn, first)
+        second = _closed_segment(conn, day_id=day_id, started_at="2026-10-31T10:00:00Z")
+        enqueue_eligible_understand_jobs(conn)
+        calls = {"n": 0}
+
+        def boom(*_a: object, **_k: object) -> object:
+            calls["n"] += 1
+            raise JobFailure("retryable drain stop", retryable=True)
+
+        monkeypatch.setattr("watson.pipeline.understanding.understand_job", boom)
+        completed = drain_understand_jobs(conn, runtime=FakeRuntime(), embedding=FakeRuntime())
+        assert completed == 0
+        assert calls["n"] == 1
+        first_job = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE payload LIKE ?",
+            (f"%{first}%",),
+        ).fetchone()
+        second_job = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE payload LIKE ?",
+            (f"%{second}%",),
+        ).fetchone()
+        assert first_job["state"] == JobState.PENDING.value
+        assert first_job["attempts"] == 1
+        assert first_job["last_error"] == "JobFailure"
+        assert second_job["state"] == JobState.PENDING.value
+        assert second_job["attempts"] == 0
+        assert second_job["last_error"] is None
+    finally:
+        conn.close()
+
+
+def test_resolver_partial_write_rolls_back_before_park(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E6: rollback before parking so a partial resolver INSERT is not committed."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    sentinel = "E6 Sentinel Entity XYZ"
+    try:
+        _closed_segment(conn, merged="alpha ocr still editing")
+        enqueue_eligible_understand_jobs(conn)
+
+        def insert_then_crash(resolve_conn: object, *_a: object, **_k: object) -> list[object]:
+            stamp = "2026-10-31T09:00:00Z"
+            resolve_conn.execute(
+                """
+                INSERT INTO entities (
+                    id, created_at, updated_at, type, canonical_name, description,
+                    first_seen, last_seen, provisional, merged_into_id
+                ) VALUES (?, ?, ?, 'person', ?, NULL, ?, ?, 1, NULL)
+                """,
+                (new_id(), stamp, stamp, sentinel, stamp, stamp),
+            )
+            raise RuntimeError("resolver partial write")
+
+        monkeypatch.setattr("watson.pipeline.understanding.resolve_candidates", insert_then_crash)
+        runtime = FakeRuntime(complete_queue=[dict(_RESOLVE_OUTPUT)])
+        with pytest.raises(RuntimeError, match="resolver partial write"):
+            drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+        assert JobState.COMPLETED.value not in _understand_job_states(conn)
+        assert JobState.PENDING.value in _understand_job_states(conn)
+    finally:
+        conn.close()
+    fresh = connect(path, TEST_KEY, load_vec=False)
+    try:
+        assert not _has_entity(fresh, typ="person", name=sentinel)
+        assert JobState.PENDING.value in _understand_job_states(fresh)
+        assert fresh.execute("SELECT COUNT(*) FROM observations").fetchone()[0] >= 1
+    finally:
+        fresh.close()
+
+
+def test_integrity_error_rebuilds_pending_resolve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E3b: duplicate-insert IntegrityError still queues deferred resolve from raw_json."""
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        _closed_segment(conn, merged="alpha ocr still editing")
+        enqueue_eligible_understand_jobs(conn)
+        real_persist = _persist_observation
+
+        def persist_then_integrity(*args: object, **kwargs: object) -> str:
+            real_persist(*args, **kwargs)
+            args[0].commit()  # type: ignore[union-attr]
+            raise sqlcipher.IntegrityError("UNIQUE constraint failed: observations.segment_id")
+
+        monkeypatch.setattr(
+            "watson.pipeline.understanding._persist_observation", persist_then_integrity
+        )
+        runtime = FakeRuntime(complete_queue=[dict(_RESOLVE_OUTPUT)])
+        assert drain_understand_jobs(conn, runtime=runtime, embedding=runtime) == 1
+        assert _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert _has_entity(conn, typ="project", name="Harbor planning")
+        assert JobState.COMPLETED.value in _understand_job_states(conn)
+    finally:
+        conn.close()
+
+
+def test_poison_raw_json_fails_job_and_continues_drain(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """E9: one malformed observation fails that job; the rest of the drain continues."""
+    caplog.set_level(logging.WARNING, logger="watson.pipeline.understanding")
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    try:
+        poison_segment = _closed_segment(conn, merged="poison ocr still editing")
+        day_id = _working_day_id(conn, poison_segment)
+        good_segment = _closed_segment(
+            conn, merged="good ocr still editing", day_id=day_id, started_at="2026-10-31T10:00:00Z"
+        )
+        enqueue_eligible_understand_jobs(conn)
+        stamp = "2026-10-31T09:00:00Z"
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, created_at, updated_at, segment_id, activity_type, description,
+                confidence, model_id, prompt_version, pipeline_version, raw_json
+            ) VALUES (?, ?, ?, ?, 'knowledge_work', 'poison', 0.1, 'fake',
+                      'understanding/v2', ?, ?)
+            """,
+            (new_id(), stamp, stamp, poison_segment, PIPELINE_VERSION, "{not-json"),
+        )
+        conn.commit()
+        runtime = FakeRuntime(complete_queue=[dict(_RESOLVE_OUTPUT)])
+        completed = drain_understand_jobs(conn, runtime=runtime, embedding=runtime)
+        assert completed == 1
+        poison_job = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE payload LIKE ?",
+            (f"%{poison_segment}%",),
+        ).fetchone()
+        good_job = conn.execute(
+            "SELECT state, attempts, last_error FROM jobs WHERE payload LIKE ?",
+            (f"%{good_segment}%",),
+        ).fetchone()
+        assert poison_job["attempts"] == 1
+        assert poison_job["last_error"] == "JobFailure"
+        assert poison_job["state"] in {JobState.PENDING.value, JobState.FAILED.value}
+        assert good_job["state"] == JobState.COMPLETED.value
+        assert _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert any("poison observation raw_json" in rec.message for rec in caplog.records)
+        runtime = FakeRuntime(recordings=CONSOLIDATION_RECORDINGS)
+        with pytest.raises(ConsolidationWait, match="understanding held"):
+            consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=_NOW)
+        day = _day_row(conn, day_id)
+        assert day["state"] != "consolidated"
+        assert day["consolidated_at"] is None
+        assert day["consolidation_error"] == "ConsolidationWait"
+    finally:
+        conn.close()
+
+
+def test_sigkill_mid_drain_holds_consolidation_until_lease_recovered(tmp_path: Path) -> None:
+    """Real SIGKILL: in-lease consolidation defers; after reclaim, entities match baseline."""
+    killed_path = tmp_path / "killed.db"
+    ready = tmp_path / "ready"
+    upgrade_head(killed_path, TEST_KEY)
+    conn = connect(killed_path, TEST_KEY, load_vec=False)
+    try:
+        _prepare_acme_q4(conn, tmp_path / "spool-kill")
+        day_id = str(conn.execute("SELECT id FROM working_days").fetchone()[0])
+        n_jobs = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE kind = ?", (UNDERSTAND_JOB_KIND,)
+            ).fetchone()[0]
+        )
+        assert n_jobs >= 1
+    finally:
+        conn.close()
+
+    env = os.environ.copy()
+    root = Path(__file__).resolve().parents[2]
+    env["PYTHONPATH"] = os.pathsep.join([str(root / "src"), str(root), env.get("PYTHONPATH", "")])
+    moment = datetime.now(UTC).replace(microsecond=0)
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            str(_SIGKILL_WORKER),
+            str(killed_path),
+            TEST_KEY.hex(),
+            str(ACME_RECORDINGS),
+            str(ready),
+            moment.isoformat(),
+        ],
+        env=env,
+        cwd=str(root),
+    )
+    try:
+        deadline = time.time() + 60
+        while not (ready.is_file() and ready.read_text(encoding="utf-8") == "ready"):
+            if proc.poll() is not None:
+                raise AssertionError(
+                    f"drain worker exited before resolver ready: {proc.returncode}"
+                )
+            if time.time() > deadline:
+                proc.kill()
+                raise AssertionError("drain worker did not reach resolver boundary")
+            time.sleep(0.05)
+        os.kill(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=10)
+        assert proc.returncode == -signal.SIGKILL
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    conn = None
+    last_exc: BaseException | None = None
+    for _ in range(20):
+        try:
+            conn = connect(killed_path, TEST_KEY, load_vec=False)
+            conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
+            break
+        except (sqlcipher.DatabaseError, DatabaseError, OSError) as exc:
+            last_exc = exc
+            if conn is not None:
+                conn.close()
+                conn = None
+            time.sleep(0.05)
+    if conn is None:
+        raise AssertionError(f"could not reopen db after SIGKILL: {last_exc}")
+    try:
+        assert _understand_job_states(conn) == {JobState.CLAIMED.value}
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] >= 1
+        assert not _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert not _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
+        audits_before = _consolidated_audit_count(conn)
+        consolidator = FakeRuntime(recordings=CONSOLIDATION_RECORDINGS)
+        with pytest.raises(ConsolidationWait, match="understanding held"):
+            consolidate_working_day(
+                conn, day_id, runtime=consolidator, embedding=consolidator, now=moment
+            )
+        day = _day_row(conn, day_id)
+        assert day["state"] != "consolidated"
+        assert day["consolidated_at"] is None
+        assert day["consolidation_error"] == "ConsolidationWait"
+        assert _consolidated_audit_count(conn) == audits_before
+        recovered_at = moment + timedelta(hours=2)
+        recovered = recover_expired_leases(conn, now=recovered_at)
+        assert recovered == n_jobs
+        assert JobState.CLAIMED.value not in _understand_job_states(conn)
+        assert _drain_acme(conn, now=recovered_at) >= n_jobs
+        assert JobState.PENDING.value not in _understand_job_states(conn)
+        assert JobState.CLAIMED.value not in _understand_job_states(conn)
+        consolidate_working_day(
+            conn, day_id, runtime=consolidator, embedding=consolidator, now=recovered_at
+        )
+        day = _day_row(conn, day_id)
+        assert day["state"] == "consolidated"
+        assert day["consolidated_at"] is not None
+        assert _consolidated_audit_count(conn) == audits_before + 1
+        assert _has_entity(conn, typ="person", name="Priya Natarajan")
+        assert _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
+        killed_fp = _entity_fingerprint(conn)
+        killed_derived = derived_counts(conn, day_id)
+        assert _understand_job_states(conn) == {JobState.COMPLETED.value}
+    finally:
+        conn.close()
+
+    clean_path = tmp_path / "clean.db"
+    upgrade_head(clean_path, TEST_KEY)
+    clean = connect(clean_path, TEST_KEY, load_vec=False)
+    try:
+        _prepare_acme_q4(clean, tmp_path / "spool-clean-kill")
+        clean_day = str(clean.execute("SELECT id FROM working_days").fetchone()[0])
+        assert _drain_acme(clean) >= 1
+        assert JobState.PENDING.value not in _understand_job_states(clean)
+        assert JobState.CLAIMED.value not in _understand_job_states(clean)
+        consolidator = FakeRuntime(recordings=CONSOLIDATION_RECORDINGS)
+        consolidate_working_day(
+            clean,
+            clean_day,
+            runtime=consolidator,
+            embedding=consolidator,
+            now=datetime.now(UTC),
+        )
+        assert _entity_fingerprint(clean) == killed_fp
+        assert derived_counts(clean, clean_day) == killed_derived
+        assert _day_row(clean, clean_day)["state"] == "consolidated"
+    finally:
+        clean.close()

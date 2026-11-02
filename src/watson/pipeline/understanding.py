@@ -194,9 +194,13 @@ def drain_understand_jobs(
     Chat completions run first with only the LLM loaded. Resolver embeddings
     are a deferred batch after that sub-phase unloads (§11.4). A job is
     marked completed only after that batch commits. Chat-done work stays
-    claimed until then; a crash parks it ``pending`` so a rerun resolves
-    from ``observations.raw_json`` without calling the LLM. A missing
-    runtime leaves jobs ``pending`` with a reason and returns 0.
+    claimed until then; a caught crash parks it ``pending`` so a rerun
+    resolves from ``observations.raw_json`` without calling the LLM.
+    ``SIGKILL`` leaves jobs ``claimed`` for the lease; consolidation must
+    not mark that day consolidated while any of those jobs are claimed,
+    pending, or unresolved. Poison ``raw_json`` fails that job and the
+    drain continues. A missing runtime leaves jobs ``pending`` with a
+    reason and returns 0.
     """
     if limit < 1:
         raise ValueError("understand batch limit must be >= 1")
@@ -325,8 +329,7 @@ def understand_segment(
     ).fetchone()
     if existing is not None:
         if defer_resolve:
-            rebuilt = _pending_from_stored(conn, segment_id, str(existing["raw_json"]), cfg=cfg)
-            return rebuilt if rebuilt is not None else str(existing["id"])
+            return _pending_from_stored(conn, segment_id, str(existing["raw_json"]), cfg=cfg)
         return str(existing["id"])
 
     started = time.perf_counter()
@@ -405,9 +408,7 @@ def _understand_segment_body(
         if row is None:
             raise
         if defer_resolve:
-            rebuilt = _pending_from_stored(conn, segment_id, str(row["raw_json"]), cfg=cfg)
-            if rebuilt is not None:
-                return rebuilt
+            return _pending_from_stored(conn, segment_id, str(row["raw_json"]), cfg=cfg)
         return str(row["id"])
     except Exception:
         conn.rollback()
@@ -531,16 +532,20 @@ def _pending_from_stored(
     raw_json: str,
     *,
     cfg: UnderstandSettings,
-) -> _PendingResolve | None:
+) -> _PendingResolve:
     """Rebuild resolver work from a persisted observation. No chat call."""
     segment = _load_segment(conn, segment_id)
     if segment is None:
-        return None
+        raise JobFailure(f"understand job refers to missing segment {segment_id}", retryable=False)
     try:
         payload = json.loads(raw_json)
         output = UnderstandingOutput.model_validate(payload)
-    except (ValueError, TypeError, ValidationError):
-        return None
+    except (ValueError, TypeError, ValidationError) as exc:
+        log.warning(
+            "poison observation raw_json",
+            extra={"segment_id": segment_id, "error": type(exc).__name__},
+        )
+        raise JobFailure("observation raw_json is invalid", retryable=False) from exc
     return _PendingResolve(output=output, segment=segment, settings=cfg)
 
 
