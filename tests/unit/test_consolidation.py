@@ -2336,6 +2336,7 @@ def test_requeue_resets_completed_understand_with_other_version_observation(
         conn.close()
 
 
+@pytest.mark.timeout(20)
 def test_poison_understand_job_stops_cycling_within_bounded_catch_up(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -2403,6 +2404,90 @@ def test_poison_understand_job_stops_cycling_within_bounded_catch_up(tmp_path: P
         conn.close()
 
 
+@pytest.mark.timeout(20)
+def test_poison_understand_leaves_consolidate_job_terminal(tmp_path: Path) -> None:
+    """P4: after a poison understand job, catch-up must not reset a failed consolidate job.
+
+    If the terminal guard in ``ensure_consolidate_job`` is removed, this fails on
+    the first ``ensure_consolidate_job`` call (attempts reset to 0) and the
+    catch-up loop is bounded so it cannot hang.
+    """
+    conn = _open(tmp_path)
+    try:
+        day_id, segment_id = _closed_ununderstood(conn)
+        understand = enqueue(
+            conn,
+            kind=UNDERSTAND_JOB_KIND,
+            payload={"segment_id": segment_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=f"understand:{segment_id}:{PIPELINE_VERSION}",
+            now=NOW,
+        )
+        stamp = iso_now(NOW)
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, created_at, updated_at, segment_id, activity_type, description,
+                confidence, model_id, prompt_version, pipeline_version, raw_json
+            ) VALUES (?, ?, ?, ?, 'knowledge_work', 'poison', 0.1, 'fake',
+                      'understanding/v2', ?, ?)
+            """,
+            (new_id(), stamp, stamp, segment_id, PIPELINE_VERSION, "{not-json"),
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ?, attempts = 1, last_error = ? WHERE id = ?",
+            (JobState.FAILED.value, "JobFailure", understand.id),
+        )
+        consolidate = enqueue(
+            conn,
+            kind=CONSOLIDATE_JOB_KIND,
+            payload={"working_day_id": day_id, "pipeline_version": PIPELINE_VERSION},
+            idempotency_key=consolidate_idempotency_key(day_id, PIPELINE_VERSION),
+            now=NOW,
+        )
+        conn.execute(
+            "UPDATE jobs SET state = ?, attempts = ?, last_error = ? WHERE id = ?",
+            (
+                JobState.FAILED.value,
+                DEFAULT_MAX_ATTEMPTS,
+                "ConsolidationError",
+                consolidate.id,
+            ),
+        )
+        conn.commit()
+        assert (
+            ensure_consolidate_job(conn, day_id, pipeline_version=PIPELINE_VERSION, now=NOW)
+            is False
+        )
+        frozen = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (consolidate.id,)
+        ).fetchone()
+        assert frozen["state"] == JobState.FAILED.value
+        assert frozen["attempts"] == DEFAULT_MAX_ATTEMPTS
+        spool = tmp_path / "spool"
+        spool.mkdir()
+        runtime = _runtime()
+        for step in range(DEFAULT_MAX_ATTEMPTS + 3):
+            catch_up_on_launch(
+                conn,
+                runtime=runtime,
+                embedding=runtime,
+                spool_dir=spool,
+                now=NOW + timedelta(minutes=10 * step),
+            )
+        stayed = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (consolidate.id,)
+        ).fetchone()
+        assert stayed["state"] == JobState.FAILED.value
+        assert stayed["attempts"] == DEFAULT_MAX_ATTEMPTS
+        dead = conn.execute(
+            "SELECT state, attempts FROM jobs WHERE id = ?", (understand.id,)
+        ).fetchone()
+        assert dead["state"] == JobState.FAILED.value
+        assert dead["attempts"] == 1
+    finally:
+        conn.close()
+
+
 def test_expired_understand_lease_recovers_then_day_consolidates(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -2438,6 +2523,7 @@ def test_expired_understand_lease_recovers_then_day_consolidates(tmp_path: Path)
         conn.close()
 
 
+@pytest.mark.timeout(15)
 def test_held_day_does_not_block_other_day_drain(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -2466,6 +2552,7 @@ def test_held_day_does_not_block_other_day_drain(tmp_path: Path) -> None:
             embedding=runtime,
             spool_dir=tmp_path / "spool",
             now=early,
+            limit=32,
         )
         assert completed >= 1
         ready_day = conn.execute(

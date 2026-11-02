@@ -537,6 +537,33 @@ def test_narrative_ok_is_not_summary_present() -> None:
     assert no_claims.narrative_ok is True
 
 
+def test_pipeline_passed_false_when_claims_have_empty_narrative() -> None:
+    """narrative_nonempty is not vacuously true: claims + empty body fail the pipeline."""
+    metrics = _all_metrics()
+    day = DayEval(
+        name="x",
+        date="2026-10-31",
+        metrics=metrics,
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=False,
+        citation_count=0,
+        claims=2,
+    )
+    report = EvalReport(
+        mode="replay",
+        runtime="replay",
+        days=[day],
+        aggregate=metrics,
+        gate=gate_metrics(metrics),
+    )
+    assert day.narrative_ok is False
+    assert report.pipeline_passed is False
+    assert report.passed is False
+
+
 def test_report_passed_is_false_when_counts_drift() -> None:
     metrics = _all_metrics()
     day = DayEval(

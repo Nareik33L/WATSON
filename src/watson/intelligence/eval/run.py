@@ -129,7 +129,7 @@ class EvalReport:
             return False
         if not self.gate.get("passed"):
             return False
-        if self.measure_model and not self.profile_gate.get("passed", True):
+        if self.measure_model and not self.profile_gate.get("passed"):
             return False
         return self.pipeline_passed
 

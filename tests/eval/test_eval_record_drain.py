@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from tests.replay_support import TEST_KEY, V1_DAY_FIXTURES
 from watson.intelligence.eval.recordings import RecordingRuntime
 from watson.intelligence.eval.run import run_eval
@@ -56,10 +58,14 @@ class _SlowRuntime:
         return None
 
 
+@pytest.mark.timeout(60)
 def test_record_driver_drains_late_jobs_over_all_fixture_days(
     tmp_path: Path, key_provider: object, monkeypatch: object
 ) -> None:
-    """Jobs scheduled after day start still complete; every day consolidates once."""
+    """Record-mode eval drains on the queue clock (jumps to the latest pending run_after).
+
+    Jobs scheduled after day start still complete; every day consolidates once.
+    """
     from watson.intelligence.eval import run as run_mod
 
     clock = _Clock(datetime(2026, 10, 31, 9, 0, tzinfo=UTC))

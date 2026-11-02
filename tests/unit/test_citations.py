@@ -119,6 +119,15 @@ def test_all_uncited_narrative_falls_back_to_cited_claims() -> None:
     assert verified.unverified == ()
 
 
+def test_empty_narrative_without_claims_does_not_fallback() -> None:
+    """Fallback must not mint a body when the day has no claims (non-vacuous empty)."""
+    verified = verify_narrative([{"text": "", "claim_ids": []}], [])
+    assert verified.narrative_md == ""
+    assert verified.paragraphs == ()
+    assert verified.claim_ids == ()
+    assert citations_resolvable(verified.narrative_md, set()) is True
+
+
 def test_uncited_claims_go_to_unverified() -> None:
     paragraphs = [{"text": f"Only the outcome [c:{DAY_A}].", "claim_ids": [DAY_A]}]
     verified = verify_narrative(paragraphs, list(CLAIMS))

@@ -1218,6 +1218,7 @@ def test_poison_raw_json_fails_job_and_continues_drain(
         conn.close()
 
 
+@pytest.mark.timeout(90)
 def test_sigkill_mid_drain_holds_consolidation_until_lease_recovered(tmp_path: Path) -> None:
     """Real SIGKILL: in-lease consolidation defers; after reclaim, entities match baseline."""
     killed_path = tmp_path / "killed.db"
@@ -1289,7 +1290,7 @@ def test_sigkill_mid_drain_holds_consolidation_until_lease_recovered(tmp_path: P
         raise AssertionError(f"could not reopen db after SIGKILL: {last_exc}")
     try:
         assert _understand_job_states(conn) == {JobState.CLAIMED.value}
-        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] >= 1
+        assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] >= n_jobs
         assert not _has_entity(conn, typ="person", name="Priya Natarajan")
         assert not _has_alias(conn, canonical="Internal Onboarding Guide", alias="Onboarding Guide")
         audits_before = _consolidated_audit_count(conn)
@@ -1306,7 +1307,7 @@ def test_sigkill_mid_drain_holds_consolidation_until_lease_recovered(tmp_path: P
         recovered_at = moment + timedelta(hours=2)
         understand_block_reason(conn, day_id, now=recovered_at)
         assert JobState.CLAIMED.value not in _understand_job_states(conn)
-        assert _drain_acme(conn, now=recovered_at) >= 1
+        assert _drain_acme(conn, now=recovered_at) >= n_jobs
         assert JobState.PENDING.value not in _understand_job_states(conn)
         assert JobState.CLAIMED.value not in _understand_job_states(conn)
         consolidate_working_day(
