@@ -263,7 +263,7 @@ Worker scheduling and memory governance with the LLM (sequential loading on 8 GB
 | 4 | Diarization in V2.0 and acceptable licensing/offline constraints | after V1.1 |
 | 5 | Supported maximum duration/size defaults | A1 benchmarks |
 
-**Parked: larger model for 32 GB primary profile (post-POC)** — not meetings scope; recorded here because it is a V1.1-era roadmap item. V1/POC stays on `llama3.2:3b` on both hardware profiles (plan §14 #9, Kieran 16:43). A larger model for the 32 GB primary profile is out of POC and out of V1.1. Any future model must still pass the 8 GB min-spec gate on 3B (16:42). Canonical entry: `docs/ROADMAP.md`.
+**V1 LLM bake-off (not meetings scope):** larger 7–9B Q4 models are allowed in V1; they are not parked post-POC. Canonical entry: `docs/ROADMAP.md` and `docs/decisions/0007-m3-model-and-min-spec.md`.
 
 ## 12. Immediate next steps
 

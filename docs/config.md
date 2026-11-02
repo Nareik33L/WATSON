@@ -43,20 +43,21 @@ those frames. There is no way to drop the defaults by replacing
 
 `[intelligence]` selects the local adapter (plan D6 / ADR 0001). No cloud
 endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
-`llm_model = "llama3.2:3b"`, `embedding_model = "nomic-embed-text"`,
+`llm_model = "qwen2.5:3b"`, `embedding_model = "nomic-embed-text"`,
 `ollama_host = "http://127.0.0.1:11434"`, `vlm_enabled = false`,
 `context_window = 4096`, `keep_alive = "5m"`, `temperature = 0.0`,
 `entity_similarity_threshold = 0.80`, `retrieve_top_k = 5`.
 
-`[intelligence.ollama]` is the HTTP client: `timeout_s = 300` (passed to
-`/api/chat` and `/api/embed`; the urllib default of 120 s is too short for
-llama3.2:3b on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
-`num_predict = 512` (sized to the understanding JSON schema), and
-`unload_between_phases = true` unloads resident models at sub-phase
-boundaries (understanding chat → understanding embed → consolidation →
-summary). At most one model is resident; chat completions for a batch run
-before any resolver embeddings.
-Chat options always send `temperature = 0`, `num_ctx`, and `num_predict`.
+`[intelligence.ollama]` is the HTTP client: `timeout_s = 300` for 3B
+(passed to `/api/chat` and `/api/embed`; 7–9B presets use 900 s so a 7B
+can finish on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
+`num_predict = 512` (sized to the understanding JSON schema; structured
+repair retries use 256), and `unload_between_phases = true` unloads
+resident models at sub-phase boundaries (understanding chat →
+understanding embed → consolidation → summary). At most one model is
+resident; chat completions for a batch run before any resolver embeddings.
+Chat and unload calls always send `temperature = 0` (chat), `num_ctx`,
+`num_predict`, and `keep_alive`.
 
 The understanding **v3** prompt (`prompt_version = understanding/v3`,
 `PIPELINE_VERSION = 3`) caps numbered merged OCR at **3000 characters**
@@ -65,10 +66,12 @@ schema, and `num_predict = 512`, that fits the default 4096-token window.
 Existing `understanding/v1` / `pipeline_version = 1` and `understanding/v2`
 / `pipeline_version = 2` rows stay readable.
 
-The default chat model is `llama3.2:3b`. Flip to the §14 fallback with
-`intelligence.llm_model = "qwen2.5:3b"`, `WATSON_LLM_MODEL=qwen2.5:3b`,
-or `watson eval --llm-model qwen2.5:3b`. In code the one-line switch is
-`DEFAULT_LLM_MODEL = FALLBACK_LLM_MODEL`.
+The code default chat model is `qwen2.5:3b` until the bake-off winner is
+sent (plan §14, Kieran 21:53/21:55). The V1 default will be the largest
+model that completes on 8 GB at strict precision ≥ 0.85. Select a
+candidate without editing `config.toml`: `WATSON_LLM_MODEL=gemma2:9b` or
+`watson eval --llm-model gemma2:9b` (also `llama3.1:8b`, `qwen2.5:7b`,
+`llama3.2:3b`). That applies the per-model timeout / `num_ctx` preset.
 
 `entity_similarity_threshold` is the embedding cosine above which a
 free-text project/people candidate merges into an existing entity
