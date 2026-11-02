@@ -275,7 +275,7 @@ def test_doctor_and_db_commands(
 
     assert cli.main(["db", "upgrade"]) == 0
     upgraded = capsys.readouterr().out
-    assert "0008_m3d_daily_summaries" in upgraded
+    assert "0009_m3_achievement_links" in upgraded
     assert TEST_KEY.hex() not in upgraded
 
     assert cli.main(["db", "status"]) == 0

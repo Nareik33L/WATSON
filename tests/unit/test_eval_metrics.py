@@ -251,6 +251,36 @@ def test_jaccard_min_above_one_is_rejected(tmp_path: Path) -> None:
         load_duplicate_jaccard_min(path)
 
 
+def test_jaccard_min_one_is_accepted(tmp_path: Path) -> None:
+    """Upper bound is inclusive: a `< 1` check would reject 1.0."""
+    path = _write_jaccard_config(tmp_path, 1.0)
+    assert load_duplicate_jaccard_min(path) == 1.0
+    left = "alpha beta gamma"
+    right = "alpha beta gamma"
+    assert token_jaccard(left, right) == 1.0
+    rows = [
+        _obs("2026-10-31T09:00:00Z", description=left, segment_id="a"),
+        _obs("2026-10-31T09:08:00Z", description=right, segment_id="b"),
+    ]
+    assert duplicate_rate(rows, thresholds_path=path) == 0.5
+    below = [
+        _obs("2026-10-31T09:00:00Z", description="alpha beta gamma", segment_id="a"),
+        _obs("2026-10-31T09:08:00Z", description="alpha beta gamma delta", segment_id="b"),
+    ]
+    assert token_jaccard("alpha beta gamma", "alpha beta gamma delta") < 1.0
+    assert duplicate_rate(below, thresholds_path=path) == 0.0
+
+
+def test_jaccard_min_json_true_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "thresholds.json"
+    path.write_text(
+        '{"duplicate_observation_rate": {"max_exclusive": 0.05, "jaccard_min": true}}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"\(0, 1\]"):
+        load_duplicate_jaccard_min(path)
+
+
 def test_duplicate_jaccard_boundary_is_inclusive() -> None:
     assert load_duplicate_jaccard_min() == 0.5
     at = ("alpha beta", "alpha beta gamma delta")

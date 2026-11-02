@@ -4,13 +4,16 @@ Idempotent by ``(working_day_id, pipeline_version)``: a re-run deletes the
 previous derived rows in one transaction and inserts replacements. Daily
 narrative (step 7) cites claim ids inline; a post-processor strips invalid
 citations. Achievement candidates are rule-based: observed outcomes with
-change evidence, never ``inferred`` alone.
+change evidence, never ``inferred`` alone. Identical texts on one
+``(working_day_id, pipeline_version)`` collapse to one candidate that
+keeps every supporting claim through ``achievement_candidate_claims``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -901,6 +904,14 @@ def _insert_extract(
         )
 
 
+_ACHIEVEMENT_KEY = re.compile(r"[^a-z0-9]+")
+
+
+def _achievement_key(text: str) -> str:
+    """Case/punctuation-folded identity for collapsing duplicate achievements."""
+    return " ".join(_ACHIEVEMENT_KEY.sub(" ", text.casefold()).split())
+
+
 def _insert_achievements(
     conn: sqlcipher.Connection,
     working_day_id: str,
@@ -908,7 +919,11 @@ def _insert_achievements(
     pipeline_version: int,
     stamp: str,
 ) -> None:
-    """Observed outcomes/achievements with change evidence. Never inferred-only."""
+    """Observed outcomes/achievements with change evidence. Never inferred-only.
+
+    Duplicate texts on the same day and pipeline version become one candidate
+    that keeps every supporting claim (and that claim's evidence) as links.
+    """
     rows = conn.execute(
         """
         SELECT c.id, c.text
@@ -925,7 +940,20 @@ def _insert_achievements(
         """,
         (working_day_id, pipeline_version),
     ).fetchall()
+    groups: dict[str, list[Any]] = {}
+    order: list[str] = []
     for row in rows:
+        key = _achievement_key(str(row["text"]))
+        if not key:
+            continue
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(row)
+    for key in order:
+        members = groups[key]
+        first = members[0]
+        candidate_id = new_id()
         conn.execute(
             """
             INSERT INTO achievement_candidates (
@@ -933,15 +961,24 @@ def _insert_achievements(
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                new_id(),
+                candidate_id,
                 stamp,
                 stamp,
                 working_day_id,
-                str(row["id"]),
-                str(row["text"]),
+                str(first["id"]),
+                str(first["text"]),
                 pipeline_version,
             ),
         )
+        for member in members:
+            conn.execute(
+                """
+                INSERT INTO achievement_candidate_claims (
+                    id, created_at, updated_at, candidate_id, claim_id
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (new_id(), stamp, stamp, candidate_id, str(member["id"])),
+            )
 
 
 def _insert_summary(

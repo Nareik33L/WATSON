@@ -23,6 +23,7 @@ from watson.pipeline.consolidation import (
     CONSOLIDATE_JOB_KIND,
     ConsolidationError,
     ConsolidationWait,
+    _insert_achievements,
     _understand_jobs_for_day,
     catch_up_on_launch,
     consolidate_idempotency_key,
@@ -387,6 +388,136 @@ def test_no_achievements_from_inferred_or_unchanged(tmp_path: Path) -> None:
         assert seeded["no_change"] not in claim_ids
         assert seeded["no_evidence"] not in claim_ids
         assert len(claim_ids) == 2
+    finally:
+        conn.close()
+
+
+def _four_same_achievements(conn: object, *, distinct: bool = True) -> dict[str, object]:
+    day_id = _insert_day(conn)
+    claim_ids: list[str] = []
+    for index in range(4):
+        captured = f"2026-10-31T09:{index:02d}:00Z"
+        frame_id = _insert_frame(conn, day_id, captured_at=captured)
+        segment_id = _insert_segment(conn, day_id, frame_id, started_at=captured, line_changes=3)
+        observation_id = _insert_observation(
+            conn, segment_id, description=f"Publishing onboarding section 3 ({index})"
+        )
+        claim_ids.append(
+            _insert_claim(
+                conn,
+                observation_id,
+                day_id,
+                segment_id,
+                frame_id,
+                kind="outcome",
+                assertion="observed",
+                text="Onboarding Guide section 3 published.",
+            )
+        )
+    other_id = None
+    if distinct:
+        captured = "2026-10-31T10:00:00Z"
+        frame_id = _insert_frame(conn, day_id, captured_at=captured)
+        segment_id = _insert_segment(conn, day_id, frame_id, started_at=captured)
+        observation_id = _insert_observation(conn, segment_id, description="Pricing wrap-up")
+        other_id = _insert_claim(
+            conn,
+            observation_id,
+            day_id,
+            segment_id,
+            frame_id,
+            kind="achievement",
+            assertion="observed",
+            text="Closed the pricing thread",
+        )
+    return {"day_id": day_id, "claim_ids": claim_ids, "other_id": other_id}
+
+
+def test_duplicate_achievements_collapse_to_one_candidate_with_all_links(
+    tmp_path: Path,
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _four_same_achievements(conn)
+        _insert_achievements(
+            conn, str(seeded["day_id"]), pipeline_version=1, stamp="2026-10-31T18:30:00Z"
+        )
+        conn.commit()
+        rows = conn.execute(
+            "SELECT id, claim_id, text FROM achievement_candidates ORDER BY text, id"
+        ).fetchall()
+        assert len(rows) == 2
+        published = [row for row in rows if "Onboarding" in str(row["text"])]
+        pricing = [row for row in rows if "pricing" in str(row["text"]).casefold()]
+        assert len(published) == 1
+        assert len(pricing) == 1
+        candidate_id = str(published[0]["id"])
+        links = [
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT claim_id FROM achievement_candidate_claims
+                WHERE candidate_id = ? ORDER BY claim_id
+                """,
+                (candidate_id,),
+            )
+        ]
+        assert set(links) == set(seeded["claim_ids"])
+        assert len(links) == 4
+        evidence = conn.execute(
+            """
+            SELECT COUNT(*) FROM achievement_candidate_claims l
+            JOIN claim_evidence e ON e.claim_id = l.claim_id
+            WHERE l.candidate_id = ?
+            """,
+            (candidate_id,),
+        ).fetchone()[0]
+        assert evidence == 4
+        other_links = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT l.claim_id FROM achievement_candidate_claims l
+                WHERE l.candidate_id = ?
+                """,
+                (str(pricing[0]["id"]),),
+            )
+        }
+        assert other_links == {str(seeded["other_id"])}
+    finally:
+        conn.close()
+
+
+def test_collapsed_achievements_are_idempotent_across_consolidation(
+    tmp_path: Path,
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _four_same_achievements(conn, distinct=False)
+        runtime = _runtime()
+        day_id = str(seeded["day_id"])
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        first = derived_counts(conn, day_id)
+        assert first["achievements"] == 1
+        first_links = int(
+            conn.execute("SELECT COUNT(*) FROM achievement_candidate_claims").fetchone()[0]
+        )
+        assert first_links == 4
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        second = derived_counts(conn, day_id)
+        assert second == first
+        assert (
+            int(conn.execute("SELECT COUNT(*) FROM achievement_candidate_claims").fetchone()[0])
+            == 4
+        )
+        texts = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT text FROM achievement_candidates WHERE working_day_id = ?",
+                (day_id,),
+            )
+        ]
+        assert texts == ["Onboarding Guide section 3 published."]
     finally:
         conn.close()
 
@@ -804,7 +935,7 @@ def test_retry_requeues_dead_understand_job(tmp_path: Path) -> None:
                     ]
                 },
                 {"entity_deltas": [], "decisions": [], "commitments": []},
-            ]
+            ],
         )
         retry_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
         row = conn.execute(
@@ -1054,7 +1185,7 @@ def test_achievements_and_deltas_grounded_in_day_claims(tmp_path: Path) -> None:
                     "decisions": [{"text": "ungrounded decision", "claim_indexes": [99]}],
                     "commitments": [{"text": "ungrounded commit", "claim_indexes": [0]}],
                 },
-            ]
+            ],
         )
         consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
         counts = derived_counts(conn, seeded["day_id"], 1)
@@ -1415,7 +1546,7 @@ def test_load_claims_ignores_other_pipeline_version(tmp_path: Path) -> None:
                     ],
                     "commitments": [],
                 },
-            ]
+            ],
         )
         consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
         counts = derived_counts(conn, seeded["day_id"], 1)

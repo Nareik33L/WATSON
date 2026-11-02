@@ -53,7 +53,7 @@ def _insert_m2(conn: object) -> tuple[str, str, str]:
 def test_0006_up_down_on_empty_db(tmp_path: Path) -> None:
     path = tmp_path / "empty.db"
     command.upgrade(alembic_config(path, TEST_KEY), "0006_m3a_understanding")
-    assert upgrade_head(path, TEST_KEY) == "0008_m3d_daily_summaries"
+    assert upgrade_head(path, TEST_KEY) == "0009_m3_achievement_links"
     conn = connect(path, TEST_KEY, load_vec=False)
     try:
         assert M3 <= _tables(conn)
