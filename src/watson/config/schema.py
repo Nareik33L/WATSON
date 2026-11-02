@@ -327,7 +327,8 @@ class OllamaClientConfig(_StrictModel):
         default=DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES,
         description=(
             "Unload resident models at sub-phase boundaries "
-            "(understanding chat → understanding embed → consolidation → summary). "
+            "(understanding chat → understanding embed → consolidation). "
+            "Cluster, extract, and summary stay on one chat load. "
             "At most one model is resident."
         ),
     )

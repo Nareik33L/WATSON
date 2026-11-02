@@ -47,9 +47,10 @@ class FakeRuntime:
         self,
         messages: Sequence[Message],
         schema: Mapping[str, Any],
-        **_kwargs: object,
+        *,
+        num_predict: int | None = None,
     ) -> dict[str, Any]:
-        del schema, _kwargs
+        del schema, num_predict
         self.complete_calls += 1
         if self._queue:
             item = self._queue.pop(0)

@@ -715,13 +715,15 @@ class _ResidentSpy:
         self.end_phase_count = 0
         self.complete_calls = 0
 
-    def complete(self, messages: Any, schema: Any) -> dict[str, Any]:
+    def complete(
+        self, messages: Any, schema: Any, *, num_predict: int | None = None
+    ) -> dict[str, Any]:
         self.resident.add("chat")
         self.snapshots.append(frozenset(self.resident))
         self.events.append("complete")
         self.complete_calls += 1
         self.complete_blobs.append("\n".join(item["content"] for item in messages))
-        return self.inner.complete(messages, schema)
+        return self.inner.complete(messages, schema, num_predict=num_predict)
 
     def embed(self, texts: Any) -> list[list[float]]:
         self.resident.add("embed")
@@ -1423,7 +1425,7 @@ def test_observed_achievement_without_completion_evidence_is_downgraded(tmp_path
         kinds = {(str(row["kind"]), str(row["assertion"])) for row in rows}
         assert ("achievement", "unconfirmed") in kinds
         assert ("achievement", "observed") not in kinds
-        assert not any(str(row["kind"]) == "decision" for row in rows)
+        assert ("decision", "unconfirmed") in kinds
     finally:
         conn.close()
 
@@ -1477,6 +1479,18 @@ def test_keep_side_persists_supported_achievements_and_confirmed_decisions(
                             }
                         ],
                     },
+                    {
+                        "kind": "decision",
+                        "text": "Maybe Harbor later",
+                        "assertion": "unconfirmed",
+                        "evidence": [{"snippet": decided, "line_start": 2, "line_end": 2}],
+                    },
+                    {
+                        "kind": "commitment",
+                        "text": "Might send a draft",
+                        "assertion": "unconfirmed",
+                        "evidence": [{"snippet": committed, "line_start": 3, "line_end": 3}],
+                    },
                 ],
                 "project_candidates": [],
                 "people_candidates": [],
@@ -1499,6 +1513,8 @@ def test_keep_side_persists_supported_achievements_and_confirmed_decisions(
         assert ("achievement", "observed", "Sent Priya the pricing email") in kinds
         assert ("decision", "observed", "Use Harbor") in kinds
         assert ("commitment", "observed", "Send the draft by Friday") in kinds
+        assert ("decision", "unconfirmed", "Maybe Harbor later") in kinds
+        assert ("commitment", "unconfirmed", "Might send a draft") in kinds
         assert ("achievement", "observed", "Will finish the appendix") not in kinds
         assert ("achievement", "unconfirmed", "Will finish the appendix") in kinds
     finally:

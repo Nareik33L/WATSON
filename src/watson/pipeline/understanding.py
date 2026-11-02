@@ -675,11 +675,6 @@ def _persist_observation(
             and not any(has_completion_evidence(item.snippet) for item in supported)
         ):
             assertion = Assertion.UNCONFIRMED
-        if (
-            kind in {ClaimKind.DECISION, ClaimKind.COMMITMENT}
-            and assertion is Assertion.UNCONFIRMED
-        ):
-            continue
         claim_id = new_id()
         conn.execute(
             """

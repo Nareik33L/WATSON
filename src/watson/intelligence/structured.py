@@ -62,15 +62,12 @@ def _complete(
     num_predict: int | None = None,
 ) -> dict[str, Any]:
     complete = runtime.complete
-    if num_predict is None:
+    try:
+        loaded = complete(messages, schema, num_predict=num_predict)
+    except TypeError as exc:
+        if "num_predict" not in str(exc):
+            raise
         loaded = complete(messages, schema)
-    else:
-        try:
-            loaded = complete(messages, schema, num_predict=num_predict)
-        except TypeError as exc:
-            if "num_predict" not in str(exc):
-                raise
-            loaded = complete(messages, schema)
     if not isinstance(loaded, dict):
         raise OutputParseError("Ollama chat returned a non-object JSON value")
     return loaded

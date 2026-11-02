@@ -367,18 +367,11 @@ def test_one_load_per_subphase_chat_then_embed(monkeypatch: pytest.MonkeyPatch) 
 
     runtime.complete([{"role": "user", "content": "cluster"}], UNDERSTANDING_JSON_SCHEMA)
     runtime.complete([{"role": "user", "content": "extract"}], UNDERSTANDING_JSON_SCHEMA)
+    runtime.complete([{"role": "user", "content": "summary"}], UNDERSTANDING_JSON_SCHEMA)
     consolidation = take()
     stats = _phase_loads(consolidation)
     assert stats["chat"] == 1
     assert stats["embed"] == 0
-    assert stats["unloads"] == 0
-    runtime.end_phase()
-    take()
-
-    runtime.complete([{"role": "user", "content": "summary"}], UNDERSTANDING_JSON_SCHEMA)
-    summary = take()
-    stats = _phase_loads(summary)
-    assert stats["chat"] == 1
     assert stats["unloads"] == 0
     runtime.end_phase()
     assert max(_resident_sizes(opened)) <= 1
@@ -503,8 +496,10 @@ def test_timing_runtime_increments_timeout_counter() -> None:
     class Boom:
         name = "boom"
 
-        def complete(self, messages: object, schema: object) -> dict[str, object]:
-            del messages, schema
+        def complete(
+            self, messages: object, schema: object, *, num_predict: int | None = None
+        ) -> dict[str, object]:
+            del messages, schema, num_predict
             raise RuntimeCallError("Ollama POST /api/chat timed out")
 
         def embed(self, texts: object) -> list[list[float]]:
@@ -523,8 +518,10 @@ def test_timing_runtime_increments_timeout_counter() -> None:
     class Other:
         name = "other"
 
-        def complete(self, messages: object, schema: object) -> dict[str, object]:
-            del messages, schema
+        def complete(
+            self, messages: object, schema: object, *, num_predict: int | None = None
+        ) -> dict[str, object]:
+            del messages, schema, num_predict
             raise RuntimeCallError("Ollama chat returned a non-object JSON value")
 
         def embed(self, texts: object) -> list[list[float]]:

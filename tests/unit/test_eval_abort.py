@@ -95,8 +95,10 @@ def test_eval_writes_report_when_runtime_is_unavailable(
 class _StubRecordInner:
     name = "ollama"
 
-    def complete(self, messages: object, schema: object) -> dict[str, object]:
-        del messages, schema
+    def complete(
+        self, messages: object, schema: object, *, num_predict: int | None = None
+    ) -> dict[str, object]:
+        del messages, schema, num_predict
         return {"ok": True}
 
     def embed(self, texts: object) -> list[list[float]]:
@@ -168,10 +170,16 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
     prompts: list[str] = []
     original = RecordingRuntime.complete
 
-    def spy_complete(self: RecordingRuntime, messages: object, schema: object) -> dict[str, object]:
+    def spy_complete(
+        self: RecordingRuntime,
+        messages: object,
+        schema: object,
+        *,
+        num_predict: int | None = None,
+    ) -> dict[str, object]:
         blob = "\n".join(item["content"] for item in messages)  # type: ignore[index]
         prompts.append(blob)
-        return original(self, messages, schema)
+        return original(self, messages, schema, num_predict=num_predict)
 
     monkeypatch.setattr(RecordingRuntime, "complete", spy_complete)
     out = tmp_path / "eval"

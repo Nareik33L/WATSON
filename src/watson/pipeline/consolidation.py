@@ -680,7 +680,6 @@ def _replace_derived(
         if claims
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
     )
-    end_runtime_phase(language)
     raw_summary = (
         _summarize_day(language, claims, summary_prompt.text)
         if claims
@@ -830,7 +829,7 @@ def _summarize_day(
     result = _structured(
         language, messages, DailySummaryOutput, DAILY_SUMMARY_JSON_SCHEMA, "daily summary"
     )
-    if result is None:
+    if result is None or (claims and not result.paragraphs):
         return _fallback_summary(claims)
     return result
 

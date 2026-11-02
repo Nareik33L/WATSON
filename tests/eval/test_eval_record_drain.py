@@ -40,10 +40,12 @@ class _SlowRuntime:
         self.delay_s = delay_s
         self.complete_calls = 0
 
-    def complete(self, messages: Any, schema: Any) -> dict[str, Any]:
+    def complete(
+        self, messages: Any, schema: Any, *, num_predict: int | None = None
+    ) -> dict[str, Any]:
         time.sleep(self.delay_s)
         self.complete_calls += 1
-        return self._inner.complete(messages, schema)
+        return self._inner.complete(messages, schema, num_predict=num_predict)
 
     def embed(self, texts: Any) -> list[list[float]]:
         time.sleep(self.delay_s)

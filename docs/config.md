@@ -54,8 +54,9 @@ can finish on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
 `num_predict = 512` (sized to the understanding JSON schema; structured
 repair retries use 256), and `unload_between_phases = true` unloads
 resident models at sub-phase boundaries (understanding chat →
-understanding embed → consolidation → summary). At most one model is
-resident; chat completions for a batch run before any resolver embeddings.
+understanding embed → consolidation). Cluster, extract, and summary
+share one chat load. At most one model is resident; chat completions
+for a batch run before any resolver embeddings.
 Chat and unload calls always send `temperature = 0` (chat), `num_ctx`,
 `num_predict`, and `keep_alive`.
 

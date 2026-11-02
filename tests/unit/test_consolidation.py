@@ -29,6 +29,7 @@ from watson.pipeline.consolidation import (
     _insert_achievements,
     _project_bucket,
     _record_understand_gaps,
+    _summarize_day,
     _trim_numbered,
     _understand_jobs_for_day,
     catch_up_on_launch,
@@ -2620,7 +2621,7 @@ class _PhaseSequenceSpy:
         self.name = getattr(inner, "name", "spy")
         self.events: list[str] = []
 
-    def complete(self, messages: object, schema: object) -> object:
+    def complete(self, messages: object, schema: object, **kwargs: object) -> object:
         blob = "\n".join(item["content"] for item in messages)  # type: ignore[index]
         if "Cluster these observations" in blob:
             tag = "cluster"
@@ -2631,7 +2632,7 @@ class _PhaseSequenceSpy:
         else:
             tag = "understand"
         self.events.append(f"complete:{tag}")
-        return self.inner.complete(messages, schema)
+        return self.inner.complete(messages, schema, **kwargs)
 
     def embed(self, texts: object) -> object:
         self.events.append("embed")
@@ -2642,8 +2643,8 @@ class _PhaseSequenceSpy:
         self.inner.end_phase()
 
 
-def test_consolidate_unloads_after_extract_and_after_summary(tmp_path: Path) -> None:
-    """U9/U10: real consolidate_working_day must end_phase after extract and after summary."""
+def test_consolidate_unloads_once_after_cluster_extract_and_summary(tmp_path: Path) -> None:
+    """U9/U10: cluster+extract+summary share one chat load; unload only after the last LLM step."""
     conn = _open(tmp_path)
     try:
         seeded = _seed_day(conn)
@@ -2653,7 +2654,6 @@ def test_consolidate_unloads_after_extract_and_after_summary(tmp_path: Path) -> 
         assert spy.events[start:] == [
             "complete:cluster",
             "complete:extract",
-            "end_phase",
             "complete:summary",
             "end_phase",
         ]
@@ -2700,13 +2700,12 @@ def test_completed_understand_jobs_do_not_block_fragmented_day(tmp_path: Path) -
 
         class _FailCluster(FakeRuntime):
             def complete(self, messages, schema, **kwargs):  # type: ignore[no-untyped-def]
-                del kwargs
                 props = schema.get("properties") if isinstance(schema, dict) else None
                 if isinstance(props, dict) and "activities" in props:
                     from watson.intelligence.runtime.types import OutputParseError
 
                     raise OutputParseError("truncated clustering JSON")
-                return super().complete(messages, schema)
+                return super().complete(messages, schema, **kwargs)
 
         runtime = _FailCluster(recordings=RECORDINGS)
         consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
@@ -2854,5 +2853,14 @@ def test_fallback_summary_cites_first_claim() -> None:
     empty = _fallback_summary([])
     assert empty.paragraphs == []
     out = _fallback_summary([{"id": "claim-1", "kind": "decision", "text": "Go"}])
+    assert out.paragraphs[0].claim_ids == ["claim-1"]
+    assert "[c:claim-1]" in out.paragraphs[0].text
+
+
+def test_summarize_day_falls_back_when_model_returns_empty_paragraphs() -> None:
+    runtime = FakeRuntime(complete_queue=[{"paragraphs": []}])
+    claims = [{"id": "claim-1", "kind": "decision", "assertion": "observed", "text": "Go"}]
+    out = _summarize_day(runtime, claims, "Write the daily narrative")
+    assert out.paragraphs
     assert out.paragraphs[0].claim_ids == ["claim-1"]
     assert "[c:claim-1]" in out.paragraphs[0].text

@@ -196,9 +196,9 @@ def test_summary_prompt_is_scoped_to_day_and_version(tmp_path: Path) -> None:
         captured: list[str] = []
 
         class CaptureRuntime(FakeRuntime):
-            def complete(self, messages, schema):  # type: ignore[no-untyped-def]
+            def complete(self, messages, schema, *, num_predict=None):  # type: ignore[no-untyped-def]
                 captured.append("\n".join(item["content"] for item in messages))
-                return super().complete(messages, schema)
+                return super().complete(messages, schema, num_predict=num_predict)
 
         runtime = CaptureRuntime(recordings=RECORDINGS)
         consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
@@ -284,9 +284,7 @@ def test_summary_insert_failure_rolls_back_derived(
         conn.close()
 
 
-def test_verify_rereads_summary_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_verify_rereads_summary_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     order: list[str] = []
 
     def missing(*_a: object, **_k: object) -> None:

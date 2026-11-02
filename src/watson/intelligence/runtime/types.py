@@ -76,7 +76,8 @@ class LanguageRuntime(Protocol):
         self,
         messages: Sequence[Message],
         schema: Mapping[str, Any],
-        **kwargs: Any,
+        *,
+        num_predict: int | None = None,
     ) -> dict[str, Any]:
         """Schema-constrained completion. Returns a JSON object."""
 

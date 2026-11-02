@@ -23,8 +23,9 @@ class OllamaRuntime:
 
     When ``unload_between_phases`` is on, at most one model is resident
     (§11.4). ``keep_alive: 0`` runs at sub-phase boundaries (understanding
-    chat → understanding embed → consolidation → summary) and whenever a
-    call would otherwise load a second model.
+    chat → understanding embed → consolidation) and whenever a call would
+    otherwise load a second model. Cluster, extract, and summary stay on
+    the same resident chat model; do not unload between those steps.
     """
 
     name = "ollama"
