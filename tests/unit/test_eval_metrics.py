@@ -8,10 +8,14 @@ from pathlib import Path
 import pytest
 
 from watson.intelligence.eval.metrics import (
+    ITEM_MATCH_JACCARD_MIN,
     completed_accuracy,
     duplicate_rate,
     f1_score,
+    item_jaccard,
+    items_match,
     names_match,
+    pair_item_matches,
     pair_matches,
     precision,
     recall,
@@ -112,14 +116,17 @@ def test_matching_tolerance_rejects_different_person_day_object() -> None:
     assert not names_match("Send the Harbor checklist to Mina Okonkwo by Wednesday", gold)
     assert not names_match("Send the Harbor checklist to Ellis Voss by Friday", gold)
     assert not names_match("Send the Harbor hours grid to Ellis Voss by Wednesday", gold)
-    assert precision(
-        [
-            "Send the Harbor checklist to Mina Okonkwo by Wednesday",
-            "Send the Harbor checklist to Ellis Voss by Friday",
-            "Send the Harbor hours grid to Ellis Voss by Wednesday",
-        ],
-        [gold],
-    ) == 0.0
+    assert (
+        precision(
+            [
+                "Send the Harbor checklist to Mina Okonkwo by Wednesday",
+                "Send the Harbor checklist to Ellis Voss by Friday",
+                "Send the Harbor hours grid to Ellis Voss by Wednesday",
+            ],
+            [gold],
+        )
+        == 0.0
+    )
 
 
 def test_f1_is_not_accuracy() -> None:
@@ -698,6 +705,78 @@ def test_each_threshold_fails_on_deliberately_bad_value() -> None:
         gate = gate_metrics(metrics, rules)
         assert gate["passed"] is False, name
         assert name in gate["failures"], name
+
+
+def test_item_match_threshold_is_the_named_constant() -> None:
+    """A single named cutoff; 0.7 rejects a one-token swap on a 5-token item."""
+    assert ITEM_MATCH_JACCARD_MIN == 0.7
+    five = ("alpha beta gamma delta epsilon", "alpha beta gamma delta zeta")
+    assert item_jaccard(*five) == pytest.approx(4 / 6)
+    assert item_jaccard(*five) < ITEM_MATCH_JACCARD_MIN
+    assert not items_match(*five)
+
+
+def test_item_match_accepts_bakeoff_commitment_paraphrase() -> None:
+    """FP-table true match: first-person + stopwords vs gold addressee."""
+    predicted = "I will send the slide outline tomorrow"
+    gold = "Send Priya the slide outline tomorrow"
+    assert item_jaccard(predicted, gold) == pytest.approx(4 / 5)
+    assert items_match(predicted, gold)
+    assert pair_item_matches([predicted], [gold]) == 1
+    assert precision([predicted], [gold], matches=pair_item_matches) == 1.0
+    assert recall([predicted], [gold], matches=pair_item_matches) == 1.0
+    assert not names_match(predicted, gold)
+
+
+def test_item_match_accepts_bakeoff_completed_paraphrase() -> None:
+    """FP-table true match: copula 'is' is a stopword, not a different object."""
+    predicted = "Cedar Onboarding page 1 is published"
+    gold = "Cedar Onboarding page 1 published"
+    assert item_jaccard(predicted, gold) == 1.0
+    assert items_match(predicted, gold)
+    not_done = ["Cedar Onboarding page 2 (still a draft)"]
+    assert completed_accuracy([predicted], [gold], not_done) == 1.0
+    assert unsupported_count([predicted], [gold]) == 0
+    assert not names_match(predicted, gold)
+
+
+def test_item_match_rejects_different_person_day_object() -> None:
+    """Near-miss negatives: a different person, day, or object must not match."""
+    gold = "Send Priya the slide outline tomorrow"
+    person = "I will send Mina the slide outline tomorrow"
+    day = "I will send the slide outline Friday"
+    obj = "I will send the hours grid tomorrow"
+    assert item_jaccard(person, gold) == pytest.approx(4 / 6)
+    assert item_jaccard(day, gold) == pytest.approx(3 / 6)
+    assert item_jaccard(obj, gold) == pytest.approx(2 / 7)
+    assert not items_match(person, gold)
+    assert not items_match(day, gold)
+    assert not items_match(obj, gold)
+    assert pair_item_matches([person, day, obj], [gold]) == 0
+    assert precision([person, day, obj], [gold], matches=pair_item_matches) == 0.0
+
+
+def test_item_match_rejects_different_completed_object() -> None:
+    """Page 2 is not page 1 — one content token is enough to fall under 0.7."""
+    gold = "Cedar Onboarding page 1 published"
+    other = "Cedar Onboarding page 2 is published"
+    assert item_jaccard(other, gold) == pytest.approx(4 / 6)
+    assert not items_match(other, gold)
+    assert unsupported_count([other], [gold]) == 1
+
+
+def test_pair_item_matches_is_one_to_one_by_best_score() -> None:
+    """Each prediction consumes at most one gold; higher Jaccard wins first."""
+    gold = "Send Priya the slide outline tomorrow"
+    weaker = "I will send Priya the slide outline"
+    exact = "Send Priya the slide outline tomorrow"
+    assert item_jaccard(weaker, gold) == pytest.approx(4 / 5)
+    assert item_jaccard(exact, gold) == 1.0
+    assert pair_item_matches([weaker, exact], [gold]) == 1
+    assert precision([weaker, exact], [gold], matches=pair_item_matches) == 0.5
+    assert recall([weaker, exact], [gold], matches=pair_item_matches) == 1.0
+    two_gold = [gold, "Keep the Harbor walkthrough on Thursday"]
+    assert pair_item_matches([weaker, exact], two_gold) == 1
 
 
 def test_completed_accuracy_penalizes_false_completions() -> None:

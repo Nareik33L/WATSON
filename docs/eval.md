@@ -77,3 +77,19 @@ footprint -p <pid>    # look for phys_footprint
 One config: `src/watson/intelligence/eval/thresholds.json` (plan §11.2). Hard gates: unsupported achievements = 0; claims-with-evidence = 100%; citations-resolvable = 100% over a **non-empty** citation set when the day has claims.
 
 `duplicate_observation_rate` measures **over-segmentation**, not per-segment extras (those are always 0: `observations` is `UNIQUE(segment_id, pipeline_version)`). An observation is a duplicate when it immediately follows an adjacent segment with the **same app** (`bundle_id`) **and** the **same window** (`window_title_norm`) **and** a token-set Jaccard similarity **≥ 0.5** against the previous description. Tokens are the case-folded, punctuation-stripped words from `normalize()`. Rotating the first verb still counts (paraphrase). A later revisit after a different app or window does not. The cutoff lives on `duplicate_observation_rate.jaccard_min` in `thresholds.json` (default 0.5). Load-time validation requires `0 < jaccard_min <= 1`. The rate threshold `< 0.05` is not lowered to match replay.
+
+## Item matching (decisions, commitments, completed)
+
+People and projects still use `names_match`: normalized equality or substring (so `Priya Natarajan` matches `Priya Natarajan (Acme)`).
+
+Decisions, commitments, and completed / achievement items use wording-tolerant matching in `metrics.py`:
+
+1. `normalize()` — case-fold, strip parentheticals, drop punctuation.
+2. Drop a closed stopword list (`a`, `an`, `and`, `is`, `the`, `to`, `will`, …).
+3. Token-set Jaccard via the existing helper (`item_jaccard` is `token_jaccard` on the filtered tokens).
+4. A pair matches when the normalized strings are identical **or** Jaccard ≥ `ITEM_MATCH_JACCARD_MIN` (0.7).
+5. Pairing is **1:1**, greedy by best score, then prediction order. One prediction cannot consume two gold items.
+
+`0.7` is high enough to reject a single content-token swap on a typical 5-token item (Jaccard 4/6 ≈ 0.667) — a different person, a different day, or a different object — and low enough to accept the bake-off paraphrases after stopword stripping. Examples that must match: `I will send the slide outline tomorrow` vs `Send Priya the slide outline tomorrow` (4/5 = 0.8); `Cedar Onboarding page 1 is published` vs `Cedar Onboarding page 1 published` (1.0). Examples that must not: Mina in place of Priya (4/6 ≈ 0.667); Friday in place of tomorrow (0.5); hours grid in place of slide outline (2/7 ≈ 0.286); page 2 in place of page 1 (4/6 ≈ 0.667).
+
+This constant is **not** in `thresholds.json`. Changing it does not loosen the §11.2 quality gates.
