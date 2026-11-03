@@ -166,13 +166,15 @@ def _insert_observation(
     description: str = "Editing Acme",
     pipeline_version: int = PIPELINE_VERSION,
     project_candidates: list[str] | None = None,
+    people_candidates: list[str] | None = None,
 ) -> str:
     obs_id, stamp = new_id(), "2026-10-31T10:00:00Z"
-    raw_json = (
-        "{}"
-        if project_candidates is None
-        else json.dumps({"project_candidates": project_candidates})
-    )
+    payload: dict[str, object] = {}
+    if project_candidates is not None:
+        payload["project_candidates"] = project_candidates
+    if people_candidates is not None:
+        payload["people_candidates"] = people_candidates
+    raw_json = "{}" if not payload else json.dumps(payload)
     conn.execute(
         """
         INSERT INTO observations (

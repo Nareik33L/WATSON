@@ -26,6 +26,8 @@ from tests.unit.test_dashboard_pages import (
 )
 from watson.config import load_config
 from watson.dashboard.app import PACKAGE_DIR, create_app
+from watson.memory.corrections import record_claim_correction
+from watson.pipeline.frames import PIPELINE_VERSION
 
 
 def _seed_memory(conn: object) -> dict[str, str]:
@@ -312,6 +314,118 @@ def test_memory_is_scoped_by_day_and_pipeline_version(data_dir: Path, key_provid
     assert "older-day claim" in client.get("/memory?date=2026-10-30").text
     assert v2_claim
     assert older_claim
+
+
+def test_memory_surfaces_orphaned_correction_after_version_bump(
+    data_dir: Path, key_provider: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        seeded = _seed_memory(conn)
+        frame_id = str(
+            conn.execute(
+                "SELECT frame_id FROM claim_evidence WHERE claim_id = ?",
+                (seeded["claim_id"],),
+            ).fetchone()[0]
+        )
+        segment_id = str(
+            conn.execute(
+                "SELECT segment_id FROM claim_evidence WHERE claim_id = ?",
+                (seeded["claim_id"],),
+            ).fetchone()[0]
+        )
+        observation_id = str(
+            conn.execute(
+                "SELECT observation_id FROM claims WHERE id = ?", (seeded["claim_id"],)
+            ).fetchone()[0]
+        )
+        prior = _insert_claim(
+            conn,
+            observation_id,
+            seeded["day_id"],
+            segment_id,
+            frame_id,
+            kind="decision",
+            assertion="observed",
+            text="retired prior claim",
+            pipeline_version=PIPELINE_VERSION - 1,
+            snippet="Retired OCR line",
+        )
+        record_claim_correction(
+            conn,
+            prior,
+            "correct",
+            new_text="retired wording",
+            pipeline_version=PIPELINE_VERSION - 1,
+        )
+    finally:
+        conn.close()
+    client = _client()
+    page = client.get("/memory")
+    assert "Edited the Acme draft" in page.text
+    assert "retired wording" in page.text
+    assert "orphaned" in page.text
+    assert 'id="orphan-' in page.text
+    payload = client.get("/api/claims").json()
+    assert payload["claims"][0]["text"] == "Edited the Acme draft"
+    assert len(payload["orphans"]) == 1
+    assert payload["orphans"][0]["target_id"] == prior
+    assert payload["orphans"][0]["action"] == "correct"
+    assert payload["orphans"][0]["new_text"] == "retired wording"
+
+
+def test_memory_applies_prior_version_correction_to_same_item(
+    data_dir: Path, key_provider: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        seeded = _seed_memory(conn)
+        frame_id = str(
+            conn.execute(
+                "SELECT frame_id FROM claim_evidence WHERE claim_id = ?",
+                (seeded["claim_id"],),
+            ).fetchone()[0]
+        )
+        segment_id = str(
+            conn.execute(
+                "SELECT segment_id FROM claim_evidence WHERE claim_id = ?",
+                (seeded["claim_id"],),
+            ).fetchone()[0]
+        )
+        observation_id = str(
+            conn.execute(
+                "SELECT observation_id FROM claims WHERE id = ?", (seeded["claim_id"],)
+            ).fetchone()[0]
+        )
+        prior = _insert_claim(
+            conn,
+            observation_id,
+            seeded["day_id"],
+            segment_id,
+            frame_id,
+            kind="activity",
+            assertion="observed",
+            text="Edited the Acme draft",
+            pipeline_version=PIPELINE_VERSION - 1,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        record_claim_correction(
+            conn,
+            prior,
+            "correct",
+            new_text="Shipped the Acme draft",
+            pipeline_version=PIPELINE_VERSION - 1,
+        )
+    finally:
+        conn.close()
+    client = _client()
+    page = client.get("/memory")
+    assert "Shipped the Acme draft" in page.text
+    assert "orphaned" not in page.text
+    payload = client.get("/api/claims").json()
+    assert payload["orphans"] == []
+    assert payload["claims"][0]["text"] == "Shipped the Acme draft"
+    assert payload["claims"][0]["action"] == "correct"
 
 
 def test_hostile_correction_text_is_escaped(data_dir: Path, key_provider: object) -> None:

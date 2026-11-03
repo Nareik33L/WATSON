@@ -12,7 +12,12 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
-from watson.memory.corrections import claim_histories, overlay_from_history
+from watson.memory.corrections import (
+    Correction,
+    match_claim_corrections,
+    orphaned_corrections,
+    overlay_from_history,
+)
 from watson.pipeline.day_page import DayChoice, _choices
 from watson.pipeline.frames import PIPELINE_VERSION
 
@@ -31,11 +36,23 @@ class MemoryClaim:
 
 
 @dataclass(frozen=True)
+class OrphanedMemoryCorrection:
+    id: str
+    target_type: str
+    target_id: str
+    action: str
+    new_text: str | None
+    pipeline_version: int
+    created_at: str
+
+
+@dataclass(frozen=True)
 class MemoryPage:
     date: str | None
     working_day_id: str | None
     choices: tuple[DayChoice, ...]
     claims: tuple[MemoryClaim, ...]
+    orphans: tuple[OrphanedMemoryCorrection, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +73,18 @@ class MemoryPage:
                 }
                 for item in self.claims
             ],
+            "orphans": [
+                {
+                    "id": item.id,
+                    "target_type": item.target_type,
+                    "target_id": item.target_id,
+                    "action": item.action,
+                    "new_text": item.new_text,
+                    "pipeline_version": item.pipeline_version,
+                    "created_at": item.created_at,
+                }
+                for item in self.orphans
+            ],
         }
 
 
@@ -69,7 +98,7 @@ def collect_memory(
     choices = _choices(conn)
     chosen = date if date is not None else (choices[0].date if choices else None)
     if chosen is None:
-        return MemoryPage(date=None, working_day_id=None, choices=(), claims=())
+        return MemoryPage(date=None, working_day_id=None, choices=(), claims=(), orphans=())
     day = conn.execute(
         """
         SELECT id, date FROM working_days WHERE date = ?
@@ -78,19 +107,21 @@ def collect_memory(
         (chosen,),
     ).fetchone()
     if day is None:
-        return MemoryPage(date=chosen, working_day_id=None, choices=choices, claims=())
+        return MemoryPage(date=chosen, working_day_id=None, choices=choices, claims=(), orphans=())
     day_id = str(day["id"])
+    claims, orphans = _claims(conn, day_id, pipeline_version)
     return MemoryPage(
         date=str(day["date"]),
         working_day_id=day_id,
         choices=choices,
-        claims=_claims(conn, day_id, pipeline_version),
+        claims=claims,
+        orphans=orphans,
     )
 
 
 def _claims(
     conn: sqlcipher.Connection, working_day_id: str, pipeline_version: int
-) -> tuple[MemoryClaim, ...]:
+) -> tuple[tuple[MemoryClaim, ...], tuple[OrphanedMemoryCorrection, ...]]:
     rows = conn.execute(
         """
         SELECT c.id AS id, c.kind AS kind, c.assertion AS assertion, c.text AS text,
@@ -103,9 +134,15 @@ def _claims(
         (working_day_id, pipeline_version),
     ).fetchall()
     quotes = _quotes(conn, working_day_id, pipeline_version)
-    histories = claim_histories(
-        conn, working_day_id=working_day_id, pipeline_version=pipeline_version
-    )
+    claim_dicts = [
+        {"id": str(row["id"]), "kind": str(row["kind"]), "text": str(row["text"])} for row in rows
+    ]
+    histories = match_claim_corrections(
+        conn,
+        claim_dicts,
+        working_day_id=working_day_id,
+        pipeline_version=pipeline_version,
+    )[0]
     out: list[MemoryClaim] = []
     for row in rows:
         ident = str(row["id"])
@@ -126,7 +163,25 @@ def _claims(
                 action=None if latest is None else latest.action,
             )
         )
-    return tuple(out)
+    orphans = tuple(
+        _memory_orphan(item)
+        for item in orphaned_corrections(
+            conn, working_day_id=working_day_id, pipeline_version=pipeline_version
+        )
+    )
+    return tuple(out), orphans
+
+
+def _memory_orphan(item: Correction) -> OrphanedMemoryCorrection:
+    return OrphanedMemoryCorrection(
+        id=item.id,
+        target_type=item.target_type,
+        target_id=item.target_id,
+        action=item.action,
+        new_text=item.new_text,
+        pipeline_version=item.pipeline_version,
+        created_at=item.created_at,
+    )
 
 
 def _quotes(
