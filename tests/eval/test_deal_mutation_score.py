@@ -84,8 +84,14 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         "collapse-jaccard",
         "            if not (kept_cited & cited):\n                continue\n",
         (
-            "            if not (kept_cited & cited)"
-            " or _token_jaccard(kept_text, claim.text) < 0.7:\n"
+            "            if not (kept_cited & cited):\n"
+            "                continue\n"
+            "            _left = set(content_tokens(next("
+            "c.text for c in kept if c.deal == deal and c.slot == slot "
+            "and cover_ids.get(c.id) == kept_cover)))\n"
+            "            _right = set(content_tokens(claim.text))\n"
+            "            if not _left or not _right or "
+            "len(_left & _right) / len(_left | _right) < 0.7:\n"
             "                continue\n"
         ),
     ),
@@ -199,12 +205,12 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         (
             "        if duplicate:\n"
             "            continue\n"
-            "        rows.append((claim.deal, claim.slot, covered, cited, claim.text))\n"
+            "        rows.append((claim.deal, claim.slot, covered, cited))\n"
         ),
         (
             "        if False and duplicate:\n"
             "            continue\n"
-            "        rows.append((claim.deal, claim.slot, covered, cited, claim.text))\n"
+            "        rows.append((claim.deal, claim.slot, covered, cited))\n"
         ),
     ),
     (

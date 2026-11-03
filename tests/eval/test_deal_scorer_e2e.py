@@ -880,6 +880,31 @@ def test_collapse_requires_citation_overlap() -> None:
     assert score.summary.what_happened_recall == pytest.approx(1.0)
 
 
+def test_same_cover_different_wording_collapses_once() -> None:
+    """Same facts and overlapping cites count once, whatever the wording."""
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call q4 deck")},
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1",)),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    pair = _pred(
+        day,
+        claims=[
+            _claim("joined the pricing call q4 deck", claim_id="c1"),
+            _claim("reviewed q4 deck on the pricing call", claim_id="c2"),
+        ],
+    )
+    score = score_deals(gold, pair)
+    assert score.summary.correct == 1
+    assert score.summary.claims == 2
+    assert score.summary.what_happened_recall == pytest.approx(0.5)
+    assert score.summary.precision == pytest.approx(0.5)
+
+
 def test_partial_citation_overlap_collapses_same_cover() -> None:
     """Same covered-fact set with overlapping (not equal) citations counts once."""
     day = _day(

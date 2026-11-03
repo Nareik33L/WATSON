@@ -1857,14 +1857,6 @@ def _pair_claims(
     return _maximum_claim_fact_matching(candidates, cover_of)
 
 
-def _token_jaccard(left: str, right: str) -> float:
-    a = set(content_tokens(left))
-    b = set(content_tokens(right))
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
 def _matching_representatives(
     claims: Sequence[PredictedClaim],
     cover_ids: dict[str, frozenset[str]],
@@ -1876,7 +1868,7 @@ def _matching_representatives(
     Priya→Acme and Acme→Priya sentences can both match. File order is not used.
     """
     kept: list[PredictedClaim] = []
-    rows: list[tuple[str, str, frozenset[str], frozenset[str], str]] = []
+    rows: list[tuple[str, str, frozenset[str], frozenset[str]]] = []
     for claim in claims:
         covered = cover_ids.get(claim.id, frozenset())
         cited = cited_of.get(claim.id, frozenset())
@@ -1884,20 +1876,18 @@ def _matching_representatives(
             kept.append(claim)
             continue
         duplicate = False
-        for deal, slot, kept_cover, kept_cited, kept_text in rows:
+        for deal, slot, kept_cover, kept_cited in rows:
             if deal != claim.deal or slot != claim.slot:
                 continue
             if covered != kept_cover:
                 continue
             if not (kept_cited & cited):
                 continue
-            if not kept_text:
-                continue
             duplicate = True
             break
         if duplicate:
             continue
-        rows.append((claim.deal, claim.slot, covered, cited, claim.text))
+        rows.append((claim.deal, claim.slot, covered, cited))
         kept.append(claim)
     return kept
 
