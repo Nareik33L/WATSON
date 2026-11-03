@@ -192,6 +192,26 @@ def _seed(conn: object) -> str:
             """,
             (new_id(), stamp, stamp, claim_id, segment_id, frame_id),
         )
+        if kind == "decision":
+            conn.execute(
+                """
+                INSERT INTO decisions (
+                    id, created_at, updated_at, working_day_id, text, claim_ids,
+                    prompt_version, pipeline_version
+                ) VALUES (?, ?, ?, ?, ?, ?, 'day_extract/v1', ?)
+                """,
+                (new_id(), stamp, stamp, day_id, text, f'["{claim_id}"]', PIPELINE_VERSION),
+            )
+        elif kind == "commitment":
+            conn.execute(
+                """
+                INSERT INTO commitments (
+                    id, created_at, updated_at, working_day_id, text, status, due_hint,
+                    claim_ids, prompt_version, pipeline_version
+                ) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, 'day_extract/v1', ?)
+                """,
+                (new_id(), stamp, stamp, day_id, text, f'["{claim_id}"]', PIPELINE_VERSION),
+            )
     conn.execute(
         """
         INSERT INTO daily_summaries (
@@ -229,7 +249,7 @@ def test_score_day_does_not_swap_decision_precision_and_recall(tmp_path: Path) -
     conn = _open(tmp_path)
     try:
         day_id = _seed(conn)
-        conn.execute("DELETE FROM claims WHERE kind = 'decision' AND text LIKE '%rate card%'")
+        conn.execute("DELETE FROM decisions WHERE text LIKE '%rate card%'")
         conn.commit()
         metrics = score_day(conn, day_id, TRUTH)
         assert metrics["decisions_recall"] == 0.5
@@ -415,5 +435,151 @@ def test_claims_with_evidence_is_not_count_of_claims(tmp_path: Path) -> None:
         assert metrics["claims_with_evidence"] == 0.0
         predicted = collect_predicted(conn, day_id)
         assert predicted["claims_with_evidence"] == 0.0
+    finally:
+        conn.close()
+
+
+def _add_claim(
+    conn: object,
+    day_id: str,
+    observation_id: str,
+    *,
+    kind: str,
+    text: str,
+    stamp: str = "2026-10-31T09:00:00Z",
+) -> str:
+    claim_id = new_id()
+    conn.execute(
+        """
+        INSERT INTO claims (
+            id, created_at, updated_at, observation_id, working_day_id, kind, text,
+            assertion, confidence, status, due_hint, pipeline_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'observed', 0.8, NULL, NULL, ?)
+        """,
+        (claim_id, stamp, stamp, observation_id, day_id, kind, text, PIPELINE_VERSION),
+    )
+    return claim_id
+
+
+def _observation_id(conn: object, day_id: str) -> str:
+    return str(
+        conn.execute(
+            """
+            SELECT o.id FROM observations o
+            JOIN segments s ON s.id = o.segment_id
+            WHERE s.working_day_id = ?
+            """,
+            (day_id,),
+        ).fetchone()[0]
+    )
+
+
+def test_commitments_precision_counts_derived_items_not_claims(tmp_path: Path) -> None:
+    """§11.2 precision denominator is day-level derived rows, not per-segment claims.
+
+    A day with 2 derived commitments and ~18 unmatched understand-stage claims
+    used to score ~0.05 (1/20) even when both derived items matched truth.
+    """
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        observation_id = _observation_id(conn, day_id)
+        extras = [
+            "Can we move the demo to 14 Nov? The procurement panel is travelling.",
+            "Add a pricing stub only",
+            "I will update the draft.",
+            "Please send revised pricing by Friday so we can lock the Q4 statement of work.",
+            "Paste these three tiers into the proposal.",
+            "TODO: finish Q4 delivery risks appendix.",
+            "I will send this by Friday as promised.",
+            "I still owe you the risks appendix.",
+            "Demo: 14 Nov (agreed with Tom Ashworth).",
+            "Risk stub: harbor berth works / unnamed engineers.",
+            "anvil: saved 15:55",
+            "The Acme proposal is a separate draft and is not published.",
+            "I will send revised pricing today.",
+            "Commit to complete project X by Q4",
+            "Promise to review project Y's progress monthly",
+            "Inbox glance only.",
+            "Video tiles only.",
+            "Hours grid is the remaining item.",
+        ]
+        for text in extras:
+            _add_claim(conn, day_id, observation_id, kind="commitment", text=text)
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
+        predicted = collect_predicted(conn, day_id)
+        assert predicted["commitments"] == [
+            "Flag Q4 delivery risks in the proposal appendix",
+            "Send revised pricing to Priya by Friday",
+        ]
+        assert metrics["commitments_precision"] == 1.0
+        assert metrics["commitments_recall"] == 1.0
+        assert metrics["commitments_precision"] != 2 / (2 + len(extras))
+    finally:
+        conn.close()
+
+
+def test_empty_derived_commitments_are_not_diluted_by_claims(tmp_path: Path) -> None:
+    """Empty truth + empty derived table is vacuous 1.0, even if claims exist."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _empty_day(conn)
+        stamp = "2026-11-06T09:30:00Z"
+        _add_observation(
+            conn,
+            day_id,
+            started_at=stamp,
+            bundle_id="com.lumen.mail",
+            window="inbox — lumen desk",
+            description="Inbox glance only.",
+        )
+        observation_id = _observation_id(conn, day_id)
+        _add_claim(conn, day_id, observation_id, kind="commitment", text="Inbox glance only.")
+        _add_claim(
+            conn,
+            day_id,
+            observation_id,
+            kind="commitment",
+            text="Commit to complete project X by Q4",
+        )
+        conn.commit()
+        metrics = score_day(conn, day_id, {**TRUTH, "commitments": []})
+        predicted = collect_predicted(conn, day_id)
+        assert predicted["commitments"] == []
+        assert metrics["commitments_precision"] == 1.0
+        assert metrics["commitments_recall"] == 1.0
+    finally:
+        conn.close()
+
+
+def test_decisions_precision_counts_derived_items_not_claims(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        observation_id = _observation_id(conn, day_id)
+        _add_claim(
+            conn,
+            day_id,
+            observation_id,
+            kind="decision",
+            text="The Current tier at 18500 is the line we recommend.",
+        )
+        _add_claim(
+            conn,
+            day_id,
+            observation_id,
+            kind="decision",
+            text="Life-ring mounts and the tide-gate latch stay on the checklist.",
+        )
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
+        predicted = collect_predicted(conn, day_id)
+        assert predicted["decisions"] == [
+            "Adopt the published three-tier rate card for Acme",
+            "Agreed to move the Acme demo to 14 Nov",
+        ]
+        assert metrics["decisions_precision"] == 1.0
+        assert metrics["decisions_recall"] == 1.0
     finally:
         conn.close()

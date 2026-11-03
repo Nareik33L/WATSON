@@ -50,8 +50,13 @@ def pair_matches(predicted: list[str], truth: list[str]) -> int:
 
 
 def precision(predicted: list[str], truth: list[str]) -> float:
+    """Empty predictions score 0.0 when truth is non-empty, 1.0 when both empty.
+
+    Both-empty stays 1.0 and remains in the day average, matching recall on
+    empty truth. We do not drop empty days from ``_aggregate``.
+    """
     if not predicted:
-        return 1.0
+        return 1.0 if not truth else 0.0
     return pair_matches(predicted, truth) / len(predicted)
 
 

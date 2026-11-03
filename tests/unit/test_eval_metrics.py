@@ -33,6 +33,56 @@ def test_empty_sets_score_perfect() -> None:
     assert unsupported_count([], []) == 0
 
 
+def test_empty_predictions_with_truth_are_not_vacuous_precision() -> None:
+    """Empty predictions vs non-empty truth is 0.0, matching recall's empty-pred case.
+
+    Both-empty stays 1.0 (same as recall on empty truth) and the day stays in
+    the average — we do not drop empty days from `_aggregate`.
+    """
+    gold = ["Send revised pricing to Priya by Friday"]
+    assert precision([], gold) == 0.0
+    assert recall([], gold) == 0.0
+    assert precision([], []) == 1.0
+    assert recall([], []) == 1.0
+
+
+def test_five_day_aggregate_fails_when_one_day_predicts_nothing() -> None:
+    """A silent day with gold items must not inflate day-average precision past the gate.
+
+    3 days at P=0.8/R=1.0, 1 day with no predictions but gold, 1 both-empty day.
+    Vacuous P=1.0 on the silent day averaged to 0.88 and passed the 0.85 gate
+    even though real precision is 0.80. After the fix the silent day is 0.0
+    (both-empty stays 1.0, like recall) so the mean is 0.68 and the gate fails.
+    """
+    gold = [f"commitment {index}" for index in range(4)]
+    predicted = [*gold, "ghost extra"]
+    assert precision(predicted, gold) == 0.8
+    assert recall(predicted, gold) == 1.0
+    silent = precision([], gold)
+    empty = precision([], [])
+    assert silent == 0.0
+    assert empty == 1.0
+    days = [
+        _all_metrics(commitments_precision=precision(predicted, gold), commitments_recall=1.0),
+        _all_metrics(commitments_precision=precision(predicted, gold), commitments_recall=1.0),
+        _all_metrics(commitments_precision=precision(predicted, gold), commitments_recall=1.0),
+        _all_metrics(
+            commitments_precision=silent,
+            commitments_recall=recall([], gold),
+        ),
+        _all_metrics(commitments_precision=empty, commitments_recall=recall([], [])),
+    ]
+    aggregate = _aggregate(days)
+    assert aggregate["commitments_precision"] == pytest.approx(0.68)
+    assert aggregate["commitments_recall"] == pytest.approx(0.80)
+    vacuous_mean = (0.8 + 0.8 + 0.8 + 1.0 + 1.0) / 5
+    assert vacuous_mean == pytest.approx(0.88)
+    assert aggregate["commitments_precision"] != pytest.approx(vacuous_mean)
+    gate = gate_metrics(aggregate, load_thresholds())
+    assert gate["passed"] is False
+    assert "commitments_precision" in gate["failures"]
+
+
 def test_f1_is_not_accuracy() -> None:
     predicted = ["Acme Q4 Proposal", "Ghost Project"]
     truth = ["Acme Q4 Proposal", "Internal Onboarding Guide"]
