@@ -1,4 +1,4 @@
-"""Deal groups for Today / History: title, cited slots, linked channels (plan §8).
+"""Deal groups for Today: title, cited slots, linked channels (plan §8 / M3f).
 
 No merged text, OCR, snippets, or other tier-2 fields. Skipped (excluded-app)
 start frames never appear. ``none`` segments stay in their own section.

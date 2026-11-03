@@ -35,11 +35,4 @@
   </div>
   {% endif %}
 </section>
-{% if history is not none and history.days %}
-  {% for item in history.days %}
-    {% with groups = item.groups, day_label = item.date %}
-      {% include "deal_groups.html" %}
-    {% endwith %}
-  {% endfor %}
-{% endif %}
 {% endblock %}

@@ -48,7 +48,7 @@
 
 {% if today is not none and today.date is not none %}
   {% if today.groups.deals or today.state in ["consolidated", "failed"] or not today.segments %}
-    {% with groups = today.groups, day_label = none %}
+    {% with groups = today.groups %}
       {% include "deal_groups.html" %}
     {% endwith %}
   {% endif %}

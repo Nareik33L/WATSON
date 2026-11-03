@@ -1,7 +1,8 @@
-"""Today / History deal groups: titles, cited slots, channels, none (plan §8).
+"""Today deal groups: titles, cited slots, channels, none (plan §8 / M3f).
 
-No-network rendering. Duplicate titles stay two cards. Empty days stay empty.
-Skipped excluded-app frames never appear. Nothing new is logged.
+History is unchanged. No-network rendering. Duplicate titles stay two cards.
+Empty days stay empty. Skipped excluded-app frames never appear. Nothing new
+is logged.
 """
 
 from __future__ import annotations
@@ -247,7 +248,7 @@ def _article(html: str, deal_id: str) -> str:
     return rest[: end + len("</article>")]
 
 
-def test_today_and_history_render_cited_deal_groups(
+def test_today_renders_cited_deal_groups(
     data_dir: Path, key_provider: object, caplog: pytest.LogCaptureFixture
 ) -> None:
     conn = open_test_db(data_dir)
@@ -277,39 +278,36 @@ def test_today_and_history_render_cited_deal_groups(
         today_api = client.get("/api/today")
         history_api = client.get("/api/history")
     assert today.status_code == 200
-    assert history.status_code == 200
-    assert days.status_code == 200
-    for page in (today, history, days):
-        body = page.text
-        article = _article(body, seeded["deal_id"])
-        assert ACME_TITLE in article
-        assert "What happened" in article
-        assert "Who involved" in article
-        assert "Next step" in article
-        assert "Sent the pricing pack" in article
-        assert f'href="#segment-{seeded["mail"]}"' in article
-        assert f'id="segment-{seeded["mail"]}"' in article
-        assert f'id="segment-{seeded["call"]}"' in article
-        assert f'id="segment-{seeded["doc"]}"' in article
-        assert "Emails" in article
-        assert "Calls" in article
-        assert "Docs" in article
-        assert "Priya / pricing" in article
-        assert "Acme pricing call" in article
-        assert "Q4 deck" in article
-        assert FERRY_TITLE not in article
-        assert "No deal" in body
-        assert FERRY_TITLE in body
-        assert "snippet" not in body
-        assert "merged_text" not in body
-        assert "ocr" not in body.lower()
+    body = today.text
+    article = _article(body, seeded["deal_id"])
+    assert ACME_TITLE in article
+    assert "What happened" in article
+    assert "Who involved" in article
+    assert "Next step" in article
+    assert "Sent the pricing pack" in article
+    assert f'href="#segment-{seeded["mail"]}"' in article
+    assert f'id="segment-{seeded["mail"]}"' in article
+    assert f'id="segment-{seeded["call"]}"' in article
+    assert f'id="segment-{seeded["doc"]}"' in article
+    assert "Emails" in article
+    assert "Calls" in article
+    assert "Docs" in article
+    assert "Priya / pricing" in article
+    assert "Acme pricing call" in article
+    assert "Q4 deck" in article
+    assert FERRY_TITLE not in article
+    assert "No deal" in body
+    assert FERRY_TITLE in body
+    assert "snippet" not in body
+    assert "merged_text" not in body
+    assert "ocr" not in body.lower()
     payload = today_api.json()
     assert payload["deals"][0]["title"] == ACME_TITLE
     assert payload["none_segments"][0]["window_title"] == FERRY_TITLE
     assert "merged_text" not in str(payload)
-    hist = history_api.json()["days"][0]
-    assert hist["deals"][0]["title"] == ACME_TITLE
-    assert hist["none_count"] == 1
+    assert f'id="deal-{seeded["deal_id"]}"' not in history.text
+    assert f'id="deal-{seeded["deal_id"]}"' not in days.text
+    assert "deals" not in history_api.json()["days"][0]
     assert FERRY_TITLE not in caplog.text
     assert "Sent the pricing pack" not in caplog.text
     assert "pricing email body" not in caplog.text
@@ -396,17 +394,18 @@ def test_duplicate_title_pair_renders_two_cards(data_dir: Path, key_provider: ob
         client = _client()
         today = client.get("/today")
         history = client.get("/history")
-    for page in (today, history):
-        assert page.text.count(f">{title}<") == 2
-        first_html = _article(page.text, ids[0])
-        second_html = _article(page.text, ids[1])
-        assert first_html != second_html
-        assert "Northwind east" in first_html
-        assert "Northwind west" not in first_html
-        assert "Northwind west" in second_html
-        assert "Northwind east" not in second_html
-        assert "Mailed the east renewal" in first_html
-        assert "Mailed the west renewal" in second_html
+    assert today.text.count(f">{title}<") == 2
+    first_html = _article(today.text, ids[0])
+    second_html = _article(today.text, ids[1])
+    assert first_html != second_html
+    assert "Northwind east" in first_html
+    assert "Northwind west" not in first_html
+    assert "Northwind west" in second_html
+    assert "Northwind east" not in second_html
+    assert "Mailed the east renewal" in first_html
+    assert "Mailed the west renewal" in second_html
+    assert f'id="deal-{ids[0]}"' not in history.text
+    assert f'id="deal-{ids[1]}"' not in history.text
 
 
 def test_empty_day_renders_no_deals(data_dir: Path, key_provider: object) -> None:
@@ -420,7 +419,6 @@ def test_empty_day_renders_no_deals(data_dir: Path, key_provider: object) -> Non
         client = _client()
         today = client.get("/today")
         history = client.get("/history")
-        days = client.get("/days?date=2026-10-31")
         today_api = client.get("/api/today")
         history_api = client.get("/api/history")
     assert today.status_code == 200
@@ -428,13 +426,10 @@ def test_empty_day_renders_no_deals(data_dir: Path, key_provider: object) -> Non
     assert "no segments" in today.text
     assert "no deals" in today.text
     assert "No deal" not in today.text
-    assert "no deals" in history.text
-    assert "No deal" not in history.text
-    assert "no deals" in days.text
+    assert "no deals" not in history.text
     assert today_api.json()["deals"] == []
     assert today_api.json()["none_segments"] == []
-    assert history_api.json()["days"][0]["deals"] == []
-    assert history_api.json()["days"][0]["none_count"] == 0
+    assert "deals" not in history_api.json()["days"][0]
 
 
 def test_excluded_app_content_stays_off_deal_groups(data_dir: Path, key_provider: object) -> None:
@@ -468,9 +463,8 @@ def test_excluded_app_content_stays_off_deal_groups(data_dir: Path, key_provider
     with runtime_network_guard():
         client = _client()
         today = client.get("/today")
-        history = client.get("/history")
         payload = client.get("/api/today").json()
-    for body in (today.text, history.text, str(payload)):
+    for body in (today.text, str(payload)):
         assert EXCLUDED_TITLE not in body
         assert "Passwords" not in body
         assert "PLANTED_EXCLUDED_OCR_MUST_NEVER_RENDER" not in body
@@ -478,11 +472,9 @@ def test_excluded_app_content_stays_off_deal_groups(data_dir: Path, key_provider
         assert f'id="segment-{bait_seg}"' not in body
 
 
-def test_unauthenticated_deal_pages_stay_closed() -> None:
+def test_unauthenticated_today_stays_closed() -> None:
     app = create_app(token=INSTALL_TOKEN, config=load_config(), port=8000)
     client = TestClient(app, base_url=ORIGIN)
     with runtime_network_guard():
         today = client.get("/today", follow_redirects=False)
-        history = client.get("/history", follow_redirects=False)
     assert today.status_code == 303
-    assert history.status_code == 303

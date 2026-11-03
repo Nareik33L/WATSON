@@ -7,7 +7,6 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
-from watson.pipeline.deal_groups import DealGroups, collect_deal_groups
 from watson.pipeline.frames import PIPELINE_VERSION
 
 
@@ -18,7 +17,6 @@ class HistoryDay:
     error: str | None
     observation_count: int
     has_summary: bool
-    groups: DealGroups = DealGroups()
 
 
 @dataclass(frozen=True)
@@ -34,8 +32,6 @@ class HistoryPage:
                     "error": item.error,
                     "observation_count": item.observation_count,
                     "has_summary": item.has_summary,
-                    "deals": item.groups.as_dict()["deals"],
-                    "none_count": len(item.groups.none_segments),
                 }
                 for item in self.days
             ]
@@ -49,7 +45,6 @@ def collect_history(
     rows = conn.execute(
         """
         SELECT
-            d.id AS id,
             d.date AS date,
             d.state AS state,
             d.consolidation_error AS error,
@@ -76,9 +71,6 @@ def collect_history(
             error=None if row["error"] is None else str(row["error"]),
             observation_count=int(row["observation_count"]),
             has_summary=int(row["summary_count"]) > 0,
-            groups=collect_deal_groups(
-                conn, working_day_id=str(row["id"]), pipeline_version=pipeline_version
-            ),
         )
         for row in rows
     )

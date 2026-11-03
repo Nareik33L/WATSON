@@ -1,5 +1,5 @@
 <section>
-  <h2>{% if day_label %}{{ day_label }} · {% endif %}Deals</h2>
+  <h2>Deals</h2>
   {% if not groups.deals %}
   <p>no deals</p>
   {% else %}
@@ -48,7 +48,7 @@
 
 {% if groups.none_segments %}
 <section>
-  <h2>{% if day_label %}{{ day_label }} · {% endif %}No deal</h2>
+  <h2>No deal</h2>
   <ul>
     {% for item in groups.none_segments %}
     <li id="segment-{{ item.id }}">

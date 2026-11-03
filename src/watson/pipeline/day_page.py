@@ -9,7 +9,6 @@ from typing import Any
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from watson.intelligence.citations import CITATION_RE
-from watson.pipeline.deal_groups import DealGroups, collect_deal_groups
 from watson.pipeline.frames import PIPELINE_VERSION
 
 
@@ -45,7 +44,6 @@ class DayPage:
     unverified: tuple[DayClaimView, ...]
     claims: tuple[DayClaimView, ...]
     cited_ids: tuple[str, ...]
-    groups: DealGroups = DealGroups()
 
 
 def collect_day_page(
@@ -103,7 +101,6 @@ def collect_day_page(
     narrative = str(summary["narrative_md"]) if summary is not None else ""
     cited = tuple(CITATION_RE.findall(narrative))
     unverified = tuple(by_id[item] for item in _unverified_ids(summary) if item in by_id)
-    groups = collect_deal_groups(conn, working_day_id=day_id, pipeline_version=pipeline_version)
     return DayPage(
         id=day_id,
         date=str(day["date"]),
@@ -114,7 +111,6 @@ def collect_day_page(
         unverified=unverified,
         claims=claims,
         cited_ids=cited,
-        groups=groups,
     )
 
 

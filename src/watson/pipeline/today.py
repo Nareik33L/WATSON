@@ -1,4 +1,4 @@
-"""Today timeline: segments, observations, and the day's summary (plan §8 / M4).
+"""Today timeline: segments, observations, deal groups, and the day's summary.
 
 No merged text, OCR, or other tier-2 fields.
 """
@@ -11,7 +11,7 @@ from typing import Any
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from watson.pipeline.day_page import DayPage, collect_day_page
-from watson.pipeline.deal_groups import DealGroups
+from watson.pipeline.deal_groups import DealGroups, collect_deal_groups
 from watson.pipeline.frames import PIPELINE_VERSION
 
 
@@ -123,7 +123,8 @@ def collect_today(
     ).fetchall()
     segments = tuple(_segment_from_row(row) for row in rows)
     day = collect_day_page(conn, date=chosen, pipeline_version=pipeline_version)
-    return TodayReport(date=chosen, segments=segments, state=day.state, day=day, groups=day.groups)
+    groups = collect_deal_groups(conn, working_day_id=day.id, pipeline_version=pipeline_version)
+    return TodayReport(date=chosen, segments=segments, state=day.state, day=day, groups=groups)
 
 
 def _segment_from_row(row: Any) -> TodaySegment:
