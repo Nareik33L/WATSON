@@ -455,6 +455,7 @@ def test_extract_amounts_currency_and_comma_groups() -> None:
     assert "amt:1" not in extract_amounts("1.2m")
     assert {"amt:9000:usd", "amt:12000:usd"} <= extract_amounts("$9–12k")
     assert {"amt:90000", "amt:120000"} <= extract_amounts("90k-120k")
+    assert {"amt:90000", "amt:120000"} <= extract_amounts("90k–120k")
     assert "amt:14" not in extract_amounts("14 Nov")
     assert "amt:14" not in extract_amounts("before the 14 Nov demo about $90k")
     assert "amt:90000:usd" in extract_amounts("before the 14 Nov demo about $90k")

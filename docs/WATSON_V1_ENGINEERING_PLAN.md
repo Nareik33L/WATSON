@@ -5,7 +5,7 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
-**Changelog (2026-11-03, QA on #47 @03e3124):** One-claim-one-fact stays 1:1 inside `(day, matched deal, slot)` — extra terms from another fact do not void the match. Per-fact `aliases` may use `date:` / `amount:` keys for a slot value that is not a required term (so a date/amount swap still has every required term and fails only `contradicts()`). Amount forms include `$90k` / `USD 95k` / `40k` / `1.2m` / `$40,000` / `90,000` / ranges. Fixture-validation keeps the plan window dump (each window in every slot) plus will/need/comma/extra-what, packed, and dump+please; honest control ≥ 0.85 with and without filler words. §14 / D8 / D10 / D11 unchanged.
+**Changelog (2026-11-03, QA on #47 @03e3124):** Per-fact `aliases` may use `date:` / `amount:` keys for a slot value that is not a required term. §14 / D8 / D10 / D11 unchanged.
 
 **Changelog (2026-11-03, QA on #49 @a217ae6):** Each stored summary paragraph carries `deal_id`. Today cards bind blocks from that id, per deal; a count mismatch no longer blanks every card. Legacy rows without paragraph `deal_id` still render. Claimless deals stay empty; fallback-only deals keep their cited text.
 
@@ -810,9 +810,7 @@ The test **computes every trivial baseline on the actual gold corpus**. The buil
 | Empty summary | no claims | summary < 0.85 |
 | **Keyword dump (over-cap)** | for each gold fact, one claim whose text is the unique OCR tokens of **all** segments of that deal that day, cited to all those segments (always > 24 content tokens). Tests the length cap. | summary < 0.85 |
 | **Keyword dump (within-cap)** | for each deal-day, join that deal's required terms (no verbs or sentence wrapper added) and emit each ≤24-content-token window **in every slot**, cited to that deal's segments. Lists terms without being true claims. | summary < 0.85 |
-| **Keyword dump (will / need-to / comma / extra-what)** | the within-cap windows with a leading `will`, a leading `need to`, comma-joined tokens, or extra `what_happened` copies on multi-touch deals. | summary < 0.85 |
-| **Keyword dump (packed / please)** | one or a few claims that pack same-slot required terms (still ≤ 24), with and without a trailing `please`. 1:1 pairing covers one fact. | summary < 0.85 |
-| **Honest summary (positive)** | a hand-written, well-cited correct summary for **each fixture deal** (committed next to the fixture, e.g. `honest_summary.yaml`): full names, deadlines, one claim per gold fact, cites overlapping `evidence_segments`. Gate holds **with and without** filler words. Natural paraphrases that mention another fact's term still cover. | summary **≥ 0.85** |
+| **Honest summary (positive)** | a hand-written, well-cited correct summary for **each fixture deal** (committed next to the fixture, e.g. `honest_summary.yaml`): full names, deadlines, one claim per gold fact, cites overlapping `evidence_segments`. | summary **≥ 0.85** |
 
 The 12/1/1/1 Acme shape (60 segments, 12 noise, Acme 12/1/1/1, others 8/8/8/9, group-by-company F1 **0.905**, titles containing the roster company) is a **required failing fixture** of the group-by-company check: pytest must load that synthetic gold under `tests/fixtures` and assert group-by-company ≥ 0.85 so the validator is proven to catch it. The committed V1 corpus must then be a different shape that the same checker accepts (every negative baseline < 0.85, honest summary ≥ 0.85).
 

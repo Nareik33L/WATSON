@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from watson.intelligence.eval.deals import (
     CONTENT_TOKEN_CAP,
     MISSING,
@@ -375,6 +377,8 @@ def test_score_deals_evidence_overlap_required() -> None:
     assert score_deals(gold, miss).summary.unsupported == 0
     assert score_deals(gold, hit).summary.correct == 1
     assert score_deals(gold, hit).summary.unsupported == 0
+    miss_day = miss.days[0]
+    assert _unsupported(day, miss_day, {"acme-q4": "acme-q4"}, miss_day.claims[0], fact) is True
 
 
 def test_score_deals_citation_only_unsupported() -> None:
@@ -441,10 +445,18 @@ def test_score_deals_content_token_cap() -> None:
 def test_score_deals_one_claim_covers_at_most_one_fact() -> None:
     day = _day(
         segments=[_seg("s1", "acme-q4", "f1")],
-        frames={"f1": Frame("f1", "pricing call q4 deck")},
+        frames={"f1": Frame("f1", "pricing call q4 deck 14 Nov demo")},
         facts=[
-            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact(
+                "f-call",
+                "acme-q4",
+                "what_happened",
+                ("pricing", "call"),
+                {"date": ("14 nov",)},
+                ("s1",),
+            ),
             GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1",)),
+            GoldFact("f-demo", "acme-q4", "what_happened", ("demo",), {}, ("s1",)),
         ],
     )
     gold = DealCorpus(days=[day])
@@ -452,12 +464,15 @@ def test_score_deals_one_claim_covers_at_most_one_fact() -> None:
     score = score_deals(gold, dump)
     assert score.summary.correct == 1
     assert score.summary.claims == 1
-    assert score.summary.what_happened_recall == 0.5
+    assert score.summary.what_happened_recall == pytest.approx(1 / 3)
     assert score.summary.precision == 1.0
-    natural = _pred(day, claims=[_claim("Edited the Q4 deck after the pricing call")])
-    natural_score = score_deals(gold, natural)
-    assert natural_score.summary.correct == 1
-    assert natural_score.summary.what_happened_recall == 0.5
+    for text in (
+        "joined the pricing call before the 14 Nov demo",
+        "Edited the Q4 deck after the pricing call",
+    ):
+        natural = score_deals(gold, _pred(day, claims=[_claim(text)]))
+        assert natural.summary.correct == 1, text
+        assert natural.summary.what_happened_recall == pytest.approx(1 / 3), text
     twins = _pred(
         day,
         claims=[
@@ -468,7 +483,7 @@ def test_score_deals_one_claim_covers_at_most_one_fact() -> None:
     twin_score = score_deals(gold, twins)
     assert twin_score.summary.correct == 2
     assert twin_score.summary.claims == 2
-    assert twin_score.summary.what_happened_recall == 1.0
+    assert twin_score.summary.what_happened_recall == pytest.approx(2 / 3)
 
 
 def test_score_deals_natural_paraphrase_keeps_date_and_extra_term() -> None:
@@ -513,6 +528,23 @@ def test_score_deals_what_modal_future_phrases_rejected() -> None:
         "plan to join the pricing call",
     ):
         assert score_deals(gold, _pred(day, claims=[_claim(text)])).summary.correct == 0, text
+
+
+def test_score_deals_ill_is_read_as_will() -> None:
+    what = GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))
+    nxt = GoldFact("n", "acme-q4", "next_step", ("send", "pricing"), {}, ("s1",))
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call send pricing")},
+        facts=[what, nxt],
+    )
+    gold = DealCorpus(days=[day])
+    past = _pred(day, claims=[_claim("I'll join the pricing call")])
+    commit = _pred(day, claims=[_claim("I'll send pricing", slot="next_step")])
+    assert score_deals(gold, past).summary.correct == 0
+    assert score_deals(gold, commit).summary.next_step_recall == 1.0
+    assert slot_modal_ok(_claim("I'll join the pricing call"), what) is False
+    assert slot_modal_ok(_claim("I'll send pricing", slot="next_step"), nxt) is True
 
 
 def test_score_deals_what_modal_will_rejected() -> None:
@@ -667,6 +699,9 @@ def test_extract_amounts_currency_forms() -> None:
     range_bare = extract_amounts("90k-120k")
     assert "amt:90000" in range_bare
     assert "amt:120000" in range_bare
+    range_en = extract_amounts("90k–120k")
+    assert "amt:90000" in range_en
+    assert "amt:120000" in range_en
     dated = extract_amounts("before the 14 Nov demo about $90k")
     assert "amt:90000:usd" in dated
     assert "amt:14" not in dated

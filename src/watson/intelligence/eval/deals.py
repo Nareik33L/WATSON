@@ -23,6 +23,7 @@ from watson.intelligence.eval.metrics import (
     _STATUS_LEMMA,
     _WEEKDAYS,
     ITEM_STOPWORDS,
+    item_normalize,
     normalize,
 )
 
@@ -900,8 +901,8 @@ def is_multi_fact_claim(claim: PredictedClaim, day: DayGold) -> bool:
 
 
 def slot_modal_ok(claim: PredictedClaim, fact: GoldFact) -> bool:
-    tokens = set(content_tokens(claim.text))
-    body = normalize(claim.text)
+    body = item_normalize(claim.text)
+    tokens = set(content_tokens(body))
     if claim.slot == "what_happened":
         if tokens & WHAT_FUTURE:
             return False
@@ -911,7 +912,7 @@ def slot_modal_ok(claim: PredictedClaim, fact: GoldFact) -> bool:
             return False
         if _done_form_without_planned(tokens):
             return False
-        first = content_tokens(claim.text)
+        first = content_tokens(body)
         imperative = bool(first) and first[0] in ACTION_VERBS
         has_commit = bool(tokens & {"will", "should"}) or has_phrase(body, "need to")
         return has_commit or imperative
@@ -1562,6 +1563,12 @@ def _pair_claims(
     pred: PredictedDay,
     mapping: dict[str, str],
 ) -> list[tuple[PredictedClaim, GoldFact]]:
+    """1:1 inside (day, matched deal, slot).
+
+    Walk gold facts in file order; assign the first unused covering claim.
+    ``used`` credits each claim (and therefore each fact) once, so a claim
+    with terms from several facts is paired with a single fact.
+    """
     used: set[str] = set()
     paired: list[tuple[PredictedClaim, GoldFact]] = []
     inverse = {gold_id: pred_id for pred_id, gold_id in mapping.items()}
