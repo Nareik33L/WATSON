@@ -94,39 +94,35 @@ def collect_predicted(
             """
         )
     ]
+    # Score day-level derived rows only. Understand-stage claims are evidence
+    # for extract, not extra predicted items — unioning them into precision
+    # made a 2-commitment day look like ~20 predictions.
     decisions = _texts(
         conn,
         """
-        SELECT text FROM claims
-        WHERE working_day_id = ? AND pipeline_version = ? AND kind = 'decision'
-        UNION
         SELECT text FROM decisions
         WHERE working_day_id = ? AND pipeline_version = ?
+        ORDER BY text, id
         """,
-        (working_day_id, pipeline_version, working_day_id, pipeline_version),
+        (working_day_id, pipeline_version),
     )
     commitments = _texts(
         conn,
         """
-        SELECT text FROM claims
-        WHERE working_day_id = ? AND pipeline_version = ? AND kind = 'commitment'
-        UNION
         SELECT text FROM commitments
         WHERE working_day_id = ? AND pipeline_version = ?
+        ORDER BY text, id
         """,
-        (working_day_id, pipeline_version, working_day_id, pipeline_version),
+        (working_day_id, pipeline_version),
     )
     completed = _texts(
         conn,
         """
-        SELECT text FROM claims
-        WHERE working_day_id = ? AND pipeline_version = ?
-          AND kind IN ('achievement', 'outcome') AND assertion = 'observed'
-        UNION
         SELECT text FROM achievement_candidates
         WHERE working_day_id = ? AND pipeline_version = ?
+        ORDER BY text, id
         """,
-        (working_day_id, pipeline_version, working_day_id, pipeline_version),
+        (working_day_id, pipeline_version),
     )
     observation_rows = [
         {
