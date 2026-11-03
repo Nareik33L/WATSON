@@ -203,6 +203,33 @@ _NAME_SKIP = frozenset(
         "revised",
     }
 )
+# Sentence-initial verbs so "Send Priya…" does not treat Send as a name, while
+# an unknown title-case first token ("Jordan published…") still counts.
+_LEADING_VERBS = frozenset(
+    {
+        "adopt",
+        "adopted",
+        "agree",
+        "agreed",
+        "did",
+        "does",
+        "drop",
+        "flag",
+        "keep",
+        "kept",
+        "move",
+        "moved",
+        "not",
+        "publish",
+        "published",
+        "reject",
+        "rejected",
+        "send",
+        "sent",
+        "use",
+        "used",
+    }
+)
 
 
 def normalize(text: str) -> str:
@@ -279,6 +306,7 @@ def _temporals(text: str) -> set[str]:
 
 
 def _proper_names(text: str) -> set[str]:
+    """Known fixture names plus title-case tokens (skip list and leading verbs)."""
     names: set[str] = set()
     surface = [part for part in _SURFACE_SPLIT.split(_PARENS.sub(" ", text)) if part]
     for index, token in enumerate(surface):
@@ -286,7 +314,14 @@ def _proper_names(text: str) -> set[str]:
         if folded in _KNOWN_NAMES:
             names.add(folded)
             continue
-        if index == 0 or folded in _NAME_SKIP or folded in _WEEKDAYS or folded in _MONTHS:
+        if (
+            folded in _NAME_SKIP
+            or folded in ITEM_STOPWORDS
+            or folded in _WEEKDAYS
+            or folded in _MONTHS
+        ):
+            continue
+        if index == 0 and folded in _LEADING_VERBS:
             continue
         if token[0].isupper() and folded.isalpha() and folded != "i":
             names.add(folded)
@@ -301,8 +336,8 @@ def _sets_conflict(left: set[str], right: set[str], *, require_both: bool) -> bo
     return bool(left or right)
 
 
-def item_guards_ok(predicted: str, truth: str) -> bool:
-    """Polarity, relation, date/number, and name guards. False means no match."""
+def item_guards_ok(predicted: str, truth: str, *, names: str = "off") -> bool:
+    """Polarity, relation, date/number, and optional name guards."""
     pred_tokens, gold_tokens = item_tokens(predicted), item_tokens(truth)
     if _sets_conflict(
         _marker_set(pred_tokens, _NEGATIONS),
@@ -328,22 +363,52 @@ def item_guards_ok(predicted: str, truth: str) -> bool:
         return False
     if _sets_conflict(_temporals(predicted), _temporals(truth), require_both=False):
         return False
-    # Both-sides for names: Priya only on gold is the slide-outline true match.
-    if _sets_conflict(_proper_names(predicted), _proper_names(truth), require_both=True):
-        return False
+    if names != "off":
+        if _sets_conflict(
+            _proper_names(predicted),
+            _proper_names(truth),
+            require_both=(names == "both"),
+        ):
+            return False
     return True
 
 
-def items_match(predicted: str, truth: str) -> bool:
-    """Wording-tolerant match for decisions, commitments, and completed items."""
+def _content_match(predicted: str, truth: str) -> bool:
+    """Exact or Jaccard match plus every guard except names."""
     left, right = item_normalize(predicted), item_normalize(truth)
     if not left or not right:
         return False
     if left == right:
         return True
-    if not item_guards_ok(predicted, truth):
+    if not item_guards_ok(predicted, truth, names="off"):
         return False
     return item_jaccard(predicted, truth) >= ITEM_MATCH_JACCARD_MIN
+
+
+def _name_sets_allow(
+    predicted: str,
+    truth: str,
+    *,
+    strict_names: bool,
+    unambiguous: bool,
+) -> bool:
+    pred_names, gold_names = _proper_names(predicted), _proper_names(truth)
+    if pred_names == gold_names:
+        return True
+    if pred_names and gold_names:
+        return False
+    if strict_names:
+        return False
+    # Name-less pred → named gold only when exactly one gold passes other guards.
+    return (not pred_names) and bool(gold_names) and unambiguous
+
+
+def items_match(predicted: str, truth: str, *, strict_names: bool = False) -> bool:
+    """Wording-tolerant match. ``strict_names`` is the completed/achievement rule."""
+    if not _content_match(predicted, truth):
+        return False
+    # Pairwise: a single gold is unambiguous for the decision/commitment fallback.
+    return _name_sets_allow(predicted, truth, strict_names=strict_names, unambiguous=True)
 
 
 def pair_matches(predicted: list[str], truth: list[str]) -> int:
@@ -359,13 +424,25 @@ def pair_matches(predicted: list[str], truth: list[str]) -> int:
     return matched
 
 
-def pair_item_matches(predicted: list[str], truth: list[str]) -> int:
-    """1:1 matches for items, greedy by best ``item_jaccard`` (then pred order)."""
+def pair_item_matches(
+    predicted: list[str],
+    truth: list[str],
+    *,
+    strict_names: bool = False,
+) -> int:
+    """1:1 matches on both sides, greedy by best ``item_jaccard`` (then pred order)."""
     scores: list[tuple[float, int, int]] = []
     for pred_index, pred in enumerate(predicted):
+        nameless = not _proper_names(pred)
+        if nameless and not strict_names:
+            unambiguous = sum(1 for gold in truth if _content_match(pred, gold)) == 1
+        else:
+            unambiguous = True
         pred_norm = item_normalize(pred)
         for truth_index, gold in enumerate(truth):
-            if not items_match(pred, gold):
+            if not _content_match(pred, gold):
+                continue
+            if not _name_sets_allow(pred, gold, strict_names=strict_names, unambiguous=unambiguous):
                 continue
             gold_norm = item_normalize(gold)
             score = 1.0 if pred_norm == gold_norm else item_jaccard(pred, gold)
@@ -430,15 +507,17 @@ def completed_accuracy(
     labels = list(truth_completed) + list(truth_not_completed)
     if not labels:
         return 1.0
-    correct = pair_item_matches(predicted_completed, truth_completed)
+    correct = pair_item_matches(predicted_completed, truth_completed, strict_names=True)
     for item in truth_not_completed:
-        if not any(items_match(pred, item) for pred in predicted_completed):
+        if not any(items_match(pred, item, strict_names=True) for pred in predicted_completed):
             correct += 1
     return correct / len(labels)
 
 
 def unsupported_count(predicted_completed: list[str], truth_completed: list[str]) -> int:
-    return len(predicted_completed) - pair_item_matches(predicted_completed, truth_completed)
+    return len(predicted_completed) - pair_item_matches(
+        predicted_completed, truth_completed, strict_names=True
+    )
 
 
 def duplicate_rate(

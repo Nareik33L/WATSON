@@ -89,14 +89,16 @@ Decisions, commitments, and completed / achievement items use wording-tolerant m
 3. Drop `ITEM_STOPWORDS` (`a`, `an`, `and`, `is`, `the`, …). **Not** in the list: `will`, `i`, `from`, `to`, `by`, `or`.
 4. Token-set Jaccard via the existing helper. Empty token sets score **0**, never 1.
 5. A pair matches when the normalized strings are identical **or** (guards pass **and** Jaccard ≥ `ITEM_MATCH_JACCARD_MIN` = 0.7, inclusive).
-6. Pairing is **1:1**, greedy by **best** score (descending), then prediction order.
+6. Pairing is **1:1 on both sides**, greedy by **best** score (descending), then prediction order. A gold item is consumed once; duplicate predictions cannot each take a different gold.
 
 Guards — any mismatch is a hard reject, even when Jaccard is high:
 
-- **Polarity / modal / status.** If one side has a negation (`not`, `no`, `never`, `won't` → `will not`, `isn't`, `unpublished`, …), a modal (`should`, `could`, `might`, `may`), or a different status lemma (`publish`/`published`, `send`/`sent`, `adopt`/`reject`, `agree`, `draft`, …) and the other side does not, there is no match. `section 3 not published` does not match `section 3 published`.
+- **Polarity / modal / status.** If one side has a negation (`not`, `no`, `never`, `won't` / `didn't` / `isn't` / `hasn't` → `… not`, `unpublished`, …), a modal (`should`, `could`, `might`, `may`), or a different status lemma (`publish`/`published`, `send`/`sent`, `adopt`/`reject`, `agree`, `draft`, …) and the other side does not, there is no match. `section 3 not published` does not match `section 3 published`.
 - **Relation markers.** `from`/`to`/`by`/`or` must be the same set. `to Priya` is not `from Priya`; `by Friday` is not `or Friday`.
 - **Numbers, dates, weekdays.** Digits, `Q4`, number-words, month names, and `today`/`tomorrow`/`Friday`/… must be equal as sets when present on **either** side. `page 2` ≠ `page 1`; `14 Nov` ≠ `15 Nov`; `Friday` ≠ `tomorrow`.
-- **Names.** Known V1 people/projects plus remaining mid-string proper names must be equal when **both** sides have any. A Priya→Mina or Acme→Northwind swap never matches. First-token title-case and common title nouns (`Internal`, `Guide`, `Section`) are not names — treating them as names would reject the real qwen paraphrase `Section 3 of the Internal Onboarding Guide is published this morning`. Strict either-side name equality would also reject the required slide-outline true match (`Priya` only on gold), so names are compared only when both sides have one.
+- **Names.** A name is a known V1 person/project token **or** a title-case word (the title-case fallback), except a skip list of title nouns (`Internal`, `Guide`, `Section`, …) and sentence-initial verbs (`Send`, `Agreed`, `Publish`, …). `Jordan published…` and `Jordan to send…` therefore count `Jordan` even in first position. `Section 3 of the Internal Onboarding Guide…` does not treat `Section` / `Internal` / `Guide` as names, so the real qwen paraphrase still matches.
+  - **Completed / achievements:** if either side has a name, both must have the same set. `Jordan published Onboarding Guide section 3` does not support `Onboarding Guide section 3 published`.
+  - **Decisions / commitments:** a name-less prediction may match a named gold item only when that pairing is **unambiguous** — exactly one gold candidate passes every other guard (polarity, dates, Jaccard, …). Two name-less `Send the slide outline tomorrow` rows cannot take both Priya's item and Mina's item. The bake-off `I will send the slide outline tomorrow` vs a single Priya gold stays a match.
 
 `0.7` still rejects a one-content-token swap on a typical 5-token item (4/6 ≈ 0.667). True matches that must stay: `I will send the slide outline tomorrow` vs `Send Priya the slide outline tomorrow` (4/5 = 0.8 after the prefix); `Cedar Onboarding page 1 is published` vs `Cedar Onboarding page 1 published` (1.0).
 

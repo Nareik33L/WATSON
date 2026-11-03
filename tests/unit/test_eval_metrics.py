@@ -938,6 +938,70 @@ def test_polarity_and_relation_near_misses() -> None:
     )
 
 
+def test_completed_rejects_unknown_name_on_either_side() -> None:
+    """Completed names are either-side: Jordan published … is unsupported."""
+    gold = "Onboarding Guide section 3 published"
+    jordan = "Jordan published Onboarding Guide section 3"
+    assert not items_match(jordan, gold, strict_names=True)
+    assert unsupported_count([jordan], [gold]) == 1
+    assert completed_accuracy([jordan], [gold], []) == 0.0
+
+
+def test_unknown_name_in_first_position_is_a_name() -> None:
+    """Title-case fallback includes first position, not only mid-string tokens."""
+    gold = "Send Priya the slide outline tomorrow"
+    first = "Jordan to send the slide outline tomorrow"
+    mid = "Send Jordan the slide outline tomorrow"
+    assert not items_match(first, gold)
+    assert not items_match(mid, gold)
+    assert pair_item_matches([first], [gold]) == 0
+
+
+def test_nameless_fallback_unambiguous_and_ambiguous() -> None:
+    """Name-less pred matches one named gold; two named golds make it ambiguous."""
+    pred = "I will send the slide outline tomorrow"
+    priya = "Send Priya the slide outline tomorrow"
+    mina = "Send Mina the slide outline tomorrow"
+    assert items_match(pred, priya)
+    assert items_match(pred, mina)
+    assert pair_item_matches([pred], [priya]) == 1
+    assert pair_item_matches([pred], [mina]) == 1
+    assert pair_item_matches([pred], [priya, mina]) == 0
+    assert precision([pred], [priya, mina], matches=pair_item_matches) == 0.0
+
+
+def test_duplicate_nameless_predictions_do_not_take_two_golds() -> None:
+    """Two copies of a name-less pred cannot credit both Priya's and Mina's items."""
+    pred = "I will send the slide outline tomorrow"
+    priya = "Send Priya the slide outline tomorrow"
+    mina = "Send Mina the slide outline tomorrow"
+    assert pair_item_matches([pred, pred], [priya, mina]) == 0
+    assert precision([pred, pred], [priya, mina], matches=pair_item_matches) == 0.0
+    assert recall([pred, pred], [priya, mina], matches=pair_item_matches) == 0.0
+
+
+def test_pair_item_matches_is_one_to_one_on_the_truth_side() -> None:
+    """One prediction consumes at most one gold, even if gold lists a duplicate."""
+    pred = "Send Priya the slide outline tomorrow"
+    gold = "Send Priya the slide outline tomorrow"
+    assert pair_item_matches([pred], [gold, gold]) == 1
+    assert recall([pred], [gold, gold], matches=pair_item_matches) == 0.5
+    assert pair_item_matches([pred, pred], [gold]) == 1
+
+
+def test_nt_contractions_are_negations() -> None:
+    """Surviving mutant: n't expansion dropped, so didn't/isn't/hasn't match."""
+    gold = "Onboarding Guide section 3 published"
+    assert not items_match("Onboarding Guide section 3 didn't publish", gold)
+    assert not items_match("Onboarding Guide section 3 isn't published", gold)
+    assert not items_match("Onboarding Guide section 3 hasn't published", gold)
+    assert (
+        pair_item_matches(["Onboarding Guide section 3 isn't published"], [gold], strict_names=True)
+        == 0
+    )
+    assert unsupported_count(["Onboarding Guide section 3 hasn't published"], [gold]) == 1
+
+
 def test_qwen_section_three_paraphrase_still_matches() -> None:
     """Legitimate bake-off completed item (J≈0.714). Title nouns are not names."""
     predicted = "Section 3 of the Internal Onboarding Guide is published this morning."
