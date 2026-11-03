@@ -488,9 +488,7 @@ def test_eval_collect_predicted_exposes_segment_deals(tmp_path: Path) -> None:
         )
         conn.commit()
         filtered = collect_predicted(conn, seeded["day_id"])["summary_slots"]
-        assert all(
-            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in filtered
-        )
+        assert all(not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in filtered)
         assert all(item.get("deal_id") for item in filtered)
         assert {item["slot"] for item in filtered} == {"next_step"}
     finally:
@@ -653,26 +651,40 @@ def test_sentence_citing_deal_and_noise_is_dropped(tmp_path: Path) -> None:
         assert f"[c:{seeded['noise_claim']}]" not in narrative
         assert f"[c:{seeded['sent']}]" in narrative
         sections = json.loads(str(row["sections_json"]))
-        assert all(
-            seeded["noise_claim"] not in item["claim_ids"] for item in sections["slots"]
-        )
+        assert all(seeded["noise_claim"] not in item["claim_ids"] for item in sections["slots"])
     finally:
         conn.close()
 
 
 def test_summary_deal_sections_keep_validated_slots_only() -> None:
     payload = _summary_deal_sections(
-        [{"id": "deal-1", "title": "Acme Q4 proposal"}],
+        [{"id": "deal-1", "title": "Acme Q4 proposal", "index": 0}],
         [
-            ("Acme Q4 proposal", "what_happened", ["1"]),
-            ("Acme Q4 proposal", "who_involved", [""]),
-            ("missing deal", "next_step", ["claim-uuid"]),
-            ("Acme Q4 proposal", "next_step", ["claim-uuid"]),
+            (0, "what_happened", ["1"]),
+            (0, "who_involved", [""]),
+            (1, "next_step", ["claim-uuid"]),
+            (0, "next_step", ["claim-uuid"]),
         ],
     )
     assert payload["slots"] == [
         {"slot": "next_step", "claim_ids": ["claim-uuid"], "deal_id": "deal-1"}
     ]
+
+
+def test_summary_deal_sections_duplicate_titles_keep_separate_deal_ids() -> None:
+    payload = _summary_deal_sections(
+        [
+            {"id": "deal-1", "title": "Acme", "index": 0},
+            {"id": "deal-2", "title": "Acme", "index": 1},
+        ],
+        [
+            (0, "what_happened", ["claim-a"]),
+            (1, "what_happened", ["claim-b"]),
+        ],
+    )
+    by_deal = {item["deal_id"]: item for item in payload["slots"]}
+    assert by_deal["deal-1"]["claim_ids"] == ["claim-a"]
+    assert by_deal["deal-2"]["claim_ids"] == ["claim-b"]
 
 
 def test_two_deal_and_cross_deal_citations(tmp_path: Path) -> None:
@@ -802,6 +814,119 @@ def test_two_deal_and_cross_deal_citations(tmp_path: Path) -> None:
         globex_slot = next(item for item in slots if item["deal_id"] == by_deal["Globex pilot"])
         assert acme_slot["claim_ids"] == [acme_claim]
         assert globex_slot["claim_ids"] == [globex_claim]
+    finally:
+        conn.close()
+
+
+def test_duplicate_titles_keep_separate_headings_and_slots(tmp_path: Path) -> None:
+    from tests.unit.test_consolidation import _insert_day
+
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        first_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T09:00:00Z")
+        second_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T10:00:00Z")
+        first_seg = _insert_segment(
+            conn, day_id, first_frame, started_at="2026-10-31T09:00:00Z", merged="Acme mail"
+        )
+        second_seg = _insert_segment(
+            conn, day_id, second_frame, started_at="2026-10-31T10:00:00Z", merged="Acme renewal"
+        )
+        first_obs = _insert_observation(conn, first_seg, description="Emailing Acme pricing")
+        second_obs = _insert_observation(conn, second_seg, description="Emailing Acme renewal")
+        first_claim = _insert_claim(
+            conn,
+            first_obs,
+            day_id,
+            first_seg,
+            first_frame,
+            kind="activity",
+            assertion="observed",
+            text="Sent Acme pricing",
+            created_at="2026-10-31T09:00:01Z",
+        )
+        second_claim = _insert_claim(
+            conn,
+            second_obs,
+            day_id,
+            second_seg,
+            second_frame,
+            kind="activity",
+            assertion="observed",
+            text="Sent Acme renewal",
+            created_at="2026-10-31T10:00:01Z",
+        )
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme",
+                                    "summary": "pricing thread",
+                                    "observation_indexes": [1],
+                                },
+                                {
+                                    "title": "Acme",
+                                    "summary": "renewal thread",
+                                    "observation_indexes": [2],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": (
+                                        f"What happened: Sent Acme pricing [c:{first_claim}]."
+                                    ),
+                                    "claim_ids": [first_claim],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": (
+                                        f"What happened: Sent Acme renewal [c:{second_claim}]."
+                                    ),
+                                    "claim_ids": [second_claim],
+                                    "slot": "what_happened",
+                                },
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (day_id,),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        blocks = [chunk for chunk in narrative.split("## Acme") if chunk.strip()]
+        assert len(blocks) == 2
+        assert f"[c:{first_claim}]" in blocks[0]
+        assert f"[c:{second_claim}]" not in blocks[0]
+        assert f"[c:{second_claim}]" in blocks[1]
+        assert f"[c:{first_claim}]" not in blocks[1]
+        sections = json.loads(str(row["sections_json"]))
+        deals = sections["deals"]
+        assert [item["title"] for item in deals] == ["Acme", "Acme"]
+        assert deals[0]["id"] != deals[1]["id"]
+        by_deal = {item["deal_id"]: item for item in sections["slots"]}
+        assert by_deal[deals[0]["id"]]["claim_ids"] == [first_claim]
+        assert by_deal[deals[1]["id"]]["claim_ids"] == [second_claim]
     finally:
         conn.close()
 

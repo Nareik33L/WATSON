@@ -1,6 +1,6 @@
 """Named-mutation score for deal grouping and per-deal summaries.
 
-Target ≥ 11 of 14 mutants. No-ops and collection errors count as SURVIVED.
+Target ≥ 12 of 15 mutants. No-ops and collection errors count as SURVIVED.
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-TARGET_MUTANTS = 14
-KILL_FLOOR = 11
+TARGET_MUTANTS = 15
+KILL_FLOOR = 12
 TEST_PATHS = (
     "tests/unit/test_deal_grouping.py",
     "tests/unit/test_daily_summary.py",
@@ -60,7 +60,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
         "grouped-all-claims",
         CONSOLIDATION,
         (
-            '        grouped = [row for row in claims'
+            "        grouped = [row for row in claims"
             ' if str(row.get("observation_id") or "") in chosen_set]\n'
         ),
         "        grouped = list(claims)\n",
@@ -74,8 +74,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "slot-drafts-raw",
         CONSOLIDATION,
-        "            slot_drafts.append((title, para.slot, list(verified.claim_ids)))\n",
-        "            slot_drafts.append((title, para.slot, list(para.claim_ids)))\n",
+        "            slot_drafts.append((key, para.slot, list(verified.claim_ids)))\n",
+        "            slot_drafts.append((key, para.slot, list(para.claim_ids)))\n",
     ),
     (
         "unmatched-kept",
@@ -136,14 +136,14 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "leftover-appended",
         CONSOLIDATION,
-        "        if len(owners) != 1:\n            continue\n        title = owners[0]\n",
+        "        if len(owners) != 1:\n            continue\n        key = owners[0]\n",
         (
             "        if len(owners) != 1:\n"
-            "            title = next(iter(buckets), None)\n"
-            "            if title is None:\n"
+            "            key = next(iter(buckets), None)\n"
+            "            if key is None:\n"
             "                continue\n"
             "        else:\n"
-            "            title = owners[0]\n"
+            "            key = owners[0]\n"
         ),
     ),
     (
@@ -174,7 +174,21 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
         "        fallback = _cited_fallback(cite_claims)\n",
         (
             "        fallback = _cited_fallback("
-            "[row for _title, rows in deal_groups for row in rows])\n"
+            "[row for _key, _title, rows in deal_groups for row in rows])\n"
+        ),
+    ),
+    (
+        "title-as-key",
+        CONSOLIDATION,
+        (
+            "def _deal_group_key(index: int, title: str) -> int | str:\n"
+            '    """Identity for a deal cluster. Title is not unique across look-alike deals."""\n'
+            "    return index\n"
+        ),
+        (
+            "def _deal_group_key(index: int, title: str) -> int | str:\n"
+            '    """Identity for a deal cluster. Title is not unique across look-alike deals."""\n'
+            "    return title\n"
         ),
     ),
 )
@@ -236,7 +250,7 @@ def _classify(src_root: Path, *, changed: bool) -> str:
 
 
 @pytest.mark.timeout(300)
-def test_deal_grouping_kills_at_least_11_of_14(tmp_path: Path) -> None:
+def test_deal_grouping_kills_at_least_12_of_15(tmp_path: Path) -> None:
     assert len(MUTANTS) == TARGET_MUTANTS
     names = [row[0] for row in MUTANTS]
     assert len(names) == len(set(names))

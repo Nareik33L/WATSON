@@ -695,7 +695,7 @@ def _replace_derived(
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
     )
     deal_groups = _group_claims_by_deal(clustering, observations, claims)
-    cite_claims = [row for _title, grouped in deal_groups for row in grouped]
+    cite_claims = [row for _key, _title, grouped in deal_groups for row in grouped]
     raw_summary = (
         _summarize_day(
             language,
@@ -736,9 +736,7 @@ def _replace_derived(
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
         )
-        verified = _narrative_from_stored_deals(
-            inserted_deals, buckets, cited, unverified
-        )
+        verified = _narrative_from_stored_deals(inserted_deals, buckets, cited, unverified)
         if skipped:
             note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
             paragraphs = (*verified.paragraphs, note)
@@ -857,11 +855,11 @@ def _summarize_day(
     claims: list[dict[str, Any]],
     system: str,
     *,
-    deal_groups: list[tuple[str, list[dict[str, Any]]]] | None = None,
+    deal_groups: list[tuple[object, str, list[dict[str, Any]]]] | None = None,
 ) -> DailySummaryOutput:
     if deal_groups:
         blocks: list[str] = []
-        for title, grouped in deal_groups:
+        for _key, title, grouped in deal_groups:
             lines = _trim_numbered(
                 [
                     f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}"
@@ -989,7 +987,7 @@ def _insert_deals(
     obs_by_id = {str(row["id"]): row for row in observations}
     inserted: list[dict[str, Any]] = []
     assigned_obs: set[str] = set()
-    for cluster in clustering.deals:
+    for index, cluster in enumerate(clustering.deals):
         if _is_none_deal_title(cluster.title):
             continue
         chosen = [
@@ -1001,6 +999,7 @@ def _insert_deals(
             continue
         assigned_obs.update(chosen)
         deal_id = new_id()
+        group_key = _deal_group_key(index, cluster.title)
         conn.execute(
             """
             INSERT INTO deals (
@@ -1037,6 +1036,7 @@ def _insert_deals(
                 "id": deal_id,
                 "title": cluster.title,
                 "observation_ids": chosen,
+                "index": group_key,
             }
         )
     return inserted
@@ -1710,6 +1710,11 @@ def _is_none_deal_title(title: str) -> bool:
     return " ".join(title.casefold().split()) in _NONE_DEAL_TITLES
 
 
+def _deal_group_key(index: int, title: str) -> int | str:
+    """Identity for a deal cluster. Title is not unique across look-alike deals."""
+    return index
+
+
 def _deal_candidates_from_raw(raw_json: str) -> list[str]:
     """Understanding deal/project candidates feed clustering (D3)."""
     try:
@@ -1748,11 +1753,11 @@ def _group_claims_by_deal(
     clustering: ClusteringOutput,
     observations: list[dict[str, Any]],
     claims: list[dict[str, Any]],
-) -> list[tuple[str, list[dict[str, Any]]]]:
+) -> list[tuple[object, str, list[dict[str, Any]]]]:
     obs_ids = [str(row["id"]) for row in observations]
     assigned: set[str] = set()
-    groups: list[tuple[str, list[dict[str, Any]]]] = []
-    for cluster in clustering.deals:
+    groups: list[tuple[object, str, list[dict[str, Any]]]] = []
+    for index, cluster in enumerate(clustering.deals):
         if _is_none_deal_title(cluster.title):
             continue
         chosen = [
@@ -1766,53 +1771,51 @@ def _group_claims_by_deal(
         chosen_set = set(chosen)
         grouped = [row for row in claims if str(row.get("observation_id") or "") in chosen_set]
         if grouped:
-            groups.append((cluster.title, grouped))
+            groups.append((_deal_group_key(index, cluster.title), cluster.title, grouped))
     return groups
 
 
 def _bucket_deal_paragraphs(
     raw_summary: DailySummaryOutput,
-    deal_groups: list[tuple[str, list[dict[str, Any]]]],
+    deal_groups: list[tuple[object, str, list[dict[str, Any]]]],
     *,
     working_day_id: str,
     pipeline_version: int,
     claims: list[dict[str, Any]],
 ) -> tuple[
-    dict[str, list[str]],
-    list[tuple[str, str, list[str]]],
+    dict[object, list[str]],
+    list[tuple[object, str, list[str]]],
     set[str],
     tuple[dict[str, str], ...],
 ]:
     """Assign each paragraph to one deal. Drop cross-deal and unmatched text."""
-    buckets: dict[str, list[str]] = {title: [] for title, _grouped in deal_groups}
-    cited_by_title: dict[str, set[str]] = {title: set() for title, _grouped in deal_groups}
-    slot_drafts: list[tuple[str, str, list[str]]] = []
+    buckets: dict[object, list[str]] = {key: [] for key, _title, _grouped in deal_groups}
+    cited_by_key: dict[object, set[str]] = {key: set() for key, _title, _grouped in deal_groups}
+    slot_drafts: list[tuple[object, str, list[str]]] = []
     if not deal_groups or not claims:
         return buckets, slot_drafts, set(), ()
 
     for para in raw_summary.paragraphs:
-        owners: list[str] = []
-        expanded_by_title: dict[str, dict[str, Any]] = {}
+        owners: list[object] = []
+        expanded_by_key: dict[object, dict[str, Any]] = {}
         payload = {"text": para.text, "claim_ids": list(para.claim_ids)}
-        for title, grouped in deal_groups:
+        for key, _title, grouped in deal_groups:
             expanded = expand_index_citations([payload], grouped)[0]
             grouped_ids = {str(row["id"]) for row in grouped}
             cited_toks = [
-                tok
-                for tok in CITATION_RE.findall(str(expanded["text"]))
-                if tok in grouped_ids
+                tok for tok in CITATION_RE.findall(str(expanded["text"])) if tok in grouped_ids
             ]
             mapped = [cid for cid in expanded["claim_ids"] if cid in grouped_ids]
             if cited_toks or mapped:
-                owners.append(title)
-                expanded_by_title[title] = expanded
+                owners.append(key)
+                expanded_by_key[key] = expanded
         if len(owners) != 1:
             continue
-        title = owners[0]
-        grouped = next(rows for name, rows in deal_groups if name == title)
+        key = owners[0]
+        grouped = next(rows for group_key, _title, rows in deal_groups if group_key == key)
         cite_claims = grouped
         verified = verify_narrative(
-            [expanded_by_title[title]],
+            [expanded_by_key[key]],
             cite_claims,
             working_day_id=working_day_id,
             pipeline_version=pipeline_version,
@@ -1820,25 +1823,25 @@ def _bucket_deal_paragraphs(
         )
         if not verified.paragraphs:
             continue
-        buckets[title].extend(_strip_leading_headings(body) for body in verified.paragraphs)
-        cited_by_title[title].update(verified.claim_ids)
+        buckets[key].extend(_strip_leading_headings(body) for body in verified.paragraphs)
+        cited_by_key[key].update(verified.claim_ids)
         if para.slot:
-            slot_drafts.append((title, para.slot, list(verified.claim_ids)))
+            slot_drafts.append((key, para.slot, list(verified.claim_ids)))
 
-    for title, grouped in deal_groups:
-        if buckets[title] or not grouped:
+    for key, _title, grouped in deal_groups:
+        if buckets[key] or not grouped:
             continue
         cite_claims = grouped
         fallback = _cited_fallback(cite_claims)
-        buckets[title].extend(_strip_leading_headings(body) for body in fallback.paragraphs)
-        cited_by_title[title].update(fallback.claim_ids)
+        buckets[key].extend(_strip_leading_headings(body) for body in fallback.paragraphs)
+        cited_by_key[key].update(fallback.claim_ids)
 
     cited_ids: set[str] = set()
     unverified: list[dict[str, str]] = []
-    for title, grouped in deal_groups:
-        cited_ids.update(cited_by_title[title])
+    for key, _title, grouped in deal_groups:
+        cited_ids.update(cited_by_key[key])
         for row in grouped:
-            if str(row["id"]) not in cited_by_title[title]:
+            if str(row["id"]) not in cited_by_key[key]:
                 unverified.append(
                     {
                         "id": str(row["id"]),
@@ -1861,14 +1864,14 @@ def _strip_leading_headings(text: str) -> str:
 
 def _narrative_from_stored_deals(
     deals: list[dict[str, Any]],
-    buckets: dict[str, list[str]],
+    buckets: dict[object, list[str]],
     cited: set[str],
     unverified: tuple[dict[str, str], ...],
 ) -> VerifiedNarrative:
     """Headings come from the stored deal title, never leftover unmatched text."""
     parts: list[str] = []
     for deal in deals:
-        paras = buckets.get(str(deal["title"]), [])
+        paras = buckets.get(deal["index"], [])
         if not paras:
             continue
         parts.append(f"## {deal['title']}\n\n" + "\n\n".join(paras))
@@ -1883,13 +1886,13 @@ def _narrative_from_stored_deals(
 
 def _summary_deal_sections(
     deals: list[dict[str, Any]],
-    slot_drafts: list[tuple[str, str, list[str]]],
+    slot_drafts: list[tuple[object, str, list[str]]],
 ) -> dict[str, Any]:
     """Store validated slot citations with deal_id; never raw model index tokens."""
-    title_to_id = {str(row["title"]): str(row["id"]) for row in deals}
+    key_to_id = {row["index"]: str(row["id"]) for row in deals}
     slots: list[dict[str, Any]] = []
-    for title, slot, claim_ids in slot_drafts:
-        deal_id = title_to_id.get(title)
+    for key, slot, claim_ids in slot_drafts:
+        deal_id = key_to_id.get(key)
         if not deal_id or not slot or not claim_ids:
             continue
         if any(not cid or cid.isdigit() for cid in claim_ids):
