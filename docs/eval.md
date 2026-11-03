@@ -112,24 +112,35 @@ Gold segments are keyed by fixture `id` and defined by `frame_ids` on that day. 
 
 Slots are `what_happened` | `who_involved` | `next_step`. Gold rows are **atomic facts** with `required_terms` (and bounded aliases).
 
-**Caps.** After normalize + stopword drop, a claim has at most **24 content tokens**. One claim covers **at most one** gold fact. A claim that also contains an exclusive required term of another gold fact that day does not cover.
+**Caps.** After normalize + stopword drop, a claim has at most **24 content tokens**. One claim covers **at most one** gold fact.
 
-**Cover.** Contiguous-phrase match of that one fact's required terms; slot modal rules; cited gold segments **overlap** `evidence_segments`.
+**Contradiction.** A claim fails to cover F only when, in the **same slot** on the same day and deal, it asserts a **different** person, date, or amount than F. Extra people or dates that are correct for the deal and backed by the cited evidence do **not** reject (so "Priya Natarajan emailed about pricing" still covers).
+
+**Cover.** Contiguous-phrase match of that one fact's required terms; no same-slot contradiction; slot modal rules; cited gold segments **overlap** `evidence_segments`.
 
 - **Modals.** `what_happened` rejects `will` / `should` / `need to` / `going to`. `next_step` accepts `will` / `should` / `need to` and rejects done forms (`sent` vs `send`), hedges (`might`, `may`, `could`), and negation. Will vs may, or done vs planned, does not match.
-- **Aliases.** Closed list: roster person forms; number forms of the same value; date forms of the same calendar date. **Weekday ≠ date** (`friday` ≠ `14 nov`). Per-fact aliases: ≤ 3 contiguous phrases, no stopwords, no term from another deal, no term exclusive to another fact. Fixture-checked.
-- **Who:** `person_entities_match` to `person_id`. Shared full names need a company qualifier. Cited segments must overlap the who-fact's `evidence_segments`.
+- **Aliases.** Closed list: roster person forms; number forms of the same value; date forms of the same calendar date. **Weekday ≠ date** (`friday` ≠ `14 nov`). Per-fact aliases: ≤ 3 contiguous phrases, no stopwords, no **cross-deal** alias, no term exclusive to another fact. Fixture-checked.
+- **Who:** `person_entities_match` to `person_id`. Shared full names need a company qualifier. Screen-text on cited frames is a **roster form** of the name. Cited segments must overlap the who-fact's `evidence_segments`.
 - **Unsupported** is citation failure only:
   1. Cite does not resolve to a fixture frame.
   2. **Matched deal:** no cited frame on that gold deal → unsupported. **Unmatched deal:** test (2) is **predicted-cluster membership only**. Cite on that cluster → precision miss, not unsupported. Cite off the cluster → unsupported. Never both.
   3. If paired: cited OCR lacks required terms, or cited segments miss `evidence_segments` → unsupported. Extra (unpaired) claims skip (3).
-- Mutants: polarity, number/date, weekday↔date, `what_happened`+will/should, `next_step`+may/sent, keyword dump.
+- Mutants: polarity, number/date, weekday↔date, `what_happened`+will/should, `next_step`+may/sent, same-slot person/date/amount swap, both keyword dumps.
 
 **Deal summary accuracy** = `min(precision, what_happened_recall, next_step_recall, who_involved_recall)` if unsupported is 0, else 0.
 
 ### Fixture-validation test (M3f, authoritative)
 
-Compute these baselines **on the actual gold corpus** (no model). The build **fails** if any scores ≥ 0.85: all-`none`; one deal per day and per corpus; one deal per segment; group by app; **group by company**; empty summary; **keyword dump** (per gold fact, concatenate all OCR tokens of that deal that day, cite every segment).
+Ordinary **pytest** under `tests/` (e.g. `tests/eval/test_fixture_validation.py`), run by the existing Linux CI `pytest` job. No `.github` change.
+
+Compute these on the actual gold corpus (no model). The build **fails** if any negative baseline is ≥ 0.85, or if the honest-summary control is < 0.85:
+
+- all-`none`; one deal per day and per corpus; one deal per segment; group by app
+- **group by company:** roster/fixture `company` as a whole token in **`window_title` only** (never the gold deal name); no match → `none`; longest then lex-smaller if two match. The 12/1/1/1 synthetic gold has such titles.
+- empty summary
+- **keyword dump (over-cap):** all OCR tokens of the deal-day per gold fact (tests the 24-token cap)
+- **keyword dump (within-cap):** ≤24-token windows of the deal's required terms, no sentence wrapper, emitted in every slot
+- **honest summary (positive):** hand-written, well-cited correct summary per fixture deal, ≥ 0.85
 
 The 12/1/1/1 Acme corpus (group-by-company F1 **0.905**) is a required **failing** input of this checker. Guidance counts do not replace it.
 
