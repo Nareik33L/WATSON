@@ -110,6 +110,17 @@ def test_bad_replay_recordings_fail_hard_thresholds(tmp_path: Path, key_provider
                         },
                     },
                     {
+                        "match": "pocket calendar",
+                        "response": {
+                            "activity_type": "non_work",
+                            "description": "Glancing at a personal calendar.",
+                            "confidence": 0.86,
+                            "claims": [],
+                            "project_candidates": [],
+                            "people_candidates": [],
+                        },
+                    },
+                    {
                         "match": "inbox",
                         "response": {
                             "activity_type": "knowledge_work",

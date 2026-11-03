@@ -543,3 +543,79 @@ def test_bad_config_exits_2(data_dir: Path, capsys: pytest.CaptureFixture[str]) 
     assert cli.main(["doctor"]) == 2
     err = capsys.readouterr().err
     assert "capture.interval_seconds" in err
+
+
+def test_eval_cli_exits_1_on_temperature_mismatch(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Config temperature 0.7 vs a file recorded at 0.0 must exit non-zero."""
+    import json
+
+    from watson.intelligence.eval.recordings import RecordingRuntime
+
+    _eval_key(monkeypatch)
+    recordings = tmp_path / "named.json"
+
+    class _NamedInner:
+        name = "ollama"
+        llm_model = "qwen2.5:7b"
+        temperature = 0.0
+
+        def complete(
+            self,
+            messages: list[dict[str, str]],
+            schema: dict[str, object],
+            *,
+            num_predict: int | None = None,
+        ) -> dict[str, object]:
+            del messages, schema, num_predict
+            return {"commitments": [{"text": "named"}]}
+
+    runtime = RecordingRuntime(path=recordings, inner=_NamedInner(), mode="record")
+    runtime.complete(
+        [
+            {
+                "role": "user",
+                "content": (
+                    "# WATSON day extract — v1\n\n"
+                    "From the day's numbered claims and known entities, extract:\n"
+                    "Claims:\n1. Alice\n"
+                ),
+            }
+        ],
+        {},
+    )
+    runtime.save()
+    payload = json.loads(recordings.read_text(encoding="utf-8"))
+    assert payload["temperature"] == 0.0
+
+    real_load = cli.load_config
+
+    def load_hot() -> object:
+        cfg = real_load()
+        intel = cfg.intelligence.model_copy(update={"temperature": 0.7, "llm_model": "qwen2.5:7b"})
+        return cfg.model_copy(update={"intelligence": intel})
+
+    monkeypatch.setattr(cli, "load_config", load_hot)
+    fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+    assert (
+        cli.main(
+            [
+                "eval",
+                "--mode",
+                "replay",
+                "--recordings",
+                str(recordings),
+                "--fixtures",
+                str(fixtures),
+                "--only",
+                "day_near_empty",
+                "--out",
+                str(tmp_path / "eval"),
+            ]
+        )
+        == 1
+    )
+    set_key_provider(None)

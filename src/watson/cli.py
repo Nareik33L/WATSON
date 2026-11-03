@@ -327,6 +327,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     )
     print(f"eval_mode: {report.mode}")
     print(f"eval_runtime: {report.runtime}")
+    print(f"eval_model: {report.model or ''}")
     print(f"eval_profile: {report.profile}")
     print(f"eval_passed: {report.passed}")
     print(f"eval_pipeline_passed: {report.pipeline_passed}")

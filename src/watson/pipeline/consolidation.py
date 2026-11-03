@@ -860,6 +860,8 @@ def _structured[T: BaseModel](
     except JobFailure:
         raise
     except Exception as exc:
+        if exc.__class__.__name__ == "ReplayMiss":
+            raise
         raise ConsolidationError(f"{label} complete failed", retryable=True) from exc
 
 
@@ -1289,7 +1291,7 @@ def _load_claims(
         SELECT id, working_day_id, kind, assertion, text, pipeline_version
         FROM claims
         WHERE working_day_id = ? AND pipeline_version = ?
-        ORDER BY created_at, id
+        ORDER BY created_at, kind, assertion, text, id
         """,
         (working_day_id, pipeline_version),
     ).fetchall()

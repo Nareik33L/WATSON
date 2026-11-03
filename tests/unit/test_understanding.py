@@ -19,7 +19,7 @@ from sqlcipher3 import dbapi2 as sqlcipher
 
 from tests.replay_support import DAY_ACME_Q4, TEST_KEY, open_test_db
 from watson.config.schema import IntelligenceConfig
-from watson.intelligence.eval.recordings import RecordingRuntime
+from watson.intelligence.eval.recordings import RecordingRuntime, ReplayMiss
 from watson.intelligence.prompts import load_prompt
 from watson.intelligence.resolver import resolve_candidates as resolve_candidates_impl
 from watson.intelligence.runtime import UNDERSTAND_JOB_KIND, FakeRuntime, JobFailure
@@ -1110,6 +1110,27 @@ def test_retryable_job_failure_stops_drain_without_raising(
         assert second_job["state"] == JobState.PENDING.value
         assert second_job["attempts"] == 0
         assert second_job["last_error"] is None
+    finally:
+        conn.close()
+
+
+def test_understand_segment_reraises_replay_miss(tmp_path: Path) -> None:
+    """Surviving mutant: ReplayMiss swallowed into JobFailure."""
+    import json
+
+    path = tmp_path / "watson.db"
+    upgrade_head(path, TEST_KEY)
+    conn = connect(path, TEST_KEY, load_vec=False)
+    recordings = tmp_path / "empty.json"
+    recordings.write_text(
+        json.dumps({"source": "test", "complete": [], "embeddings": {}}),
+        encoding="utf-8",
+    )
+    try:
+        segment_id = _closed_segment(conn)
+        runtime = RecordingRuntime(path=recordings, mode="replay")
+        with pytest.raises(ReplayMiss, match=r"understanding key=[0-9a-f]{64}"):
+            understand_segment(conn, segment_id, runtime, runtime)
     finally:
         conn.close()
 
