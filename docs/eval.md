@@ -84,12 +84,20 @@ People and projects still use `names_match`: normalized equality or substring (s
 
 Decisions, commitments, and completed / achievement items use wording-tolerant matching in `metrics.py`:
 
-1. `normalize()` — case-fold, strip parentheticals, drop punctuation.
-2. Drop a closed stopword list (`a`, `an`, `and`, `is`, `the`, `to`, `will`, …).
-3. Token-set Jaccard via the existing helper (`item_jaccard` is `token_jaccard` on the filtered tokens).
-4. A pair matches when the normalized strings are identical **or** Jaccard ≥ `ITEM_MATCH_JACCARD_MIN` (0.7).
-5. Pairing is **1:1**, greedy by best score, then prediction order. One prediction cannot consume two gold items.
+1. Expand `won't` / `n't` / `I'll`, then `normalize()` (case, parentheticals, punctuation).
+2. Strip a leading first-person future (`i will `). That is a commitment-voice **prefix**, not a stopword — `will` and `i` stay content words everywhere else.
+3. Drop `ITEM_STOPWORDS` (`a`, `an`, `and`, `is`, `the`, …). **Not** in the list: `will`, `i`, `from`, `to`, `by`, `or`.
+4. Token-set Jaccard via the existing helper. Empty token sets score **0**, never 1.
+5. A pair matches when the normalized strings are identical **or** (guards pass **and** Jaccard ≥ `ITEM_MATCH_JACCARD_MIN` = 0.7, inclusive).
+6. Pairing is **1:1**, greedy by **best** score (descending), then prediction order.
 
-`0.7` is high enough to reject a single content-token swap on a typical 5-token item (Jaccard 4/6 ≈ 0.667) — a different person, a different day, or a different object — and low enough to accept the bake-off paraphrases after stopword stripping. Examples that must match: `I will send the slide outline tomorrow` vs `Send Priya the slide outline tomorrow` (4/5 = 0.8); `Cedar Onboarding page 1 is published` vs `Cedar Onboarding page 1 published` (1.0). Examples that must not: Mina in place of Priya (4/6 ≈ 0.667); Friday in place of tomorrow (0.5); hours grid in place of slide outline (2/7 ≈ 0.286); page 2 in place of page 1 (4/6 ≈ 0.667).
+Guards — any mismatch is a hard reject, even when Jaccard is high:
+
+- **Polarity / modal / status.** If one side has a negation (`not`, `no`, `never`, `won't` → `will not`, `isn't`, `unpublished`, …), a modal (`should`, `could`, `might`, `may`), or a different status lemma (`publish`/`published`, `send`/`sent`, `adopt`/`reject`, `agree`, `draft`, …) and the other side does not, there is no match. `section 3 not published` does not match `section 3 published`.
+- **Relation markers.** `from`/`to`/`by`/`or` must be the same set. `to Priya` is not `from Priya`; `by Friday` is not `or Friday`.
+- **Numbers, dates, weekdays.** Digits, `Q4`, number-words, month names, and `today`/`tomorrow`/`Friday`/… must be equal as sets when present on **either** side. `page 2` ≠ `page 1`; `14 Nov` ≠ `15 Nov`; `Friday` ≠ `tomorrow`.
+- **Names.** Known V1 people/projects plus remaining mid-string proper names must be equal when **both** sides have any. A Priya→Mina or Acme→Northwind swap never matches. First-token title-case and common title nouns (`Internal`, `Guide`, `Section`) are not names — treating them as names would reject the real qwen paraphrase `Section 3 of the Internal Onboarding Guide is published this morning`. Strict either-side name equality would also reject the required slide-outline true match (`Priya` only on gold), so names are compared only when both sides have one.
+
+`0.7` still rejects a one-content-token swap on a typical 5-token item (4/6 ≈ 0.667). True matches that must stay: `I will send the slide outline tomorrow` vs `Send Priya the slide outline tomorrow` (4/5 = 0.8 after the prefix); `Cedar Onboarding page 1 is published` vs `Cedar Onboarding page 1 published` (1.0).
 
 This constant is **not** in `thresholds.json`. Changing it does not loosen the §11.2 quality gates.

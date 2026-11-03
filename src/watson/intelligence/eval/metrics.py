@@ -15,26 +15,192 @@ _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 # content-token swap on a typical 5-token item (Jaccard 4/6 ≈ 0.667) while
 # still accepting the bake-off paraphrases after stopword stripping.
 ITEM_MATCH_JACCARD_MIN = 0.7
-_ITEM_STOPWORDS = frozenset(
+# will/i/from/to/by/or are content (or relation) words, not stopwords.
+ITEM_STOPWORDS = frozenset(
     {
         "a",
         "an",
         "and",
         "as",
         "at",
-        "by",
         "for",
-        "from",
-        "i",
         "in",
         "is",
         "of",
         "on",
-        "or",
         "the",
         "this",
-        "to",
-        "will",
+    }
+)
+_ITEM_STOPWORDS = ITEM_STOPWORDS
+_FIRST_PERSON_PREFIX = re.compile(r"^i will ")
+_WONT = re.compile(r"won't", re.IGNORECASE)
+_CANT = re.compile(r"can't", re.IGNORECASE)
+_ILL = re.compile(r"i'll", re.IGNORECASE)
+_NT = re.compile(r"n't", re.IGNORECASE)
+_SURFACE_SPLIT = re.compile(r"[^A-Za-z0-9]+")
+_DIGIT = re.compile(r"^\d+$")
+_QUARTER = re.compile(r"^q\d+$")
+_NEGATIONS = frozenset(
+    {
+        "not",
+        "no",
+        "never",
+        "none",
+        "neither",
+        "nor",
+        "nothing",
+        "yet",
+        "without",
+        "unpublished",
+        "unsent",
+        "unfinished",
+        "incomplete",
+    }
+)
+_MODALS = frozenset({"should", "could", "might", "may", "must", "shall", "would", "ought"})
+_RELATIONS = frozenset({"from", "to", "by", "or"})
+_STATUS_LEMMA = {
+    "done": "done",
+    "started": "start",
+    "start": "start",
+    "planned": "plan",
+    "plan": "plan",
+    "drafted": "draft",
+    "draft": "draft",
+    "published": "publish",
+    "publish": "publish",
+    "sent": "send",
+    "send": "send",
+    "shipped": "ship",
+    "ship": "ship",
+    "completed": "complete",
+    "complete": "complete",
+    "finished": "finish",
+    "finish": "finish",
+    "agreed": "agree",
+    "agree": "agree",
+    "rejected": "reject",
+    "reject": "reject",
+    "adopted": "adopt",
+    "adopt": "adopt",
+    "kept": "keep",
+    "keep": "keep",
+}
+_WEEKDAYS = frozenset(
+    {
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "today",
+        "tomorrow",
+        "yesterday",
+    }
+)
+_MONTHS = frozenset(
+    {
+        "jan",
+        "january",
+        "feb",
+        "february",
+        "mar",
+        "march",
+        "apr",
+        "april",
+        "may",
+        "jun",
+        "june",
+        "jul",
+        "july",
+        "aug",
+        "august",
+        "sep",
+        "sept",
+        "september",
+        "oct",
+        "october",
+        "nov",
+        "november",
+        "dec",
+        "december",
+    }
+)
+_NUMBER_WORDS = frozenset(
+    {
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+    }
+)
+# V1 fixture people / projects. Title-case common nouns are not names —
+# treating "Internal"/"Guide" as names would reject the real qwen paraphrase.
+_KNOWN_NAMES = frozenset(
+    {
+        "acme",
+        "ashworth",
+        "cedar",
+        "cole",
+        "ellis",
+        "harbor",
+        "jun",
+        "mina",
+        "natarajan",
+        "ned",
+        "northwind",
+        "okonkwo",
+        "onboarding",
+        "park",
+        "pier",
+        "priya",
+        "quinn",
+        "samira",
+        "tom",
+        "voss",
+    }
+)
+_NAME_SKIP = frozenset(
+    {
+        "guide",
+        "internal",
+        "section",
+        "page",
+        "proposal",
+        "draft",
+        "checklist",
+        "outline",
+        "slide",
+        "walkthrough",
+        "demo",
+        "term",
+        "renewal",
+        "appendix",
+        "standup",
+        "hours",
+        "grid",
+        "letter",
+        "call",
+        "prep",
+        "order",
+        "morning",
+        "card",
+        "rate",
+        "risks",
+        "delivery",
+        "pricing",
+        "revised",
     }
 )
 
@@ -42,6 +208,20 @@ _ITEM_STOPWORDS = frozenset(
 def normalize(text: str) -> str:
     stripped = _PARENS.sub(" ", text.casefold())
     return " ".join(_NON_ALNUM.sub(" ", stripped).split())
+
+
+def item_normalize(text: str) -> str:
+    """``normalize`` after expanding common negating / first-person contractions."""
+    expanded = _WONT.sub("will not", text)
+    expanded = _CANT.sub("can not", expanded)
+    expanded = _ILL.sub("i will", expanded)
+    expanded = _NT.sub(" not", expanded)
+    return normalize(expanded)
+
+
+def _item_body(text: str) -> str:
+    """Drop a leading first-person future — not a stopword, only a prefix."""
+    return _FIRST_PERSON_PREFIX.sub("", item_normalize(text), count=1)
 
 
 def token_set(text: str) -> set[str]:
@@ -64,8 +244,8 @@ def names_match(predicted: str, truth: str) -> bool:
 
 
 def item_tokens(text: str) -> set[str]:
-    """``token_set`` minus the closed item-matching stopword list."""
-    return {part for part in token_set(text) if part not in _ITEM_STOPWORDS}
+    """Body tokens minus the closed item-matching stopword list."""
+    return {part for part in _item_body(text).split() if part and part not in ITEM_STOPWORDS}
 
 
 def item_jaccard(left: str, right: str) -> float:
@@ -76,13 +256,93 @@ def item_jaccard(left: str, right: str) -> float:
     return len(first & second) / len(first | second)
 
 
+def _marker_set(tokens: set[str], markers: frozenset[str]) -> set[str]:
+    return {part for part in tokens if part in markers}
+
+
+def _status_set(tokens: set[str]) -> set[str]:
+    return {_STATUS_LEMMA[part] for part in tokens if part in _STATUS_LEMMA}
+
+
+def _temporals(text: str) -> set[str]:
+    out: set[str] = set()
+    for part in _item_body(text).split():
+        if (
+            part in _WEEKDAYS
+            or part in _MONTHS
+            or part in _NUMBER_WORDS
+            or _DIGIT.match(part)
+            or _QUARTER.match(part)
+        ):
+            out.add(part)
+    return out
+
+
+def _proper_names(text: str) -> set[str]:
+    names: set[str] = set()
+    surface = [part for part in _SURFACE_SPLIT.split(_PARENS.sub(" ", text)) if part]
+    for index, token in enumerate(surface):
+        folded = token.casefold()
+        if folded in _KNOWN_NAMES:
+            names.add(folded)
+            continue
+        if index == 0 or folded in _NAME_SKIP or folded in _WEEKDAYS or folded in _MONTHS:
+            continue
+        if token[0].isupper() and folded.isalpha() and folded != "i":
+            names.add(folded)
+    return names
+
+
+def _sets_conflict(left: set[str], right: set[str], *, require_both: bool) -> bool:
+    if left == right:
+        return False
+    if require_both and (not left or not right):
+        return False
+    return bool(left or right)
+
+
+def item_guards_ok(predicted: str, truth: str) -> bool:
+    """Polarity, relation, date/number, and name guards. False means no match."""
+    pred_tokens, gold_tokens = item_tokens(predicted), item_tokens(truth)
+    if _sets_conflict(
+        _marker_set(pred_tokens, _NEGATIONS),
+        _marker_set(gold_tokens, _NEGATIONS),
+        require_both=False,
+    ):
+        return False
+    if _sets_conflict(
+        _marker_set(pred_tokens, _MODALS),
+        _marker_set(gold_tokens, _MODALS),
+        require_both=False,
+    ):
+        return False
+    if _sets_conflict(_status_set(pred_tokens), _status_set(gold_tokens), require_both=False):
+        return False
+    body_pred = set(_item_body(predicted).split())
+    body_gold = set(_item_body(truth).split())
+    if _sets_conflict(
+        _marker_set(body_pred, _RELATIONS),
+        _marker_set(body_gold, _RELATIONS),
+        require_both=False,
+    ):
+        return False
+    if _sets_conflict(_temporals(predicted), _temporals(truth), require_both=False):
+        return False
+    # Both-sides for names: Priya only on gold is the slide-outline true match.
+    if _sets_conflict(_proper_names(predicted), _proper_names(truth), require_both=True):
+        return False
+    return True
+
+
 def items_match(predicted: str, truth: str) -> bool:
     """Wording-tolerant match for decisions, commitments, and completed items."""
-    left, right = normalize(predicted), normalize(truth)
+    left, right = item_normalize(predicted), item_normalize(truth)
     if not left or not right:
         return False
     if left == right:
         return True
+    if not item_guards_ok(predicted, truth):
+        return False
     return item_jaccard(predicted, truth) >= ITEM_MATCH_JACCARD_MIN
 
 
@@ -103,15 +363,13 @@ def pair_item_matches(predicted: list[str], truth: list[str]) -> int:
     """1:1 matches for items, greedy by best ``item_jaccard`` (then pred order)."""
     scores: list[tuple[float, int, int]] = []
     for pred_index, pred in enumerate(predicted):
-        pred_norm = normalize(pred)
+        pred_norm = item_normalize(pred)
         for truth_index, gold in enumerate(truth):
-            gold_norm = normalize(gold)
-            if pred_norm and pred_norm == gold_norm:
-                score = 1.0
-            else:
-                score = item_jaccard(pred, gold)
-            if score >= ITEM_MATCH_JACCARD_MIN:
-                scores.append((score, pred_index, truth_index))
+            if not items_match(pred, gold):
+                continue
+            gold_norm = item_normalize(gold)
+            score = 1.0 if pred_norm == gold_norm else item_jaccard(pred, gold)
+            scores.append((score, pred_index, truth_index))
     scores.sort(key=lambda row: (-row[0], row[1], row[2]))
     used_pred: set[int] = set()
     used_truth: set[int] = set()

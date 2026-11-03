@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from watson.intelligence.eval.metrics import (
     ITEM_MATCH_JACCARD_MIN,
+    ITEM_STOPWORDS,
     completed_accuracy,
     duplicate_rate,
     f1_score,
@@ -777,6 +779,172 @@ def test_pair_item_matches_is_one_to_one_by_best_score() -> None:
     assert recall([weaker, exact], [gold], matches=pair_item_matches) == 1.0
     two_gold = [gold, "Keep the Harbor walkthrough on Thursday"]
     assert pair_item_matches([weaker, exact], two_gold) == 1
+
+
+_V1_GOLD_ITEMS = (
+    "Agreed to move the Acme demo to 14 Nov",
+    "Adopt the published three-tier rate card for Acme",
+    "Send revised pricing to Priya by Friday",
+    "Flag Q4 delivery risks in the proposal appendix",
+    "Agreed to move the Harbor walkthrough to Thursday",
+    "Use a two-year term for the Northwind renewal",
+    "Send the Harbor checklist to Ellis by Wednesday",
+    "Publish Cedar Onboarding page 2 before Friday standup",
+    "Keep the Harbor walkthrough on Thursday",
+    "Acme demo stays 14 Nov",
+    "Send Priya the slide outline tomorrow",
+    "Samira Cole still owes the slide order",
+    "Send the North Pier hours grid today",
+    "Send the hours grid to Mina today",
+    "Onboarding Guide section 3 published",
+)
+
+_PERSON_DATE_SWAPS = (
+    ("Priya", "Mina"),
+    ("Mina", "Priya"),
+    ("Ellis", "Jun"),
+    ("Samira Cole", "Ned Quinn"),
+    ("Acme", "Northwind"),
+    ("Harbor", "Northwind"),
+    ("Northwind", "Acme"),
+    ("Cedar", "Acme"),
+    ("North Pier", "Harbor"),
+    ("Friday", "Wednesday"),
+    ("Thursday", "Friday"),
+    ("Wednesday", "Monday"),
+    ("tomorrow", "Friday"),
+    ("today", "tomorrow"),
+    ("14 Nov", "15 Nov"),
+    ("Q4", "Q3"),
+    ("page 2", "page 1"),
+    ("section 3", "section 2"),
+    ("two-year", "three-year"),
+    ("Nov", "Dec"),
+)
+
+
+def _gold_swap_variants(text: str) -> list[str]:
+    variants: list[str] = []
+    for old, new in _PERSON_DATE_SWAPS:
+        if old in text:
+            variants.append(text.replace(old, new, 1))
+    lowered = text[0].lower() + text[1:]
+    variants.append(f"Not {lowered}")
+    variants.append(re.sub(r"\b[Ss]end\b", "Won't send", text, count=1))
+    variants.append(re.sub(r"\b[Ss]end\b", "Should send", text, count=1))
+    variants.append(re.sub(r"\b[Ss]end\b", "Might send", text, count=1))
+    if " to " in text:
+        variants.append(text.replace(" to ", " from ", 1))
+    if " by " in text:
+        variants.append(text.replace(" by ", " or ", 1))
+    if text.startswith("Adopt "):
+        variants.append("Reject " + text[6:])
+    if text.startswith("Agreed "):
+        variants.append("Not agreed " + text[7:])
+    if text.endswith(" published"):
+        variants.append(text.replace(" published", " not published", 1))
+    return [item for item in variants if item != text]
+
+
+def test_gold_items_reject_person_date_and_polarity_swaps() -> None:
+    """Every V1 gold item: one-word person/date swaps and won't/should/from-to are FPs."""
+    assert len(_V1_GOLD_ITEMS) == 15
+    failures: list[str] = []
+    for gold in _V1_GOLD_ITEMS:
+        assert items_match(gold, gold)
+        for variant in _gold_swap_variants(gold):
+            if items_match(variant, gold):
+                failures.append(f"{variant!r} matched {gold!r}")
+    assert failures == []
+
+
+def test_item_stopwords_exclude_will_i_and_relations() -> None:
+    assert {"will", "i", "from", "to", "by", "or"}.isdisjoint(ITEM_STOPWORDS)
+    assert "not" not in ITEM_STOPWORDS
+    assert "is" in ITEM_STOPWORDS
+
+
+def test_negation_is_not_a_stopword_and_blocks_published() -> None:
+    """Surviving mutant: put 'not' in stopwords so 'not published' ≈ 'published'."""
+    gold = "Onboarding Guide section 3 published"
+    negated = "Onboarding Guide section 3 not published"
+    assert item_jaccard(negated, gold) == pytest.approx(5 / 6)
+    assert not items_match(negated, gold)
+    assert pair_item_matches([negated], [gold]) == 0
+    assert completed_accuracy([negated], [gold], []) == 0.0
+    assert unsupported_count([negated], [gold]) == 1
+
+
+def test_pair_item_matches_sorts_best_score_descending() -> None:
+    """Surviving mutant: greedy without sort, or ascending sort, steals the only gold."""
+    gold1 = "alpha beta gamma delta epsilon zeta eta"
+    gold2 = "alpha beta gamma delta epsilon theta iota"
+    pred1 = "alpha beta gamma delta epsilon zeta eta theta iota"
+    pred2 = gold1
+    assert item_jaccard(pred1, gold1) == pytest.approx(7 / 9)
+    assert item_jaccard(pred1, gold2) == pytest.approx(7 / 9)
+    assert item_jaccard(pred2, gold1) == 1.0
+    assert item_jaccard(pred2, gold2) < ITEM_MATCH_JACCARD_MIN
+    assert pair_item_matches([pred1, pred2], [gold1, gold2]) == 2
+    unsorted_first = pair_item_matches([pred1], [gold1])
+    assert unsorted_first == 1
+
+
+def test_item_match_threshold_is_inclusive() -> None:
+    """Surviving mutant: `>=` became `>`; Jaccard of exactly 0.7 must still match."""
+    short = "alpha beta gamma delta epsilon zeta eta"
+    long = "alpha beta gamma delta epsilon zeta eta extra1 extra2 extra3"
+    assert item_jaccard(short, long) == pytest.approx(0.7)
+    assert items_match(short, long)
+
+
+def test_exact_normalize_matches_even_when_tokens_are_empty() -> None:
+    """Surviving mutant: drop the exact-string shortcut; all-stopword twins fail."""
+    assert items_match("The is a", "the is a")
+    assert item_jaccard("The is a", "the is a") == 0.0
+
+
+def test_empty_item_tokens_score_jaccard_zero() -> None:
+    """Surviving mutant: empty token sets score 1.0 and match anything empty."""
+    assert item_jaccard("the", "a") == 0.0
+    assert item_jaccard("", "published") == 0.0
+    assert not items_match("the", "a")
+    assert not items_match("", "Onboarding Guide section 3 published")
+
+
+def test_not_completed_uses_item_match_not_names_match() -> None:
+    """Surviving mutant: not-completed check reverted to names_match / skipped."""
+    predicted = ["Cedar Onboarding page 1 is published"]
+    not_done = ["Cedar Onboarding page 1 published"]
+    assert items_match(predicted[0], not_done[0])
+    assert not names_match(predicted[0], not_done[0])
+    assert completed_accuracy(predicted, [], not_done) == 0.0
+
+
+def test_polarity_and_relation_near_misses() -> None:
+    gold = "Send revised pricing to Priya by Friday"
+    assert not items_match("Won't send revised pricing to Priya by Friday", gold)
+    assert not items_match("Should send revised pricing to Priya by Friday", gold)
+    assert not items_match("Might send revised pricing to Priya by Friday", gold)
+    assert not items_match("Send revised pricing from Priya by Friday", gold)
+    assert not items_match("Send revised pricing to Priya or Friday", gold)
+    assert not items_match(
+        "Not agreed to move the Acme demo to 14 Nov",
+        "Agreed to move the Acme demo to 14 Nov",
+    )
+    assert not items_match(
+        "Reject the published three-tier rate card for Acme",
+        "Adopt the published three-tier rate card for Acme",
+    )
+
+
+def test_qwen_section_three_paraphrase_still_matches() -> None:
+    """Legitimate bake-off completed item (J≈0.714). Title nouns are not names."""
+    predicted = "Section 3 of the Internal Onboarding Guide is published this morning."
+    gold = "Onboarding Guide section 3 published"
+    assert item_jaccard(predicted, gold) == pytest.approx(5 / 7)
+    assert items_match(predicted, gold)
+    assert unsupported_count([predicted], [gold]) == 0
 
 
 def test_completed_accuracy_penalizes_false_completions() -> None:
