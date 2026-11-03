@@ -76,44 +76,50 @@ footprint -p <pid>    # look for phys_footprint
 
 ## V1 §11.2 quality gate (Revision 3)
 
-Canonical definitions live in `docs/WATSON_V1_ENGINEERING_PLAN.md` §11.2. This section is the harness-facing copy. Counts are **pooled** across the corpus; per-day figures are reported only.
+Canonical definitions live in `docs/WATSON_V1_ENGINEERING_PLAN.md` §11.2. This section is the harness-facing copy.
 
-**Fixture floors:** 5 days, all relabelled with deals; ≥ 8 gold deals; ≥ 3 multi-touch deals (email + call + doc/CRM); ≥ 2 look-alike name pairs; ≥ 20 % non-deal noise segments; ≥ 2 interleaved gold deals on every non-empty day; confusable companies and contacts; deal-like content in an excluded app (gold `none`); gold `evidence_segments` on every claim.
+**Per-day match, then pool.** Key predicted clusters as `(fixture_day, cluster_id)`. Match that day's clusters to that day's gold deals, form pairs **within the day**, then **sum counts across days** and compute each ratio once. Per-day ratios are reported only.
+
+**Fixture floors:** 5 days, all relabelled with deals; ≥ 8 gold deals; ≥ 3 multi-touch deals (email + call + doc/CRM); **≥ 4 same-company/different-deal pairs covering ≥ 30 % of deal-segments**; **≥ 2 look-alike name pairs**; ≥ 20 % non-deal noise; ≥ 2 interleaved gold deals on every non-empty day; confusable contacts (including shared full names, disambiguated by `person_id` + company); `privacy_bait` excluded-app segments; gold `evidence_segments` + `required_terms` on every fact.
 
 ### Segment alignment
 
-Gold segments are keyed by fixture `id` and defined by `frame_ids`. For each gold segment G, the covering predicted segment is the one that contains the most frames of G (tie: earlier `started_at`, then smaller predicted `id`). G's predicted deal is that segment's cluster, or `none`. Uncovered G is `missing` (always incorrect).
+Gold segments are keyed by fixture `id` and defined by `frame_ids` on that day. Covering predicted segment = most frames of G (tie: earlier `started_at`, then smaller predicted `id`). Uncovered G is `missing`.
 
-### Deal-cluster matching (one algorithm)
+**Privacy bait** (`privacy_bait: true`): excluded from grouping accuracy. `missing` or `none` is correct privacy behaviour. Bait OCR or snippets in a predicted deal or any summary claim is a **hard privacy FAIL**.
 
-`none` / `missing` are their own class and never match. Pair predicted clusters 1:1 with gold deals by **greedy maximum overlap**: sort (P, G) by overlap descending, then gold `id` ascending, then predicted `id` ascending; take a pair if neither side is taken. No Hungarian step.
+### Deal-cluster matching (one algorithm, per day)
+
+`none` / `missing` never match. On each day, pair that day's predicted clusters 1:1 with that day's gold deals by **greedy maximum overlap**: sort (P, G) by overlap descending, then gold `id` ascending, then predicted `id` ascending; take a pair if neither side is taken **on this day**. No Hungarian step. No cross-day matching.
 
 ### Deal grouping accuracy ≥ 0.85
 
-`none` is its own class.
+`none` is its own class. Non-bait gold segments only.
 
-- **Assignment accuracy** = correct gold segments / all gold segments (`none`↔`none` is correct; deal↔`none`/`missing`/wrong/unmatched cluster is not).
-- **Deal-segment recall** = gold deal≠`none` segments whose predicted cluster matches that gold deal / all gold deal≠`none` segments. All-`none` is 0.
-- **Pairwise F1.** Gold pair = two segments on the same gold deal ≠ `none`. Predicted pair = two segments on the same predicted cluster ≠ `none`/`missing`. TP / FP / FN as usual. Vacuous P = R = 1.0 **only** when there are no predicted pairs **and** no gold deal has two or more segments. All-`none` on this corpus is F1 = 0.
+- **Assignment accuracy** = correct / non-bait gold segments (`none`↔`none` is correct; deal↔`none`/`missing`/wrong/unmatched cluster is not).
+- **Deal-segment recall** = gold deal≠`none` segments whose predicted cluster matches that gold deal / those segments. All-`none` is 0.
+- **Pairwise F1** on same-day pairs. Gold pair = two segments on the same gold deal ≠ `none`. Predicted pair = two segments on the same predicted cluster ≠ `none`/`missing`. If `TP + FP = 0`, **pairwise precision = 0**. If `TP + FN = 0`, recall = 0. Vacuous P = R = 1 only when there are no predicted pairs **and** no gold deal in the corpus has two or more non-bait segments.
 
 **Deal grouping accuracy** = `min(assignment_accuracy, deal_segment_recall, pairwise_F1)`.
 
+### Citations → frame ids
+
+`[c:…]` / claim id → evidence rows. `frame_id` if set, else every fixture frame id on that `segment_id`. Join to gold segments via `frame_ids` on the same day. Required-term checks read redacted `frame_text` of those frames.
+
 ### Deal summary accuracy ≥ 0.85
 
-Slots are `what_happened` | `who_involved` | `next_step`. Missing/unknown slot → unsupported and false.
+Slots are `what_happened` | `who_involved` | `next_step`. Gold rows are **atomic facts** with `required_terms` (and aliases), not exact strings. After `normalize()` + number/date folding + roster aliases, a predicted claim **covers** a gold fact iff every required term is a token in the predicted text. 1:1 pairing inside `(day, matched deal, slot)`.
 
-- **Who:** `person_entities_match` — resolve to a roster `person_id` by exact `normalize()` of `name` or `name`+`company`. Not `names_match`. Substrings (`Acme`, `a`, first name only) do not resolve.
-- **What / next step:** `normalize()` both sides; match iff identical. 1:1 in file/emission order. No Jaccard, no best-score.
-- Claims on a predicted cluster that matches **no** gold deal are scored: false and unsupported. Never skipped.
-- **Supported** requires a valid slot, ≥ 1 resolvable citation, every cited frame on this predicted cluster, a 1:1 gold pair in the same slot on the matched gold deal, and an intersection with that gold claim's `evidence_segments`.
+- **Who:** `person_entities_match` to `person_id`. If two roster people share a full name that day, the prediction must include a company qualifier that uniquely selects one id; otherwise unresolved. Not `names_match`. Substrings do not resolve.
+- **Correct:** covers an unpaired gold fact on the same matched deal.
+- **Unsupported** = citation failure only: cites do not resolve to a fixture frame; or no cited frame is on that deal; or (when paired) the cited OCR lacks the gold fact's required terms. Well-cited extra claims are precision misses, not unsupported. Claims on unmatched deals count against precision (unsupported only if the cites also fail). Never skipped.
+- **#41-style mutants** (polarity, number/date, weekday, `person_id`) must not match.
 
-Strict claim precision = supported / all predicted claims (unmatched-deal claims in the denominator). Slot recall = supported-paired gold claims / gold claims in that slot. Unsupported count must be **0**.
-
-**Deal summary accuracy** = `min(precision, what_happened_recall, next_step_recall, who_involved_recall)` if unsupported is 0, else 0. Empty summary against gold key facts is 0.
+**Deal summary accuracy** = `min(precision, what_happened_recall, next_step_recall, who_involved_recall)` if unsupported is 0, else 0. Empty summary against gold facts is 0.
 
 ### Trivial-output check (M3f test)
 
-These baselines must each score < 0.85 on the fixtures: all-`none`; one deal for the whole day (and for the whole corpus); one deal per gold segment; group by app; group by company token; empty summary.
+These baselines must each score < 0.85 on the fixtures: all-`none`; one deal for the whole day (and for the whole corpus); one deal per gold segment; group by app; **group by company token**; empty summary. Group-by-company is required because it scored 0.864 before the ≥ 4 same-company-pair floor.
 
 ## Thresholds
 
