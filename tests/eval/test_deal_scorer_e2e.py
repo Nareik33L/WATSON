@@ -792,13 +792,15 @@ def test_collapse_requires_citation_overlap() -> None:
             _seg("s3", "acme-q4", "f3"),
         ],
         frames={
-            "f1": Frame("f1", "pricing call"),
-            "f2": Frame("f2", "q4 deck"),
+            "f1": Frame("f1", "pricing call q4 deck"),
+            "f2": Frame("f2", "pricing call q4 deck"),
             "f3": Frame("f3", "pricing call q4 deck"),
         },
         facts=[
-            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1", "s3")),
-            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s2", "s3")),
+            GoldFact(
+                "f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1", "s2", "s3")
+            ),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1", "s2", "s3")),
         ],
     )
     gold = DealCorpus(days=[day])
@@ -806,18 +808,18 @@ def test_collapse_requires_citation_overlap() -> None:
         day,
         claims=[
             PredictedClaim(
-                "c-ab",
+                "c-a",
                 "acme-q4",
                 "what_happened",
                 "joined the pricing call q4 deck",
-                [PredictedEvidence(segment_id="s1"), PredictedEvidence(segment_id="s2")],
+                [PredictedEvidence(segment_id="s1")],
             ),
             PredictedClaim(
-                "c-c",
+                "c-b",
                 "acme-q4",
                 "what_happened",
                 "joined the pricing call q4 deck",
-                [PredictedEvidence(segment_id="s3")],
+                [PredictedEvidence(segment_id="s2")],
             ),
         ],
     )
@@ -825,6 +827,48 @@ def test_collapse_requires_citation_overlap() -> None:
     assert score.summary.correct == 2
     assert score.summary.claims == 2
     assert score.summary.what_happened_recall == pytest.approx(1.0)
+
+
+def test_partial_citation_overlap_collapses_same_cover() -> None:
+    """Same covered-fact set with overlapping (not equal) citations counts once."""
+    day = _day(
+        segments=[
+            _seg("s1", "acme-q4", "f1"),
+            _seg("s2", "acme-q4", "f2"),
+            _seg("s3", "acme-q4", "f3"),
+        ],
+        frames={
+            "f1": Frame("f1", "pricing call q4 deck"),
+            "f2": Frame("f2", "pricing call q4 deck"),
+            "f3": Frame("f3", "pricing call q4 deck"),
+        },
+        facts=[
+            GoldFact(
+                "f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1", "s2", "s3")
+            ),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1", "s2", "s3")),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    text = "joined the pricing call q4 deck"
+    full = [
+        PredictedEvidence(segment_id="s1"),
+        PredictedEvidence(segment_id="s2"),
+        PredictedEvidence(segment_id="s3"),
+    ]
+    partial = [PredictedEvidence(segment_id="s1"), PredictedEvidence(segment_id="s2")]
+    dumped = _pred(
+        day,
+        claims=[
+            PredictedClaim("c-full", "acme-q4", "what_happened", text, full),
+            PredictedClaim("c-partial", "acme-q4", "what_happened", text, partial),
+        ],
+    )
+    score = score_deals(gold, dumped)
+    assert score.summary.correct == 1
+    assert score.summary.claims == 2
+    assert score.summary.what_happened_recall == pytest.approx(0.5)
+    assert score.summary.precision == pytest.approx(0.5)
 
 
 def test_score_deals_uncovered_gold_is_missing() -> None:

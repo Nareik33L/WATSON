@@ -1901,6 +1901,18 @@ def _matching_representatives(
     return kept
 
 
+def _evidence_overlap(cited: Sequence[str], evidence: Sequence[str]) -> bool:
+    """Cited gold segments must overlap a fact by staying inside its evidence.
+
+    Intersection-only overlap lets a dump that cites every deal segment cover
+    every fact. Containment is still overlap: the cited set meets the fact's
+    evidence and does not extend outside it.
+    """
+    cited_set = {item for item in cited if item}
+    evidence_set = {item for item in evidence if item}
+    return bool(cited_set) and cited_set <= evidence_set
+
+
 def _claim_covers(
     day: DayGold,
     pred: PredictedDay,
@@ -1920,7 +1932,7 @@ def _claim_covers(
     if frames is None:
         return False
     cited_segments = _gold_segments_for_frames(day, frames)
-    if not set(cited_segments) & set(fact.evidence_segments):
+    if not _evidence_overlap(cited_segments, fact.evidence_segments):
         return False
     cited_text = _ocr(day, frames)
     if contradicts(claim, fact, day, cited_text):
@@ -1953,7 +1965,7 @@ def _unsupported(
     if fact is None:
         return False
     cited_segments = _gold_segments_for_frames(day, frames)
-    if not set(cited_segments) & set(fact.evidence_segments):
+    if not _evidence_overlap(cited_segments, fact.evidence_segments):
         return True
     cited_text = _ocr(day, frames)
     if fact.slot == "who_involved" and fact.person_id:

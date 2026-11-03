@@ -163,6 +163,9 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-sliding-raw-6-2": score_deals(
             gold, baseline_keyword_dump_sliding(gold, width=6, stride=2, unique=False)
         ).summary.accuracy,
+        "keyword-dump-sliding-what-6-2": score_deals(
+            gold, baseline_keyword_dump_sliding_what(gold, width=6, stride=2)
+        ).summary.accuracy,
     }
     for filler in ("please", "still", "revised", "discussed"):
         rows[f"keyword-dump-duplicate-{filler}"] = score_deals(
@@ -219,6 +222,7 @@ def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
         baseline_keyword_dump_extra_what(gold),
         baseline_keyword_dump_duplicate_what(gold),
         baseline_keyword_dump_sliding(gold),
+        baseline_keyword_dump_sliding_what(gold),
         baseline_keyword_dump_within_cap_will_next(gold),
         honest_prediction(gold, DEAL_GOLD),
         honest_prediction_filled(gold, DEAL_GOLD),
@@ -251,6 +255,7 @@ def test_over_cap_dump_exceeds_token_cap(gold) -> None:
         if len(content_tokens(claim.text)) > CONTENT_TOKEN_CAP
     ]
     assert over, "over-cap dump must emit at least one >24-token claim"
+    assert score_deals(gold, predicted).summary.accuracy < GATE
 
 
 def test_within_cap_windows_are_atomic(gold) -> None:
@@ -269,6 +274,7 @@ def test_within_cap_windows_are_atomic(gold) -> None:
                     pieces = phrase.split()
                     if any(piece in window.split() for piece in pieces):
                         assert phrase in window, f"split multi-word term {phrase!r} in {window!r}"
+    assert score_deals(gold, baseline_keyword_dump_within_cap(gold)).summary.accuracy < GATE
 
 
 def test_baseline_score_table(gold) -> None:
@@ -344,6 +350,10 @@ def test_baseline_score_table(gold) -> None:
                 gold, baseline_keyword_dump_sliding(gold, width=6, stride=2, unique=False)
             ).summary,
         ),
+        (
+            "keyword-dump-sliding-what-6-2",
+            score_deals(gold, baseline_keyword_dump_sliding_what(gold, width=6, stride=2)).summary,
+        ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
         (
             "honest-summary-filled",
@@ -374,6 +384,7 @@ def test_packed_dump_only_keeps_multi_fact_slots(gold) -> None:
             assert is_multi_fact_claim(claim, gday), claim.text
             checked += 1
     assert checked >= 1
+    assert score_deals(gold, packed).summary.accuracy < GATE
 
 
 def test_duplicate_what_emits_two_what_copies_per_window(gold) -> None:
@@ -388,6 +399,7 @@ def test_duplicate_what_emits_two_what_copies_per_window(gold) -> None:
             if max(Counter(texts).values(), default=0) >= 2:
                 saw_pair = True
     assert saw_pair
+    assert score_deals(gold, predicted).summary.accuracy < GATE
 
 
 def test_extra_what_only_adds_copies_on_three_channel_deals(gold) -> None:
@@ -406,6 +418,7 @@ def test_extra_what_only_adds_copies_on_three_channel_deals(gold) -> None:
             assert len(day.claims) > within[day.name]
         else:
             assert len(day.claims) == within[day.name]
+    assert score_deals(gold, extra).summary.accuracy < GATE
 
 
 def test_within_cap_dump_emits_each_window_in_every_slot(gold) -> None:
@@ -420,6 +433,7 @@ def test_within_cap_dump_emits_each_window_in_every_slot(gold) -> None:
         for slots in by_key.values():
             assert slots == set(SLOTS)
     assert checked >= 10
+    assert score_deals(gold, predicted).summary.accuracy < GATE
 
 
 def test_v1_pipeline_overlays_use_fixture_frame_ids() -> None:
@@ -511,6 +525,23 @@ def test_sliding_what_full_next_who_shape(gold) -> None:
             for left, right in zip(who, nxt, strict=True):
                 assert right.text == f"will {left.text}"
     assert saw_what and saw_full
+    score = score_deals(gold, predicted).summary
+    assert score.accuracy < GATE, f"sliding-what 6/2 summary {score.accuracy:.3f} must be < {GATE}"
+
+
+def test_sliding_what_nearby_settings_stay_below_gate(gold) -> None:
+    scores: list[float] = []
+    for width in (5, 6, 7):
+        for stride in (1, 2, 3):
+            accuracy = score_deals(
+                gold, baseline_keyword_dump_sliding_what(gold, width=width, stride=stride)
+            ).summary.accuracy
+            scores.append(accuracy)
+            assert accuracy < GATE, (
+                f"sliding-what width={width} stride={stride} "
+                f"summary {accuracy:.3f} must be < {GATE}"
+            )
+    assert max(scores) < GATE
 
 
 def test_padded_duplicate_what_stays_below_gate(gold) -> None:

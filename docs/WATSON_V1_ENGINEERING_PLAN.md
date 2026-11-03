@@ -5,6 +5,8 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-03, QA on #47 @7f3c41c):** A claim covers a fact only when its cited gold segments stay inside that fact's `evidence_segments` (overlap by containment, not "cite the whole deal"). Raw sliding-what plus full next/who dump windows, and nearby widths 5–7 / strides 1–3, must score < 0.85. Same-cover copies with partially overlapping citations still count once. §14 / D8 / D10 / D11 unchanged.
+
 **Changelog (2026-11-03, QA on #47 @d6325e4):** Copies that cover the same facts with overlapping citations count once before matching, regardless of text (no Jaccard / 3-fact gate). Sliding 6-term/stride-2 windows over unique or raw terms in every slot must score < 0.85. §14 / D8 / D10 / D11 unchanged.
 
 **Changelog (2026-11-03, QA on #47 @f0a84e9):** Pair claims to gold facts by maximum 1:1 matching, not the first covered fact in file order. Honest paraphrases that mention an earlier fact still take their own fact. Packed near-duplicates (same covered-fact set, overlapping citations) count once; extra copies stay in the precision denominator. Sliding 6-term/stride-2 keyword dumps must score < 0.85. §14 / D8 / D10 / D11 unchanged.
@@ -745,7 +747,7 @@ OCR checked for required terms is the redacted `frame_text` of those cited frame
 2. Every required term of **that one fact** appears as a **contiguous-word phrase** in the normalized predicted text (aliases count as the term). For a `who_involved` fact, this screen-text check means a **roster form** of that person's name (`name`, `name (company)`, or `name company`).
 3. The claim is within the 24-token cap and does not **contradict** F's slot value (person / date / amount) as defined above.
 4. Slot modal rules pass (below).
-5. Cited gold segments **overlap** that fact's `evidence_segments` (see evidence link).
+5. Cited gold segments **overlap** that fact's `evidence_segments` and do not extend outside them (see evidence link). A dump that cites every deal segment does not cover a fact whose evidence is a proper subset.
 
 This is **not** exact-string equality. Paraphrase is allowed when the required terms of that one fact are present and the caps hold.
 
@@ -778,9 +780,9 @@ A fixture-validation test rejects weekday↔date aliases, stopword aliases, **cr
 3. If two or more roster people share that full name, the prediction must also include a company (or other roster qualifier) that uniquely selects one `person_id`. Otherwise it is unresolved.
 4. First name only, company only, or any proper substring is **not** a resolution.
 
-Two who-facts match iff they resolve to the same `person_id`. The gold who-fact's `person_id` is the required term. **Evidence link for who:** the claim's cited gold segments must **intersect** that who-fact's `evidence_segments` (the segments where that person is on screen). A correct who-claim that cites only some other segment of the same deal does not cover.
+Two who-facts match iff they resolve to the same `person_id`. The gold who-fact's `person_id` is the required term. **Evidence link for who:** the claim's cited gold segments must **overlap** that who-fact's `evidence_segments` and stay inside them (the segments where that person is on screen). A correct who-claim that cites only some other segment of the same deal does not cover, and a dump that cites every deal segment does not cover a who-fact whose evidence is a proper subset.
 
-**Gold evidence link (all slots).** A claim is correct only if the gold segments of its cited frames **intersect** the paired fact's `evidence_segments`. Screen-text required-term checks on those cited frames still apply (for `who_involved`, a roster form of the person's name in that cited OCR). A citation that is merely "somewhere on the same deal" is not enough.
+**Gold evidence link (all slots).** A claim is correct only if the gold segments of its cited frames **overlap** the paired fact's `evidence_segments` and do not extend outside them. Screen-text required-term checks on those cited frames still apply (for `who_involved`, a roster form of the person's name in that cited OCR). A citation that is merely "somewhere on the same deal" is not enough.
 
 **Correct predicted claim.** On a predicted cluster that **matches** a gold deal that day: the claim covers a still-unpaired gold fact in the same slot on that gold deal (1:1), with evidence-segment overlap. That is a true positive for precision and for that slot's recall.
 
@@ -790,7 +792,7 @@ Two who-facts match iff they resolve to the same `person_id`. The gold who-fact'
 2. **Cluster / deal membership** — two cases, do not mix them:
    - **Matched predicted deal:** at least one cited frame must belong to the matched gold deal that day. If none do → unsupported.
    - **Unmatched predicted deal:** test (2) checks **predicted-cluster membership only**. At least one cited frame must belong to that predicted cluster. If yes, and (1) passed, the claim is a **precision miss, not unsupported**. If no cited frame is on that cluster → unsupported. This is the only reading: an unmatched-deal claim is never both a precision miss and unsupported, and it never zeroes the summary score by itself.
-3. **Paired evidence text.** If the claim is paired with a gold fact, the cited frames' OCR must contain that fact's required terms **and** the cited gold segments must intersect `evidence_segments`. Failure → unsupported. Unpaired (extra) claims **skip** this clause.
+3. **Paired evidence text.** If the claim is paired with a gold fact, the cited frames' OCR must contain that fact's required terms **and** the cited gold segments must overlap `evidence_segments` without extending outside them. Failure → unsupported. Unpaired (extra) claims **skip** this clause.
 
 Well-cited extra claims are **precision misses, not unsupported**. Gold facts on unmatched gold deals are recall misses. Claims are never skipped from the precision denominator.
 

@@ -1,4 +1,4 @@
-"""Named-mutation score for the deal scorer. Target ≥ 80% of 78 mutants."""
+"""Named-mutation score for the deal scorer. Target ≥ 80% of 80 mutants."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 DEALS = "src/watson/intelligence/eval/deals.py"
 DEAL_GOLD = REPO / "tests" / "fixtures" / "deal_gold"
-TARGET_MUTANTS = 78
-KILL_FLOOR = 63  # 80% of 78
+TARGET_MUTANTS = 80
+KILL_FLOOR = 64  # 80% of 80
 TEST_PATHS = (
     "tests/eval/test_deal_scorer_e2e.py",
     "tests/unit/test_deal_metrics.py",
@@ -364,6 +364,16 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         "            if False and not (kept_cited & cited):\n                continue\n",
     ),
     (
+        "collapse-equal-citations",
+        "            if not (kept_cited & cited):\n                continue\n",
+        "            if kept_cited != cited:\n                continue\n",
+    ),
+    (
+        "covers-overlap-only",
+        "    return bool(cited_set) and cited_set <= evidence_set\n",
+        "    return bool(cited_set & evidence_set)\n",
+    ),
+    (
         "covers-terms",
         "    if not fact_terms_satisfied(claim.text, fact, day.people):\n        return False\n",
         (
@@ -373,9 +383,13 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "covers-evidence",
-        "    if not set(cited_segments) & set(fact.evidence_segments):\n        return False\n",
         (
-            "    if False and not set(cited_segments) & set(fact.evidence_segments):\n"
+            "    if not _evidence_overlap(cited_segments, fact.evidence_segments):\n"
+            "        return False\n"
+        ),
+        (
+            "    if False and not _evidence_overlap("
+            "cited_segments, fact.evidence_segments):\n"
             "        return False\n"
         ),
     ),
@@ -602,7 +616,7 @@ def _classify(src_root: Path, *, original: str | None = None) -> str:
 
 
 @pytest.mark.timeout(420)
-def test_deal_scorer_kills_at_least_80_percent_of_78(tmp_path: Path) -> None:
+def test_deal_scorer_kills_at_least_80_percent_of_80(tmp_path: Path) -> None:
     assert DEAL_GOLD.is_dir(), f"deal gold fixtures missing at {DEAL_GOLD}"
     assert len(MUTANTS) == TARGET_MUTANTS, f"expected {TARGET_MUTANTS} mutants, have {len(MUTANTS)}"
     names = [row[0] for row in MUTANTS]
