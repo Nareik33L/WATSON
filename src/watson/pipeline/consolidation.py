@@ -69,7 +69,7 @@ from watson.intelligence.schemas.consolidation import (
 )
 from watson.intelligence.structured import complete_structured
 from watson.memory.corrections import apply_claim_corrections, rejected_claim_ids
-from watson.memory.db import iso_now
+from watson.memory.db import iso_now, parse_iso
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import (
@@ -739,7 +739,7 @@ def _replace_derived(
         verified = _narrative_from_stored_deals(inserted_deals, buckets, cited, unverified)
         if skipped:
             note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
-            paragraphs = (*verified.paragraphs, note)
+            paragraphs = (note, *verified.paragraphs)
             verified = VerifiedNarrative(
                 narrative_md="\n\n".join(paragraphs),
                 paragraphs=paragraphs,
@@ -1000,6 +1000,7 @@ def _insert_deals(
         assigned_obs.update(chosen)
         deal_id = new_id()
         group_key = _deal_group_key(index, cluster.title)
+        created = _deal_created_at(stamp, len(inserted))
         conn.execute(
             """
             INSERT INTO deals (
@@ -1009,8 +1010,8 @@ def _insert_deals(
             """,
             (
                 deal_id,
-                stamp,
-                stamp,
+                created,
+                created,
                 working_day_id,
                 cluster.title,
                 cluster.summary,
@@ -1704,6 +1705,14 @@ def _trim_numbered(items: list[str], *, item_max: int, list_max: int) -> str:
         lines.append(line)
         used += extra
     return "\n".join(lines)
+
+
+def _deal_created_at(stamp: str, index: int) -> str:
+    """Stable per-deal created_at so UUID order cannot reshuffle same-second inserts."""
+    if index <= 0:
+        return stamp
+    moment = parse_iso(stamp) + timedelta(seconds=index)
+    return moment.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _is_none_deal_title(title: str) -> bool:

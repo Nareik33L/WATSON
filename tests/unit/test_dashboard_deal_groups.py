@@ -26,7 +26,11 @@ from tests.unit.test_dashboard_pages import INSTALL_TOKEN, ORIGIN, _client
 from watson.config import load_config
 from watson.dashboard.app import create_app
 from watson.memory.ids import new_id
-from watson.pipeline.deal_groups import collect_deal_groups, segment_channel
+from watson.pipeline.deal_groups import (
+    _parse_slot_text,
+    collect_deal_groups,
+    segment_channel,
+)
 from watson.pipeline.frames import PIPELINE_VERSION
 from watson.privacy.network import runtime_network_guard
 
@@ -408,6 +412,142 @@ def test_duplicate_title_pair_renders_two_cards(data_dir: Path, key_provider: ob
     assert f'id="deal-{ids[1]}"' not in history.text
 
 
+def _slot_blob(card, slot: str = "what_happened") -> str:
+    for item in card.slots:
+        if item.slot == slot:
+            return "".join(span.text for span in item.spans)
+    return ""
+
+
+def test_duplicate_title_same_created_at_missing_block_stays_unswapped(
+    data_dir: Path, key_provider: object
+) -> None:
+    """Same created_at, duplicate titles, first deal has no block: never steal the other card.
+
+    Loops so a UUID-order shuffle cannot hide a title-match or take-first-block mutant.
+    """
+    conn = open_test_db(data_dir)
+    try:
+        for round_no in range(20):
+            day_id = _insert_day(conn, date=f"2026-09-{(round_no % 28) + 1:02d}")
+            first_f = _frame(
+                conn,
+                day_id,
+                app_name="Lumen Mail",
+                window_title="Northwind east",
+                captured_at="2026-10-31T09:00:00Z",
+            )
+            second_f = _frame(
+                conn,
+                day_id,
+                app_name="Lumen Mail",
+                window_title="Northwind west",
+                captured_at="2026-10-31T10:00:00Z",
+            )
+            first_seg = _insert_segment(conn, day_id, first_f, started_at="2026-10-31T09:00:00Z")
+            second_seg = _insert_segment(conn, day_id, second_f, started_at="2026-10-31T10:00:00Z")
+            second_obs = _insert_observation(conn, second_seg, description="West renewal mail")
+            second_claim = _insert_claim(
+                conn,
+                second_obs,
+                day_id,
+                second_seg,
+                second_f,
+                kind="activity",
+                assertion="observed",
+                text="Mailed the west renewal",
+            )
+            title = "Northwind renewal"
+            stamp = "2026-10-31T18:00:00Z"
+            if round_no % 2 == 0:
+                first_deal = _insert_deal(conn, day_id, title, stamp=stamp)
+                second_deal = _insert_deal(conn, day_id, title, stamp=stamp)
+            else:
+                second_deal = _insert_deal(conn, day_id, title, stamp=stamp)
+                first_deal = _insert_deal(conn, day_id, title, stamp=stamp)
+            _assign(conn, first_seg, first_deal)
+            _assign(conn, second_seg, second_deal)
+            narrative = f"## {title}\n\nWhat happened: Mailed the west renewal [c:{second_claim}]."
+            _insert_deal_summary(
+                conn,
+                day_id,
+                narrative,
+                [second_claim],
+                deals=[
+                    {"id": first_deal, "title": title},
+                    {"id": second_deal, "title": title},
+                ],
+                slots=[
+                    {
+                        "slot": "what_happened",
+                        "claim_ids": [second_claim],
+                        "deal_id": second_deal,
+                    }
+                ],
+            )
+            groups = collect_deal_groups(conn, working_day_id=day_id)
+            assert [card.id for card in groups.deals] == [first_deal, second_deal], round_no
+            by_id = {card.id: card for card in groups.deals}
+            first_blob = _slot_blob(by_id[first_deal])
+            second_blob = _slot_blob(by_id[second_deal])
+            assert "west renewal" not in first_blob, round_no
+            assert "east" not in first_blob, round_no
+            assert second_claim not in first_blob, round_no
+            assert second_seg not in {span.segment_id for span in by_id[first_deal].slots[0].spans}
+            assert "west renewal" in second_blob, round_no
+            assert any(
+                span.segment_id == second_seg for span in by_id[second_deal].slots[0].spans
+            ), round_no
+            assert by_id[first_deal].emails[0].id == first_seg
+            assert by_id[second_deal].emails[0].id == second_seg
+    finally:
+        conn.close()
+
+
+def test_slot_prefixes_keep_who_and_next_apart() -> None:
+    parsed = _parse_slot_text(
+        "Who involved: Priya Natarajan [c:who].\nNext step: Send revised pricing [c:nxt]."
+    )
+    assert "Priya" in parsed["who_involved"]
+    assert "Send revised pricing" in parsed["next_step"]
+    assert "Priya" not in parsed.get("next_step", "")
+    assert "Send revised pricing" not in parsed.get("who_involved", "")
+
+
+def test_unlabeled_fallback_does_not_fill_when_slots_exist() -> None:
+    parsed = _parse_slot_text(
+        "Preamble leftover\nWhat happened: Sent the pricing pack [c:sent].\n"
+        "Note: 1 segment(s) were excluded after understanding failed."
+    )
+    assert parsed["what_happened"] == "Sent the pricing pack [c:sent]."
+    assert "Preamble" not in parsed["what_happened"]
+    assert "excluded" not in parsed["what_happened"]
+
+
+def test_trailing_excluded_note_stays_off_deal_cards(data_dir: Path, key_provider: object) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        seeded = _seed_multichannel(conn)
+        conn.execute(
+            """
+            UPDATE daily_summaries
+            SET narrative_md = narrative_md || ?
+            WHERE working_day_id = ?
+            """,
+            (
+                "\n\nNote: 1 segment(s) were excluded after understanding failed.",
+                seeded["day_id"],
+            ),
+        )
+        conn.commit()
+        groups = collect_deal_groups(conn, working_day_id=seeded["day_id"])
+        blob = " ".join(_slot_blob(groups.deals[0], slot.slot) for slot in groups.deals[0].slots)
+        assert "excluded" not in blob
+        assert "Note:" not in blob
+    finally:
+        conn.close()
+
+
 def test_empty_day_renders_no_deals(data_dir: Path, key_provider: object) -> None:
     conn = open_test_db(data_dir)
     try:
@@ -430,6 +570,40 @@ def test_empty_day_renders_no_deals(data_dir: Path, key_provider: object) -> Non
     assert today_api.json()["deals"] == []
     assert today_api.json()["none_segments"] == []
     assert "deals" not in history_api.json()["days"][0]
+
+
+def test_segments_without_deals_render_none_section(data_dir: Path, key_provider: object) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        day_id = _insert_day(conn, date="2026-10-31", state="consolidated")
+        frame = _frame(
+            conn,
+            day_id,
+            app_name="Cedar Daily",
+            window_title=FERRY_TITLE,
+            captured_at="2026-10-31T12:00:00Z",
+        )
+        noise = _insert_segment(
+            conn, day_id, frame, started_at="2026-10-31T12:00:00Z", merged="ferry news"
+        )
+        _insert_observation(conn, noise, description="Reading civic news")
+        groups = collect_deal_groups(conn, working_day_id=day_id)
+        assert groups.deals == ()
+        assert [item.id for item in groups.none_segments] == [noise]
+    finally:
+        conn.close()
+
+    with runtime_network_guard():
+        client = _client()
+        today = client.get("/today")
+        payload = client.get("/api/today").json()
+    assert today.status_code == 200
+    assert "no deals" in today.text
+    assert "No deal" in today.text
+    assert FERRY_TITLE in today.text
+    assert payload["deals"] == []
+    assert payload["none_segments"][0]["window_title"] == FERRY_TITLE
+    assert payload["none_segments"][0]["id"] == noise
 
 
 def test_excluded_app_content_stays_off_deal_groups(data_dir: Path, key_provider: object) -> None:

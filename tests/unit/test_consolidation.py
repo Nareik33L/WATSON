@@ -3041,7 +3041,12 @@ def test_failed_understand_is_flagged_not_silent(tmp_path: Path) -> None:
         summary = conn.execute(
             "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?", (day_id,)
         ).fetchone()
-        assert "excluded after understanding failed" in str(summary["narrative_md"])
+        narrative = str(summary["narrative_md"])
+        assert "excluded after understanding failed" in narrative
+        note_at = narrative.find("Note:")
+        heading_at = narrative.find("##")
+        assert note_at != -1
+        assert heading_at == -1 or note_at < heading_at
     finally:
         conn.close()
 

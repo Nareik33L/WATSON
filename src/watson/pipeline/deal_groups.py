@@ -121,8 +121,9 @@ def collect_deal_groups(
     claim_segments = _claim_segments(conn, working_day_id, pipeline_version)
     claims = _claim_texts(conn, working_day_id, pipeline_version)
     narrative, sections = _summary(conn, working_day_id, pipeline_version)
-    blocks = _heading_blocks(narrative)
     slots_by_deal = _slots_by_deal(sections)
+    deals = _order_deals(deals, sections)
+    blocks_by_id = _blocks_by_deal_id(narrative, sections, slots_by_deal)
     by_deal: dict[str, list[DealEvidence]] = {row["id"]: [] for row in deals}
     none: list[DealEvidence] = []
     for item in evidence:
@@ -132,10 +133,9 @@ def collect_deal_groups(
             none.append(row)
         else:
             by_deal[deal_id].append(row)
-    unused_blocks = list(blocks)
     cards: list[DealCard] = []
     for deal in deals:
-        body = _take_block(unused_blocks, str(deal["title"]))
+        body = blocks_by_id.get(str(deal["id"]), "")
         parsed = _parse_slot_text(body)
         slot_ids = slots_by_deal.get(str(deal["id"]), {})
         slots = tuple(
@@ -320,6 +320,54 @@ def _slots_by_deal(sections: dict[str, Any]) -> dict[str, dict[str, tuple[str, .
     return by_deal
 
 
+def _stored_deal_ids(sections: dict[str, Any]) -> list[str]:
+    items = sections.get("deals")
+    if not isinstance(items, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        deal_id = str(item.get("id") or "")
+        if not deal_id or deal_id in seen:
+            continue
+        seen.add(deal_id)
+        out.append(deal_id)
+    return out
+
+
+def _order_deals(deals: list[dict[str, str]], sections: dict[str, Any]) -> list[dict[str, str]]:
+    """Prefer the stored sections deal list over created_at / UUID order."""
+    stored = _stored_deal_ids(sections)
+    if not stored:
+        return deals
+    by_id = {row["id"]: row for row in deals}
+    ordered = [by_id[deal_id] for deal_id in stored if deal_id in by_id]
+    leftover = [row for row in deals if row["id"] not in set(stored)]
+    return ordered + leftover
+
+
+def _blocks_by_deal_id(
+    narrative: str,
+    sections: dict[str, Any],
+    slots_by_deal: dict[str, dict[str, tuple[str, ...]]],
+) -> dict[str, str]:
+    """Bind heading bodies to deal_id via stored deal order. Never by title."""
+    blocks = _heading_blocks(narrative)
+    stored = _stored_deal_ids(sections)
+    if not blocks:
+        return {}
+    if stored and len(blocks) == len(stored):
+        return {deal_id: body for deal_id, (_heading, body) in zip(stored, blocks, strict=True)}
+    slotted = [deal_id for deal_id in stored if deal_id in slots_by_deal]
+    if slotted and len(blocks) == len(slotted):
+        return {deal_id: body for deal_id, (_heading, body) in zip(slotted, blocks, strict=True)}
+    if len(stored) == 1 and len(blocks) == 1:
+        return {stored[0]: blocks[0][1]}
+    return {}
+
+
 _HEADING = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
@@ -336,16 +384,6 @@ def _heading_blocks(narrative: str) -> list[tuple[str, str]]:
     return blocks
 
 
-def _take_block(blocks: list[tuple[str, str]], title: str) -> str:
-    for index, (heading, body) in enumerate(blocks):
-        if heading == title:
-            blocks.pop(index)
-            return body
-    if len(blocks) == 1 and blocks[0][0] == "":
-        return blocks.pop(0)[1]
-    return ""
-
-
 def _parse_slot_text(body: str) -> dict[str, str]:
     found: dict[str, list[str]] = {slot: [] for slot in SLOT_ORDER}
     current: str | None = None
@@ -355,6 +393,8 @@ def _parse_slot_text(body: str) -> dict[str, str]:
         if not stripped:
             continue
         folded = stripped.casefold()
+        if folded.startswith("note:"):
+            continue
         matched: str | None = None
         rest = stripped
         for slot, prefixes in _SLOT_PREFIXES.items():
