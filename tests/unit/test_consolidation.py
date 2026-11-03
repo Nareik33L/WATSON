@@ -1264,6 +1264,7 @@ def test_failure_marks_failed_and_leaves_spool(
         assert marker.is_file()
         assert derived_counts(conn, seeded["day_id"]) == {
             "activities": 0,
+            "deals": 0,
             "decisions": 0,
             "commitments": 0,
             "achievements": 0,
@@ -2015,6 +2016,7 @@ def test_runtime_down_during_understand_holds_without_consolidating(
         assert row["last_error"] == "ConsolidationWait"
         assert derived_counts(conn, day_id) == {
             "activities": 0,
+            "deals": 0,
             "decisions": 0,
             "commitments": 0,
             "achievements": 0,

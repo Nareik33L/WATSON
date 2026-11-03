@@ -44,7 +44,7 @@ def test_summary_cites_day_claims_and_lists_uncited(tmp_path: Path) -> None:
             (seeded["day_id"],),
         ).fetchone()
         assert row is not None
-        assert row["prompt_version"] == "daily_summary/v1"
+        assert row["prompt_version"] == "daily_summary/v2"
         assert int(row["pipeline_version"]) == PIPELINE_VERSION
         narrative = str(row["narrative_md"])
         assert "[c:" in narrative

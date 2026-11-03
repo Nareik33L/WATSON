@@ -22,7 +22,7 @@ def _tables(conn: object) -> set[str]:
 def test_0008_up_down_on_empty_db(tmp_path: Path) -> None:
     path = tmp_path / "empty.db"
     command.upgrade(alembic_config(path, TEST_KEY), "0008_m3d_daily_summaries")
-    assert upgrade_head(path, TEST_KEY) == "0010_m4b_corrections"
+    assert upgrade_head(path, TEST_KEY) == "0011_m3f_deals"
     conn = connect(path, TEST_KEY, load_vec=False)
     try:
         assert TABLE in _tables(conn)

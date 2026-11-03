@@ -1713,4 +1713,4 @@ def test_s28_h3_ambiguous_alias_orphans(tmp_path: Path) -> None:
 
 def test_upgrade_creates_corrections_table(tmp_path: Path) -> None:
     path = tmp_path / "watson.db"
-    assert upgrade_head(path, TEST_KEY) == "0010_m4b_corrections"
+    assert upgrade_head(path, TEST_KEY) == "0011_m3f_deals"

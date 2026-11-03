@@ -8,6 +8,8 @@ Replay mode is the default. It is deterministic and offline. `FakeRuntime` is ne
 
 **Replay is a pipeline-only gate.** Committed recordings are hand-authored plausible model output (`tests/fixtures/eval/recordings.json`, `source: hand-authored-imperfect`). They are not copied from `truth.yaml` and they are not a quality claim for `qwen2.5:3b` (or any bake-off candidate). Replay CI checks: the pipeline finishes, consolidation is idempotent, each day has a non-empty daily summary with at least one resolvable `[c:id]` when the day has claims, and the hard 100%/0 structural metrics do not regress. Soft quality numbers are **measured and reported**; they do not fail replay CI. Do not lower `thresholds.json` if those numbers miss a target.
 
+Consolidation clusters observations into deals (`none` is unassigned `segments.deal_id`) and writes a cited per-deal daily summary (`what_happened` / `who_involved` / `next_step`) into the existing `daily_summaries` row. Record/replay still match `Cluster these observations` and `Write the daily narrative`. `collect_predicted` exposes `deal_titles`, `segment_deals`, and `summary_slots` for the later §11.2 scorer. Parked `thresholds.json` rows are unchanged in this PR.
+
 ## Replay (CI default)
 
 From a repo checkout, with the usual test key provider:

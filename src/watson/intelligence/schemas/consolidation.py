@@ -14,9 +14,25 @@ class ActivityCluster(BaseModel):
     observation_indexes: list[int] = Field(..., min_length=1)
 
 
-class ClusteringOutput(BaseModel):
+class DealCluster(BaseModel):
+    """Same shape as ``ActivityCluster``; a sales-opportunity cluster (M3f)."""
+
     model_config = ConfigDict(extra="forbid")
-    activities: list[ActivityCluster]
+    title: str = Field(..., min_length=1)
+    summary: str = Field(..., min_length=1)
+    observation_indexes: list[int] = Field(..., min_length=1)
+
+
+class ClusteringOutput(BaseModel):
+    """Accepts parked ``activities`` recordings and V1 ``deals`` output."""
+
+    model_config = ConfigDict(extra="forbid")
+    activities: list[ActivityCluster] = Field(default_factory=list)
+    deals: list[DealCluster] = Field(default_factory=list)
+
+    def clusters(self) -> list[DealCluster | ActivityCluster]:
+        """Deal clusters when present; otherwise parked activity clusters."""
+        return list(self.deals or self.activities)
 
     @classmethod
     def json_schema(cls) -> dict[str, Any]:
@@ -54,6 +70,7 @@ class SummaryParagraph(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(..., min_length=1)
     claim_ids: list[str] = Field(default_factory=list)
+    slot: Literal["what_happened", "who_involved", "next_step"] | None = None
 
 
 class DailySummaryOutput(BaseModel):

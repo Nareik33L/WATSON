@@ -27,7 +27,7 @@ PREV = "0009_m3_achievement_links"
 def test_0010_up_down_on_empty_db(tmp_path: Path) -> None:
     path = tmp_path / "empty.db"
     command.upgrade(alembic_config(path, TEST_KEY), HEAD)
-    assert upgrade_head(path, TEST_KEY) == HEAD
+    assert upgrade_head(path, TEST_KEY) == "0011_m3f_deals"
     conn = connect(path, TEST_KEY, load_vec=False)
     try:
         assert TABLE in _tables(conn)
@@ -116,7 +116,7 @@ def test_0010_upgrade_head_from_populated_0009(tmp_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
-    assert upgrade_head(path, TEST_KEY) == HEAD
+    assert upgrade_head(path, TEST_KEY) == "0011_m3f_deals"
     conn = connect(path, TEST_KEY, load_vec=False)
     try:
         assert (
