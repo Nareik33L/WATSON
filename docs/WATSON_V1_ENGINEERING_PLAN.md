@@ -1,17 +1,17 @@
-# WATSON V1 — Engineering Plan (Revision 2)
+# W.A.T.S.O.N V1 — Engineering Plan (Revision 2)
 
-**Supersedes:** WATSON V1 Product Requirements & Engineering Specification v1.1
+**Supersedes:** W.A.T.S.O.N V1 Product Requirements & Engineering Specification v1.1
 **Status:** Proposed engineering baseline
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
 **Changelog (2026-10-31):** M0-A bake-off (`docs/decisions/0001-m0a-8gb-runtime-and-models.md`) — §14 #1 is Ollama for V1.0 **dev**; llama.cpp-versus-MLX, per-model RSS and the 50 hand-scored frames move to M3 (Watson Lead); 16 GB fallback moves to V1.2 (§0.1). §7.1 package LLM class is ~3–4B on 8 GB (V1.0); ~7–9B is the V1.2 16 GB profile.
 
-**Changelog (2026-11-02):** §14 #9 option A (Kieran) — V1 keeps LLM consolidation. Two hardware profiles, same model: **primary** (32 GB target laptop) keeps original §11.4 understanding p95 < 20 s/segment and worker+model peak < 3 GB; **min-spec** (8 GB testing Mac) is p95 < 35 s and peak < 3.5 GB. Consolidation stays < 15 min on both and is gated in `thresholds.json`. Strict decisions/commitments precision ≥ 0.85 on both. Engineering headroom on 8 GB (p95 < 30 s, peak < 3.3 GiB) is reported in `report.json` → `headroom` and is not a gate. **16:42:** the 8 GB Mac is the testing laptop; WATSON must fit and run on it on the 3B model within min-spec targets. That is a **hard compatibility gate for every release**, whatever model is later chosen for 32 GB, not optional. **16:43:** V1/POC stays on `llama3.2:3b` on both profiles. A larger model for the 32 GB primary profile is parked post-POC (`docs/ROADMAP.md`). **Kieran 2026-11-02:** if `llama3.2:3b` is still < 0.85 strict precision after the quality-fix PR, switch the default to `qwen2.5:3b` and rerun; if qwen also misses 0.85 or breaks the 8 GB targets, escalate to Kieran.
+**Changelog (2026-11-02):** §14 #9 option A (Kieran) — V1 keeps LLM consolidation. Two hardware profiles, same model: **primary** (32 GB target laptop) keeps original §11.4 understanding p95 < 20 s/segment and worker+model peak < 3 GB; **min-spec** (8 GB testing Mac) is p95 < 35 s and peak < 3.5 GB. Consolidation stays < 15 min on both and is gated in `thresholds.json`. Strict decisions/commitments precision ≥ 0.85 on both. Engineering headroom on 8 GB (p95 < 30 s, peak < 3.3 GiB) is reported in `report.json` → `headroom` and is not a gate. **16:42:** the 8 GB Mac is the testing laptop; W.A.T.S.O.N must fit and run on it on the 3B model within min-spec targets. That is a **hard compatibility gate for every release**, whatever model is later chosen for 32 GB, not optional. **16:43:** V1/POC stays on `llama3.2:3b` on both profiles. A larger model for the 32 GB primary profile is parked post-POC (`docs/ROADMAP.md`). **Kieran 2026-11-02:** if `llama3.2:3b` is still < 0.85 strict precision after the quality-fix PR, switch the default to `qwen2.5:3b` and rerun; if qwen also misses 0.85 or breaks the 8 GB targets, escalate to Kieran.
 
 **Changelog (2026-11-02 21:53/21:55 via CoS):** Kieran 2026-11-02 21:53 via CoS: maximise accuracy; default chosen by strict precision ≥ 0.85; 7–8B allowed in V1; min-spec p95 recorded, not gated; min-spec memory gate = completes without crash or kill; primary targets unchanged. **21:55:** the default model is the largest model that runs to completion on the 8 GB Mac with strict precision ≥ 0.85, however slow. Candidates, biggest first: `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4; go smaller only if a bigger one crashes or misses 0.85. Code default stays `qwen2.5:3b` until the bake-off winner is sent. Larger models are no longer parked post-POC.
 
-This document keeps the product definition, principles and non-goals of v1.1 unchanged. It revises *how* WATSON is built. The changes fall into four groups:
+This document keeps the product definition, principles and non-goals of v1.1 unchanged. It revises *how* W.A.T.S.O.N is built. The changes fall into four groups:
 
 1. **Privacy exposure is reduced by an order of magnitude** — frames are deleted minutes after capture rather than at end of day, only the frontmost window is captured by default, and extracted text is itself tiered and expiring.
 2. **The AI pipeline is restructured** around OCR-first extraction and *activity segments* rather than per-screenshot vision-model calls. This is cheaper, more accurate, and gives verbatim evidence for provenance.
@@ -42,14 +42,14 @@ Everything in v1.1 §3.2 (exclusions), §21 (principles) and §22 (product defin
 
 ### 0.1 Release framing: V1 is the build that works for its author
 
-V1.0 is a **personal build**: WATSON running every working day on the developer's own Mac (Apple Silicon, **8 GB**, macOS 14+), producing summaries and reports the developer actually uses. It is complete when the author relies on it, not when it can be handed to someone else. Meeting/audio intelligence follows as **V1.1**, and everything needed to sell and distribute it to other people (packaging, notarisation, licensing, onboarding, customer documentation) is **V1.2 — Commercialisation** (`WATSON_V1_2_COMMERCIALISATION_PLAN.md`). The full ladder is in `docs/ROADMAP.md`.
+V1.0 is a **personal build**: W.A.T.S.O.N running every working day on the developer's own Mac (Apple Silicon, **8 GB**, macOS 14+), producing summaries and reports the developer actually uses. It is complete when the author relies on it, not when it can be handed to someone else. Meeting/audio intelligence follows as **V1.1**, and everything needed to sell and distribute it to other people (packaging, notarisation, licensing, onboarding, customer documentation) is **V1.2 — Commercialisation** (`WATSON_V1_2_COMMERCIALISATION_PLAN.md`). The full ladder is in `docs/ROADMAP.md`.
 
 Consequences for this plan:
 
 - **Hardware target is 8 GB first.** The VLM is off by default on 8 GB (OCR-only extraction, D2 already allows this); the LLM is a ~3–4B-class model at Q4 with a 4–8k context; the embedding model is ≤ 0.5B; models load sequentially, never together. 16 GB+ settings are a configuration profile exercised by the bench harness, not a V1 requirement. The 16 GB figures elsewhere in this document are retained as the profile targets for V1.2.
 - **Packaging in V1 is "runs from the repo on this Mac"**: `uv run watson run`, a launchd LaunchAgent for start-at-login, and the signed helper. No PyInstaller bundle, no clean-machine install, no Intel.
 - **Security controls that protect the author's own data stay in V1** (encrypted DB with Keychain key, loopback-only dashboard with token auth, egress guard, redacted logs, spool permissions). Controls whose purpose is third-party assurance (SBOM, threat-model document, installation/removal instructions, security documentation for customers and employers) move to V1.2.
-- **Dogfooding is the acceptance test.** From M5 onward the developer runs WATSON daily with real work on screen; the synthetic fixtures remain the regression gate, but the definition of done for V1 is the author's own weekly report, generated by WATSON and edited rather than rewritten.
+- **Dogfooding is the acceptance test.** From M5 onward the developer runs W.A.T.S.O.N daily with real work on screen; the synthetic fixtures remain the regression gate, but the definition of done for V1 is the author's own weekly report, generated by W.A.T.S.O.N and edited rather than rewritten.
 - Milestones M0–M6 are unchanged. M7 becomes *hardening for daily personal use*; the former M7 packaging work and M8 documentation pack are now V1.2.
 
 ---
@@ -138,7 +138,7 @@ Plan B if SQLCipher wheels prove fragile for the target Python: application-leve
 
 ### D8 — Claims with evidence, not just summaries
 
-Every statement WATSON may later repeat is a **claim** row with:
+Every statement W.A.T.S.O.N may later repeat is a **claim** row with:
 
 - `kind`: `activity | outcome | decision | commitment | achievement | person_interaction`
 - `assertion`: `observed | inferred | unconfirmed | user_confirmed | user_corrected | user_rejected`
@@ -314,7 +314,7 @@ SQLite with Alembic migrations. Columns abbreviated; all tables have `id` (UUIDv
 | `frame_visual` | Optional VLM description, expiring | `frame_id`, `description`, `model_id`, `expires_at` |
 | `segments` | Contiguous activity in one window | `working_day_id`, `bundle_id`, `window_title_norm`, `url_domain`, `started_at`, `ended_at`, `frame_count`, `dwell_seconds`, `line_changes`, `merged_text` (expiring), `state` |
 | `observations` | LLM understanding of a segment | `segment_id`, `activity_type`, `description`, `confidence`, `model_id`, `prompt_version`, `raw_json` |
-| `claims` | Atomic statements WATSON may repeat | `observation_id`, `working_day_id`, `kind`, `text`, `assertion`, `confidence`, `project_id`, `status` (for commitments: `open/done/dropped`), `due_hint` |
+| `claims` | Atomic statements W.A.T.S.O.N may repeat | `observation_id`, `working_day_id`, `kind`, `text`, `assertion`, `confidence`, `project_id`, `status` (for commitments: `open/done/dropped`), `due_hint` |
 | `evidence` | Why a claim is believed | `claim_id`, `segment_id`, `frame_id`, `snippet` (≤ 300 chars, retained), `snippet_kind` (`ocr/visual`) |
 | `entities` | Projects and people (single table, `type`) | `type`, `canonical_name`, `description`, `first_seen`, `last_seen`, `provisional`, `merged_into_id` |
 | `entity_aliases` | Names the model has used for an entity | `entity_id`, `alias`, `source` |
@@ -407,7 +407,7 @@ The table names the current defaults from the M0-A bake-off (ADR 0001). Identifi
 - Prompts include explicit calibration instructions mirroring v1.1 §6.4: outcomes require visible evidence of completion; "sent", "approved", "agreed" require the corresponding text; otherwise `unconfirmed`.
 - Reports and answers are generated from a provided list of claims with IDs and must cite IDs inline (`[c:…]`); a post-processor verifies every cited ID exists and strips sentences whose citations are missing. Uncited material claims are rendered in an "unverified" section rather than in the body.
 
-### 7.3 Retrieval (Ask WATSON, reports)
+### 7.3 Retrieval (Ask W.A.T.S.O.N, reports)
 
 Hybrid: query → (date range parser; entity resolver over aliases; FTS5 BM25; sqlite-vec kNN) → reciprocal-rank fusion → top-k claims and summaries with their evidence snippets → LLM answer with citations. The context budget is fixed (e.g. 6k tokens); nothing outside the retrieved set is given to the model. Answers show "Based on N records from dates X–Y" and link each citation to its day.
 
@@ -427,7 +427,7 @@ Hybrid: query → (date range parser; entity resolver over aliases; FTS5 BM25; s
 
 Sections as v1.1 §10.2, with these additions:
 
-- **Today** shows the live segment timeline (app, window, dwell) even before any LLM output exists, so the user sees what WATSON saw within minutes.
+- **Today** shows the live segment timeline (app, window, dwell) even before any LLM output exists, so the user sees what W.A.T.S.O.N saw within minutes.
 - **Memory** exposes claims with their assertion badges and evidence snippets; one-click confirm / correct / reject / "not work"; project and person merge/rename.
 - **Reports** have an editor with version history, "copy as Markdown", and "export .md". Nothing else leaves the app.
 - **Privacy** shows: permission state, spool depth and oldest frame age, tier-2 text volume and next purge, exclusion lists, work hours, and the deletion controls with confirmation and audit trail.
@@ -556,7 +556,7 @@ Targets for the **16 GB V1.2 profile** (commercialisation, not the M3 eval profi
 
 ### 11.5 Manual dogfooding
 
-Before M5 completes, the developer runs WATSON on their own machine with only synthetic/authorised content on screen, for several full days, reviewing the Memory page and corrections each evening. Findings feed prompt and resolver changes with corresponding fixture additions.
+Before M5 completes, the developer runs W.A.T.S.O.N on their own machine with only synthetic/authorised content on screen, for several full days, reviewing the Memory page and corrections each evening. Findings feed prompt and resolver changes with corresponding fixture additions.
 
 ---
 
@@ -611,7 +611,7 @@ Supervisor launches and monitors the helper; permission states; exclusions UI; w
 
 ### M6 — Retrieval and reporting
 
-Hybrid search, Ask WATSON with citations, weekly/monthly/project/achievement reports, editor with versions, Markdown export.
+Hybrid search, Ask W.A.T.S.O.N with citations, weekly/monthly/project/achievement reports, editor with versions, Markdown export.
 
 *Acceptance:* 30 scripted questions over a multi-week fixture corpus answered with correct dates and resolvable citations ≥ 90 %; weekly report for a fixture week cites only existing claims; edits persist across restarts.
 
@@ -619,11 +619,11 @@ Hybrid search, Ask WATSON with citations, weekly/monthly/project/achievement rep
 
 Key management verified against the real Keychain, egress guard active in every process, 8 GB resource governance (sequential model loading, worker RSS cap, VLM off, backpressure), log rotation, low-disk pause, crash recovery of each process, launchd LaunchAgent for start-at-login with the menu bar, `watson models verify` against the pinned model manifest, catch-up consolidation exercised across a real sleep/close-lid night.
 
-*Acceptance:* the developer has used WATSON for ten consecutive working days with real work on screen; every day reached `consolidated` (including at least two via catch-up); the spool was empty each morning; the author produced two weekly reports from WATSON output with edits rather than rewrites; the eval gates in §11.2 still pass on fixtures; no privacy test regressed. **This closes V1.**
+*Acceptance:* the developer has used W.A.T.S.O.N for ten consecutive working days with real work on screen; every day reached `consolidated` (including at least two via catch-up); the spool was empty each morning; the author produced two weekly reports from W.A.T.S.O.N output with edits rather than rewrites; the eval gates in §11.2 still pass on fixtures; no privacy test regressed. **This closes V1.**
 
 ### Deferred to V1.2 — Distribution and assurance documentation
 
-Former M7 packaging (signed, notarised app bundle with embedded helper and in-process runtime, model manifest, clean-machine install, 16 GB and 24 GB profiles) and the former M8 documentation pack (architecture and data-flow diagrams, SBOM, model inventory with licences and hashes, permissions list, network behaviour statement with test evidence, retention/deletion policy, threat model, install/removal instructions, test results) are specified in detail in `WATSON_V1_2_COMMERCIALISATION_PLAN.md`. In the commercial context the documentation pack serves customers first (website and in-app privacy explanation) and is also offered as an "information for your employer" sheet for individuals who install WATSON on a work Mac.
+Former M7 packaging (signed, notarised app bundle with embedded helper and in-process runtime, model manifest, clean-machine install, 16 GB and 24 GB profiles) and the former M8 documentation pack (architecture and data-flow diagrams, SBOM, model inventory with licences and hashes, permissions list, network behaviour statement with test evidence, retention/deletion policy, threat model, install/removal instructions, test results) are specified in detail in `WATSON_V1_2_COMMERCIALISATION_PLAN.md`. In the commercial context the documentation pack serves customers first (website and in-app privacy explanation) and is also offered as an "information for your employer" sheet for individuals who install W.A.T.S.O.N on a work Mac.
 
 ---
 
@@ -659,7 +659,7 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 | 6 | Whether to request Accessibility permission for browser URLs in V1, or defer | M5 |
 | 7 | Tier-2 text default TTL (7 days proposed) | M3, after seeing re-consolidation needs |
 | 8 | Dashboard framework details (HTMX vs plain fetch) | M1 |
-| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask WATSON | **DECIDED (Kieran, 2026-11-02 16:41 option A; superseded in part by 21:53/21:55 via CoS)** — V1 keeps LLM consolidation. **Primary** unchanged: p95 < 20 s/segment, worker+model peak < 3 GB, consolidation < 15 min. **Min-spec:** understand p95 recorded, not gated; memory gate = completes without crash or kill; consolidation < 15 min; peak worker+model reported, not gated. Strict precision ≥ 0.85 and the other §11.2 metrics stay gating on both. **Kieran 2026-11-02 21:53 via CoS:** maximise accuracy; default chosen by strict precision ≥ 0.85; 7–8B allowed in V1; min-spec p95 recorded, not gated; min-spec memory gate = completes without crash or kill; primary targets unchanged. **21:55:** default = largest model that completes on 8 GB at ≥ 0.85, however slow; candidates `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4. |
+| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask W.A.T.S.O.N | **DECIDED (Kieran, 2026-11-02 16:41 option A; superseded in part by 21:53/21:55 via CoS)** — V1 keeps LLM consolidation. **Primary** unchanged: p95 < 20 s/segment, worker+model peak < 3 GB, consolidation < 15 min. **Min-spec:** understand p95 recorded, not gated; memory gate = completes without crash or kill; consolidation < 15 min; peak worker+model reported, not gated. Strict precision ≥ 0.85 and the other §11.2 metrics stay gating on both. **Kieran 2026-11-02 21:53 via CoS:** maximise accuracy; default chosen by strict precision ≥ 0.85; 7–8B allowed in V1; min-spec p95 recorded, not gated; min-spec memory gate = completes without crash or kill; primary targets unchanged. **21:55:** default = largest model that completes on 8 GB at ≥ 0.85, however slow; candidates `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4. |
 | 10 | Package runtime: llama.cpp vs MLX (in-process default, D6) | **M3**, owner Watson Lead — not measured at M0-A |
 
 ---
@@ -671,4 +671,4 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 3. Start M0-B: scaffold `helper/` and prove frontmost-window capture + Vision OCR + persistent TCC grant.
 4. Build `tools/fixture_gen` with the first fictional app templates and the "focused single-project day" fixture, so M1's `watson replay` has real input on day one.
 
-The order honours the v1.1 intent — prove WATSON can understand and remember a working day before it observes one — while retiring the two risks that would otherwise surface late: whether the chosen model is fast enough, and whether macOS will let the app capture at all.
+The order honours the v1.1 intent — prove W.A.T.S.O.N can understand and remember a working day before it observes one — while retiring the two risks that would otherwise surface late: whether the chosen model is fast enough, and whether macOS will let the app capture at all.

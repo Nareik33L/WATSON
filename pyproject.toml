@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "watson"
 version = "0.1.0"
-description = "Local-first, offline-capable work memory for macOS"
+description = "W.A.T.S.O.N — local-first, offline-capable work memory for macOS"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

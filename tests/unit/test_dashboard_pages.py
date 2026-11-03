@@ -248,6 +248,7 @@ def test_today_shows_observations_and_summary(data_dir: Path, key_provider: obje
     client = _client()
     page = client.get("/today")
     assert page.status_code == 200
+    assert "<title>W.A.T.S.O.N today</title>" in page.text
     assert "Editing the Acme Q4 proposal draft." in page.text
     assert "knowledge_work" in page.text
     assert "Work continued on Acme" in page.text
@@ -544,6 +545,8 @@ def test_nav_lists_m4a_pages(data_dir: Path, key_provider: object) -> None:
     open_test_db(data_dir).close()
     client = _client()
     page = client.get("/")
+    assert "<title>W.A.T.S.O.N status</title>" in page.text
+    assert '<p class="brand">W.A.T.S.O.N</p>' in page.text
     assert 'href="/history"' in page.text
     assert 'href="/projects"' in page.text
     assert 'href="/people"' in page.text

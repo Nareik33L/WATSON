@@ -12,6 +12,8 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>watson-capture</string>
+	<key>CFBundleDisplayName</key>
+	<string>W.A.T.S.O.N</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -21,8 +23,8 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright 2026 WATSON. Local-first; no network.</string>
+	<string>Copyright 2026 W.A.T.S.O.N. Local-first; no network.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>WATSON captures the frontmost window so it can record your work locally. Frames stay on this Mac and are deleted after extraction.</string>
+	<string>W.A.T.S.O.N captures the frontmost window so it can record your work locally. Frames stay on this Mac and are deleted after extraction.</string>
 </dict>
 </plist>

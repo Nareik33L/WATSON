@@ -120,7 +120,7 @@ def create_app(
     if not token:
         raise AuthError("dashboard token must not be empty")
 
-    app = FastAPI(title="WATSON", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="W.A.T.S.O.N", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token
     app.state.config = config
     app.state.port = port

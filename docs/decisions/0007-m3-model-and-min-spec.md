@@ -22,7 +22,7 @@ Kieran 2026-11-02 21:55 via CoS: the default model is the **largest** model that
 | Models | 7–9B Q4 allowed in V1. Per-model Ollama `timeout_s` / `num_ctx` (`watson eval --llm-model`, `WATSON_LLM_MODEL`). 7B-on-8 GB default timeout is 900 s. |
 | Code default until bake-off | `qwen2.5:3b`. `llama3.2:3b` remains selectable. Device Ops sends the winner. |
 
-This supersedes the 16:42 “hard 8 GB/3B gate” wording and the 16:43 “larger model parked post-POC” parking. The 8 GB Mac remains the testing laptop; WATSON must complete eval on it without crash or kill.
+This supersedes the 16:42 “hard 8 GB/3B gate” wording and the 16:43 “larger model parked post-POC” parking. The 8 GB Mac remains the testing laptop; W.A.T.S.O.N must complete eval on it without crash or kill.
 
 ## Not decided here
 

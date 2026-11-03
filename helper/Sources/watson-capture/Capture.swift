@@ -105,7 +105,7 @@ public enum CommandLineApp {
     }
 
     public static let helpText = """
-    watson-capture — WATSON frontmost-window capture helper (M0-B)
+    watson-capture — W.A.T.S.O.N frontmost-window capture helper (M0-B)
 
     Usage:
       watson-capture [options]

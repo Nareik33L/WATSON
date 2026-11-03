@@ -1,4 +1,4 @@
-# WATSON M0-B capture spike — 2026-10-31
+# W.A.T.S.O.N M0-B capture spike — 2026-10-31
 
 Records the M0-B run on the V1 machine (Apple M1, **8 GB**, macOS 14.5). Watson QA certified M0 against the metadata-only artefact set in [`docs/results/m0b/artefacts.md`](m0b/artefacts.md).
 
