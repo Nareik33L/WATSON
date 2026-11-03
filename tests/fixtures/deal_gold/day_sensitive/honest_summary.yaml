@@ -1,0 +1,36 @@
+claims:
+  - id: h-pier-grid
+    deal: north-pier-invoice
+    slot: what_happened
+    text: Opened the hours grid
+    evidence_segments: [s-grid-pier]
+  - id: h-pier-who
+    deal: north-pier-invoice
+    slot: who_involved
+    text: Mina Okonkwo
+    evidence_segments: [s-mail-pier]
+  - id: h-pier-next
+    deal: north-pier-invoice
+    slot: next_step
+    text: send the hours grid
+    evidence_segments: [s-mail-pier]
+  - id: h-cedar-page
+    deal: cedar-onboarding
+    slot: what_happened
+    text: Edited the onboarding page
+    evidence_segments: [s-doc-cedar]
+  - id: h-cedar-draft
+    deal: cedar-onboarding
+    slot: what_happened
+    text: Opened the onboarding draft
+    evidence_segments: [s-doc-cedar]
+  - id: h-cedar-who
+    deal: cedar-onboarding
+    slot: who_involved
+    text: Jun Park
+    evidence_segments: [s-mail-cedar]
+  - id: h-cedar-next
+    deal: cedar-onboarding
+    slot: next_step
+    text: publish the onboarding page before Friday
+    evidence_segments: [s-mail-cedar]

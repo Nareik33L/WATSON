@@ -1,0 +1,32 @@
+# Deal overlay for the existing V1 fixture. Segment ids are start_frame UUIDs
+# from truth.yaml expected_segments — the same frames replay produces.
+day: day_acme_q4
+date: '2026-10-31'
+deals:
+  - id: acme-q4
+    name: Acme Q4 Proposal
+    company: Acme
+people:
+  - id: priya-natarajan
+    name: Priya Natarajan
+    company: Acme
+  - id: tom-ashworth
+    name: Tom Ashworth
+    company: Delivery
+rules:
+  - match: [acme]
+    deal: acme-q4
+deal_summaries:
+  acme-q4:
+    what_happened:
+      - id: fact-v1-acme-pricing
+        required_terms: [pricing]
+        evidence_segments: [0effb2c0-e6e2-52a1-8e86-a1b3c1ddfd06]
+    who_involved:
+      - id: fact-v1-acme-priya
+        person_id: priya-natarajan
+        evidence_segments: [0effb2c0-e6e2-52a1-8e86-a1b3c1ddfd06]
+    next_step:
+      - id: fact-v1-acme-send
+        required_terms: [send, pricing]
+        evidence_segments: [1c9145b9-d596-5d39-947b-285cc525db41]

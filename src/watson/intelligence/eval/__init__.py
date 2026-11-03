@@ -1,5 +1,9 @@
 """M3 eval harness: §11.2 metrics on fixture days."""
 
+from watson.intelligence.eval.deals import (
+    load_deal_corpus,
+    score_deals,
+)
 from watson.intelligence.eval.metrics import (
     completed_accuracy,
     f1_score,
@@ -16,10 +20,12 @@ __all__ = [
     "completed_accuracy",
     "f1_score",
     "gate_metrics",
+    "load_deal_corpus",
     "load_thresholds",
     "precision",
     "recall",
     "render_markdown",
     "run_eval",
     "score_day",
+    "score_deals",
 ]

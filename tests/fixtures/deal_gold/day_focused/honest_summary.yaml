@@ -1,0 +1,58 @@
+# Honest control: scored against gold grouping. One claim per gold fact.
+# Includes a what_happened claim with a full roster name and a deadline.
+claims:
+  - id: h-q4-call
+    deal: acme-q4
+    slot: what_happened
+    text: Priya Natarajan joined the pricing call before the 14 Nov demo about $90k
+    evidence_segments: [s-call-q4]
+  - id: h-q4-deck
+    deal: acme-q4
+    slot: what_happened
+    text: Edited the Q4 deck
+    evidence_segments: [s-doc-q4]
+  - id: h-q4-demo
+    deal: acme-q4
+    slot: what_happened
+    text: Noted the 14 Nov demo
+    evidence_segments: [s-call-q4]
+  - id: h-q4-who
+    deal: acme-q4
+    slot: who_involved
+    text: Priya Natarajan
+    evidence_segments: [s-mail-q4, s-call-q4]
+  - id: h-q4-next
+    deal: acme-q4
+    slot: next_step
+    text: will send pricing by Friday
+    evidence_segments: [s-mail-q4]
+  - id: h-renewal-term
+    deal: acme-renewal
+    slot: what_happened
+    text: Reviewed the renewal term
+    evidence_segments: [s-doc-renewal]
+  - id: h-renewal-who
+    deal: acme-renewal
+    slot: who_involved
+    text: Priya Natarajan
+    evidence_segments: [s-mail-renewal]
+  - id: h-renewal-next
+    deal: acme-renewal
+    slot: next_step
+    text: draft the renewal letter
+    evidence_segments: [s-mail-renewal]
+  - id: h-globex-kickoff
+    deal: globex-pilot
+    slot: what_happened
+    text: Confirmed the pilot kickoff at $1m
+    evidence_segments: [s-call-globex]
+  - id: h-globex-who
+    deal: globex-pilot
+    slot: who_involved
+    text: Priya Chen
+    evidence_segments: [s-mail-globex]
+  - id: h-globex-next
+    deal: globex-pilot
+    slot: next_step
+    text: will share the timeline Monday
+    evidence_segments: [s-mail-globex]

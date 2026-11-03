@@ -1,0 +1,49 @@
+day: day_meeting_heavy
+date: '2026-11-04'
+deals:
+  - id: acme-q4
+    name: Acme Q4 Proposal
+    company: Acme
+  - id: harbor-walkthrough
+    name: Harbor Walkthrough
+    company: Harbor
+    lookalike_of: harbor-audit
+people:
+  - id: priya-natarajan
+    name: Priya Natarajan
+    company: Acme
+  - id: tom-ashworth
+    name: Tom Ashworth
+    company: Delivery
+rules:
+  - match: [acme]
+    deal: acme-q4
+  - match: [priya]
+    deal: acme-q4
+  - match: [demo]
+    deal: acme-q4
+  - match: [harbor]
+    deal: harbor-walkthrough
+deal_summaries:
+  acme-q4:
+    what_happened:
+      - id: fact-v1-meet-demo
+        required_terms: [demo]
+        evidence_segments: [19ce7f66-6799-5019-95e9-9fbffd697e84]
+    who_involved:
+      - id: fact-v1-meet-priya
+        person_id: priya-natarajan
+        evidence_segments: [060ebe1a-22d7-5321-ab92-e633ffa3627f]
+    next_step:
+      - id: fact-v1-meet-recap
+        required_terms: [demo]
+        evidence_segments: [f1d7aebd-d2e4-5083-b502-1b966abd0582]
+  harbor-walkthrough:
+    what_happened:
+      - id: fact-v1-meet-harbor
+        required_terms: [harbor]
+        evidence_segments: [d1d4f7de-39cd-572b-b003-772737d31bfc]
+    next_step:
+      - id: fact-v1-meet-notes
+        required_terms: [harbor]
+        evidence_segments: [2bfbb45e-1720-5b9d-9a84-263f389218f5]

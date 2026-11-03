@@ -1,0 +1,43 @@
+day: day_fragmented_multi
+date: '2026-11-03'
+deals:
+  - id: northwind-renewal
+    name: Northwind Renewal
+    company: Northwind
+  - id: harbor-audit
+    name: Harbor Safety Audit
+    company: Harbor
+  - id: cedar-onboarding
+    name: Cedar Onboarding
+    company: Cedar
+people:
+  - id: mina-okonkwo
+    name: Mina Okonkwo
+    company: Northwind
+  - id: ellis-voss
+    name: Ellis Voss
+    company: Harbor
+  - id: jun-park
+    name: Jun Park
+    company: Cedar
+rules:
+  - match: [northwind]
+    deal: northwind-renewal
+  - match: [harbor]
+    deal: harbor-audit
+  - match: [onboarding]
+    deal: cedar-onboarding
+deal_summaries:
+  northwind-renewal:
+    what_happened:
+      - id: fact-v1-nw-renewal
+        required_terms: [northwind, renewal]
+        evidence_segments: [3d478f13-f6a6-585b-8cf1-b29f50e712bb]
+    who_involved:
+      - id: fact-v1-nw-mina
+        person_id: mina-okonkwo
+        evidence_segments: [3d478f13-f6a6-585b-8cf1-b29f50e712bb]
+    next_step:
+      - id: fact-v1-nw-letter
+        required_terms: [renewal]
+        evidence_segments: [761c0e42-afc1-56fb-9079-3e33740015a4]

@@ -126,10 +126,65 @@ def write_mini_fixture(
             "height": 2,
         }
     manifest = {"name": name, "date": date, "seed": 1, "frames": entries}
-    (fixture / "manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-    )
+    (fixture / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return fixture
+
+
+def write_deal_day_fixture(day: object, dest: Path) -> Path:
+    """Materialize one deal-gold day as PNG + sidecar + manifest for replay."""
+    from watson.intelligence.eval.deals import DayGold
+
+    if not isinstance(day, DayGold):
+        raise TypeError("day must be a DayGold")
+    dest.mkdir(parents=True, exist_ok=True)
+    date = day.date or "2026-10-31"
+    day_dir = dest / "frames" / date
+    day_dir.mkdir(parents=True, exist_ok=True)
+    entries: dict[str, dict[str, object]] = {}
+    seen: set[str] = set()
+    for segment in day.segments:
+        for frame_id in segment.frame_ids:
+            if frame_id in seen:
+                continue
+            seen.add(frame_id)
+            frame = day.frames.get(frame_id)
+            png_path = day_dir / f"{frame_id}.png"
+            write_png(png_path, 2, 2)
+            private = segment.privacy_bait or (frame is not None and frame.skipped)
+            sidecar = make_sidecar(
+                frame_id=frame_id,
+                captured_at=segment.started_at or f"{date}T09:00:00Z",
+                ocr_lines=[
+                    {
+                        "text": (frame.text.strip() if frame and frame.text.strip() else "empty"),
+                        "bbox": [0, 0, 2, 2],
+                        "confidence": 1.0,
+                    }
+                ],
+                window_title=segment.window_title or "Inbox",
+                bundle_id=segment.bundle_id or "com.lumen.mail",
+                app_name="Passwords" if private else "Lumen Mail",
+                is_private_browsing=private,
+            )
+            if private:
+                sidecar["bundle_id"] = (
+                    frame.bundle_id
+                    if frame and frame.bundle_id
+                    else (segment.bundle_id or "com.apple.Passwords")
+                )
+            (day_dir / f"{frame_id}.json").write_text(
+                json.dumps(sidecar, indent=2) + "\n", encoding="utf-8"
+            )
+            rel = f"frames/{date}/{frame_id}.png"
+            entries[frame_id] = {
+                "png": rel,
+                "sha256": hashlib.sha256(png_path.read_bytes()).hexdigest(),
+                "width": 2,
+                "height": 2,
+            }
+    manifest = {"name": day.name, "date": date, "seed": 1, "frames": entries}
+    (dest / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return dest
 
 
 def distinctive_ocr_texts(fixture_dir: Path, *, min_len: int = 24) -> list[str]:

@@ -1,0 +1,16 @@
+# Required failing shape for group-by-company (plan §11.2): 60 segments,
+# 12 noise, Acme 12/1/1/1, others 8/8/8/9. Titles carry the roster company.
+# Expanded by load_deal_day() when kind is acme_1211.
+kind: acme_1211
+day: failing_acme_1211
+date: '2026-01-15'
+deals:
+  - {id: acme-alpha, name: Acme Alpha, company: Acme, n: 12}
+  - {id: acme-beta, name: Acme Beta, company: Acme, n: 1}
+  - {id: acme-gamma, name: Acme Gamma, company: Acme, n: 1}
+  - {id: acme-delta, name: Acme Delta, company: Acme, n: 1}
+  - {id: globex-main, name: Globex Main, company: Globex, n: 8}
+  - {id: initech-main, name: Initech Main, company: Initech, n: 8}
+  - {id: umbrella-main, name: Umbrella Main, company: Umbrella, n: 8}
+  - {id: stark-main, name: Stark Main, company: Stark, n: 9}
+noise: 12

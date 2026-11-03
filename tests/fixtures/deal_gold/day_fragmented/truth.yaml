@@ -1,0 +1,222 @@
+day: day_fragmented
+date: '2026-11-03'
+deals:
+  - id: northwind-renewal
+    name: Northwind Renewal
+    company: Northwind
+  - id: northwind-expansion
+    name: Northwind Expansion
+    company: Northwind
+  - id: harbor-audit
+    name: Harbor Safety Audit
+    company: Harbor
+    lookalike_of: null
+people:
+  - id: mina-okonkwo
+    name: Mina Okonkwo
+    company: Northwind
+  - id: ellis-voss
+    name: Ellis Voss
+    company: Harbor
+  - id: jun-park
+    name: Jun Park
+    company: Cedar
+segments:
+  - id: s-mail-nw
+    frame_ids: [f-mail-nw]
+    deal: northwind-renewal
+    bundle_id: com.cedar.mail
+    window_title: 'Re: Renewal — Mina Okonkwo | Northwind'
+    started_at: '2026-11-03T09:00:00Z'
+    channel: email
+  - id: s-call-nw
+    frame_ids: [f-call-nw]
+    deal: northwind-renewal
+    bundle_id: com.cedar.room
+    window_title: 'Call — Mina Okonkwo | Northwind'
+    started_at: '2026-11-03T10:00:00Z'
+    channel: call
+  - id: s-doc-nw
+    frame_ids: [f-doc-nw]
+    deal: northwind-renewal
+    bundle_id: com.cedar.quill
+    window_title: 'Renewal letter — Northwind'
+    started_at: '2026-11-03T10:30:00Z'
+    channel: doc
+  - id: s-ide-nw
+    frame_ids: [f-ide-nw]
+    deal: northwind-renewal
+    bundle_id: com.cedar.anvil
+    window_title: 'anvil — renewals/northwind.md'
+    started_at: '2026-11-03T11:00:00Z'
+    channel: doc
+  - id: s-mail-nwx
+    frame_ids: [f-mail-nwx]
+    deal: northwind-expansion
+    bundle_id: com.cedar.mail
+    window_title: 'Re: Expansion — Mina Okonkwo | Northwind'
+    started_at: '2026-11-03T13:00:00Z'
+    channel: email
+  - id: s-doc-nwx
+    frame_ids: [f-doc-nwx]
+    deal: northwind-expansion
+    bundle_id: com.cedar.quill
+    window_title: 'Expansion brief — Northwind'
+    started_at: '2026-11-03T13:30:00Z'
+    channel: doc
+  - id: s-grid-nwx
+    frame_ids: [f-grid-nwx]
+    deal: northwind-expansion
+    bundle_id: com.cedar.grid
+    window_title: 'Expansion seats — Northwind'
+    started_at: '2026-11-03T14:00:00Z'
+    channel: doc
+  - id: s-mail-harbor
+    frame_ids: [f-mail-harbor]
+    deal: harbor-audit
+    bundle_id: com.cedar.mail
+    window_title: 'Re: Safety Audit — Ellis Voss | Harbor'
+    started_at: '2026-11-03T09:40:00Z'
+    channel: email
+  - id: s-call-harbor
+    frame_ids: [f-call-harbor]
+    deal: harbor-audit
+    bundle_id: com.cedar.room
+    window_title: 'Call — Ellis Voss | Harbor'
+    started_at: '2026-11-03T11:20:00Z'
+    channel: call
+  - id: s-doc-harbor
+    frame_ids: [f-doc-harbor]
+    deal: harbor-audit
+    bundle_id: com.cedar.quill
+    window_title: 'Safety Audit checklist — Harbor'
+    started_at: '2026-11-03T14:20:00Z'
+    channel: doc
+  - id: s-grid-harbor
+    frame_ids: [f-grid-harbor]
+    deal: harbor-audit
+    bundle_id: com.cedar.grid
+    window_title: 'Audit findings — Harbor'
+    started_at: '2026-11-03T15:00:00Z'
+    channel: doc
+  - id: s-news-frag
+    frame_ids: [f-news-frag]
+    deal: none
+    bundle_id: com.cedar.compass
+    window_title: 'Cedar Daily — Tide tables'
+    started_at: '2026-11-03T09:24:00Z'
+    channel: noise
+  - id: s-cal-frag
+    frame_ids: [f-cal-frag]
+    deal: none
+    bundle_id: com.cedar.compass
+    window_title: 'Pocket Calendar — Today'
+    started_at: '2026-11-03T09:56:00Z'
+    channel: noise
+  - id: s-idle-frag
+    frame_ids: [f-idle-frag]
+    deal: none
+    bundle_id: com.cedar.compass
+    window_title: 'Cedar Daily — Weather'
+    started_at: '2026-11-03T16:00:00Z'
+    channel: noise
+skipped: []
+frames:
+  f-mail-nw:
+    text: >
+      Email from Mina Okonkwo. Use a two year term for the Northwind renewal.
+      Please send the term card. Extra tokens inbox unread badge signature
+      quoted thread attachment.
+  f-call-nw:
+    text: >
+      Call with Mina Okonkwo about the two year term. Extra tokens mute waveform
+      participant list transcript cursor sidebar.
+  f-doc-nw:
+    text: >
+      Northwind renewal letter still editing. Two year term noted. Extra tokens
+      heading styles margin ruler comments outline export thumbnail.
+  f-ide-nw:
+    text: >
+      anvil renewals northwind markdown. Two year term comment. Extra tokens
+      linenumber minimap scrollbar breadcrumb statusbar toolbar inspector.
+  f-mail-nwx:
+    text: >
+      Email from Mina Okonkwo about the expansion seats. File the expansion
+      brief Friday. Extra tokens inbox unread badge signature quoted thread.
+  f-doc-nwx:
+    text: >
+      Expansion brief draft. Seats and sites. Extra tokens heading styles
+      margin ruler comments outline export.
+  f-grid-nwx:
+    text: >
+      Expansion seats grid. Extra tokens column filter sort freeze pane formula
+      bar sheet tab.
+  f-mail-harbor:
+    text: >
+      Email from Ellis Voss. Send the Harbor checklist by Wednesday. Extra
+      tokens inbox unread badge signature quoted thread.
+  f-call-harbor:
+    text: >
+      Call with Ellis Voss on the safety audit checklist. Extra tokens mute
+      waveform participant list transcript cursor.
+  f-doc-harbor:
+    text: >
+      Harbor safety audit checklist. Extra tokens heading styles margin ruler
+      comments outline export thumbnail palette.
+  f-grid-harbor:
+    text: >
+      Harbor audit findings grid. Extra tokens column filter sort freeze pane
+      formula bar sheet tab watermark.
+  f-news-frag:
+    text: Cedar Daily tide tables ferry weather widget.
+  f-cal-frag:
+    text: Pocket Calendar today glance empty morning block.
+  f-idle-frag:
+    text: Cedar Daily weather widget radar loop.
+deal_summaries:
+  northwind-renewal:
+    what_happened:
+      - id: fact-nw-term
+        required_terms: [two, year, term]
+        aliases: {two: [two, 2]}
+        evidence_segments: [s-mail-nw, s-doc-nw]
+      - id: fact-nw-letter
+        required_terms: [renewal, letter]
+        evidence_segments: [s-doc-nw]
+    who_involved:
+      - id: fact-nw-mina
+        person_id: mina-okonkwo
+        evidence_segments: [s-mail-nw, s-call-nw]
+    next_step:
+      - id: fact-nw-keep
+        required_terms: [send, term]
+        evidence_segments: [s-mail-nw]
+  northwind-expansion:
+    what_happened:
+      - id: fact-nwx-seats
+        required_terms: [expansion, seats]
+        evidence_segments: [s-doc-nwx, s-grid-nwx]
+    who_involved:
+      - id: fact-nwx-mina
+        person_id: mina-okonkwo
+        evidence_segments: [s-mail-nwx]
+    next_step:
+      - id: fact-nwx-file
+        required_terms: [file, expansion, brief]
+        evidence_segments: [s-mail-nwx]
+  harbor-audit:
+    what_happened:
+      - id: fact-harbor-check
+        required_terms: [safety, audit, checklist]
+        evidence_segments: [s-doc-harbor, s-call-harbor]
+      - id: fact-harbor-findings
+        required_terms: [audit, findings]
+        evidence_segments: [s-grid-harbor]
+    who_involved:
+      - id: fact-harbor-ellis
+        person_id: ellis-voss
+        evidence_segments: [s-mail-harbor, s-call-harbor]
+    next_step:
+      - id: fact-harbor-send
+        required_terms: [send, checklist, wednesday]
+        evidence_segments: [s-mail-harbor]

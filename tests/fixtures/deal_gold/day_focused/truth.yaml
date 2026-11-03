@@ -1,0 +1,210 @@
+day: day_focused
+date: '2026-10-31'
+deals:
+  - id: acme-q4
+    name: Acme Q4 Proposal
+    company: Acme
+    lookalike_of: null
+  - id: acme-renewal
+    name: Acme Renewal
+    company: Acme
+    lookalike_of: acme-q4
+  - id: globex-pilot
+    name: Globex Pilot
+    company: Globex
+people:
+  - id: priya-natarajan
+    name: Priya Natarajan
+    company: Acme
+  - id: priya-chen
+    name: Priya Chen
+    company: Globex
+  - id: tom-ashworth
+    name: Tom Ashworth
+    company: Delivery
+segments:
+  - id: s-mail-q4
+    frame_ids: [f-mail-q4]
+    deal: acme-q4
+    bundle_id: com.lumen.mail
+    window_title: 'Re: Q4 Proposal — Priya Natarajan | Acme'
+    started_at: '2026-10-31T09:00:00Z'
+    channel: email
+  - id: s-call-q4
+    frame_ids: [f-call-q4]
+    deal: acme-q4
+    bundle_id: com.lumen.room
+    window_title: 'Call — Priya Natarajan | Acme'
+    started_at: '2026-10-31T13:00:00Z'
+    channel: call
+  - id: s-doc-q4
+    frame_ids: [f-doc-q4]
+    deal: acme-q4
+    bundle_id: com.lumen.quill
+    window_title: 'Q4 Deck — Acme'
+    started_at: '2026-10-31T14:00:00Z'
+    channel: doc
+  - id: s-mail-renewal
+    frame_ids: [f-mail-renewal]
+    deal: acme-renewal
+    bundle_id: com.lumen.mail
+    window_title: 'Re: Renewal — Priya Natarajan | Acme'
+    started_at: '2026-10-31T10:00:00Z'
+    channel: email
+  - id: s-doc-renewal
+    frame_ids: [f-doc-renewal]
+    deal: acme-renewal
+    bundle_id: com.lumen.quill
+    window_title: 'Renewal letter — Acme'
+    started_at: '2026-10-31T11:00:00Z'
+    channel: doc
+  - id: s-crm-renewal
+    frame_ids: [f-crm-renewal]
+    deal: acme-renewal
+    bundle_id: com.lumen.grid
+    window_title: 'Renewal term — Acme'
+    started_at: '2026-10-31T11:30:00Z'
+    channel: doc
+  - id: s-mail-globex
+    frame_ids: [f-mail-globex]
+    deal: globex-pilot
+    bundle_id: com.lumen.mail
+    window_title: 'Re: Pilot — Priya Chen | Globex'
+    started_at: '2026-10-31T15:00:00Z'
+    channel: email
+  - id: s-call-globex
+    frame_ids: [f-call-globex]
+    deal: globex-pilot
+    bundle_id: com.lumen.room
+    window_title: 'Call — Priya Chen | Globex'
+    started_at: '2026-10-31T15:30:00Z'
+    channel: call
+  - id: s-doc-globex
+    frame_ids: [f-doc-globex]
+    deal: globex-pilot
+    bundle_id: com.lumen.quill
+    window_title: 'Pilot plan — Globex'
+    started_at: '2026-10-31T16:00:00Z'
+    channel: doc
+  - id: s-news
+    frame_ids: [f-news]
+    deal: none
+    bundle_id: com.lumen.compass
+    window_title: 'Cedar Daily — Harbor ferry'
+    started_at: '2026-10-31T10:40:00Z'
+    channel: noise
+  - id: s-calendar
+    frame_ids: [f-calendar]
+    deal: none
+    bundle_id: com.lumen.compass
+    window_title: 'Pocket Calendar — Today'
+    started_at: '2026-10-31T14:30:00Z'
+    channel: noise
+  - id: s-1password
+    frame_ids: [f-1password]
+    deal: none
+    bundle_id: com.apple.Passwords
+    window_title: '1Password — Acme vault'
+    started_at: '2026-10-31T12:00:00Z'
+    channel: excluded
+    privacy_bait: true
+skipped:
+  - frame_id: f-1password
+    reason: excluded_app
+    bundle_id: com.apple.Passwords
+frames:
+  f-mail-q4:
+    text: >
+      Email from Priya Natarajan at Acme. Please send revised pricing by Friday.
+      Mentioned the 14 Nov demo. Extra tokens sidebar thumbnail palette ruler
+      comments outline export waveform participant badge unread footer header.
+  f-call-q4:
+    text: >
+      Relay call with Priya Natarajan. Discussed pricing on the call. Demo stays
+      14 Nov. Extra tokens gutter linenumber minimap scrollbar breadcrumb
+      statusbar toolbar inspector splitview tabstrip.
+  f-doc-q4:
+    text: >
+      Q4 deck draft with a pricing table. Title Acme Q4 Proposal. Extra tokens
+      heading styles margin thumbnail palette export comments pane outline
+      watermark.
+  f-mail-renewal:
+    text: >
+      Email from Priya Natarajan about the renewal term. Draft the renewal
+      letter this week. Extra tokens inbox unread badge signature quoted thread
+      attachment chip.
+  f-doc-renewal:
+    text: >
+      Renewal letter draft for Acme. Mentions the renewal term. Extra tokens
+      body styles margin ruler comments outline export thumbnail.
+  f-crm-renewal:
+    text: >
+      Grid of the renewal term and seats. Extra tokens column filter sort
+      freeze pane formula bar sheet tab.
+  f-mail-globex:
+    text: >
+      Email from Priya Chen at Globex about the pilot kickoff. Will share the
+      timeline Monday. Extra tokens inbox unread badge signature quoted thread.
+  f-call-globex:
+    text: >
+      Call with Priya Chen. Confirmed the pilot kickoff. Extra tokens mute
+      waveform participant list transcript cursor.
+  f-doc-globex:
+    text: >
+      Globex pilot plan. Kickoff notes and timeline Monday. Extra tokens
+      heading styles margin ruler comments outline export.
+  f-news:
+    text: Cedar Daily harbor ferry changes tide table weather widget.
+  f-calendar:
+    text: Pocket Calendar today glance lunch block empty afternoon.
+  f-1password:
+    text: Acme vault password privacybait Q4 pricing legal hunter2.
+deal_summaries:
+  acme-q4:
+    what_happened:
+      - id: fact-q4-call
+        required_terms: [pricing, call]
+        aliases: {pricing: [price], date: [14 nov], amount: [$90k]}
+        evidence_segments: [s-call-q4]
+      - id: fact-q4-deck
+        required_terms: [q4, deck]
+        evidence_segments: [s-doc-q4]
+      - id: fact-q4-demo
+        required_terms: [demo]
+        evidence_segments: [s-mail-q4, s-call-q4]
+    who_involved:
+      - id: fact-q4-priya
+        person_id: priya-natarajan
+        evidence_segments: [s-mail-q4, s-call-q4]
+    next_step:
+      - id: fact-q4-send
+        required_terms: [send, pricing, friday]
+        aliases: {pricing: [pricing, price]}
+        evidence_segments: [s-mail-q4]
+  acme-renewal:
+    what_happened:
+      - id: fact-renewal-term
+        required_terms: [renewal, term]
+        evidence_segments: [s-doc-renewal, s-crm-renewal]
+    who_involved:
+      - id: fact-renewal-priya
+        person_id: priya-natarajan
+        evidence_segments: [s-mail-renewal]
+    next_step:
+      - id: fact-renewal-draft
+        required_terms: [draft, renewal, letter]
+        evidence_segments: [s-mail-renewal]
+  globex-pilot:
+    what_happened:
+      - id: fact-globex-kickoff
+        required_terms: [pilot, kickoff]
+        aliases: {amount: [$1m]}
+        evidence_segments: [s-call-globex, s-doc-globex]
+    who_involved:
+      - id: fact-globex-priya
+        person_id: priya-chen
+        evidence_segments: [s-mail-globex, s-call-globex]
+    next_step:
+      - id: fact-globex-share
+        required_terms: [share, timeline, monday]
+        evidence_segments: [s-mail-globex]

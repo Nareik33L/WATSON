@@ -1,0 +1,30 @@
+day: day_sensitive_traps
+date: '2026-11-05'
+deals:
+  - id: north-pier-invoice
+    name: North Pier invoice
+    company: Pier
+people:
+  - id: mina-okonkwo
+    name: Mina Okonkwo
+    company: Pier
+  - id: jun-park
+    name: Jun Park
+    company: Cedar
+rules:
+  - match: [pier]
+    deal: north-pier-invoice
+deal_summaries:
+  north-pier-invoice:
+    what_happened:
+      - id: fact-v1-pier-invoice
+        required_terms: [invoice]
+        evidence_segments: [fc66dd8b-d491-5a3a-bd43-3a62a9977a54]
+    who_involved:
+      - id: fact-v1-pier-mina
+        person_id: mina-okonkwo
+        evidence_segments: [fc66dd8b-d491-5a3a-bd43-3a62a9977a54]
+    next_step:
+      - id: fact-v1-pier-hours
+        required_terms: [hours]
+        evidence_segments: [3d458c24-4f00-5460-997a-3b22f59cdb68]

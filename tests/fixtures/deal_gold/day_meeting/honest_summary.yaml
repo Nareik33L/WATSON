@@ -1,0 +1,36 @@
+claims:
+  - id: h-walk-keep
+    deal: harbor-walkthrough
+    slot: what_happened
+    text: Kept the walkthrough Thursday
+    evidence_segments: [s-call-walk]
+  - id: h-walk-notes
+    deal: harbor-walkthrough
+    slot: what_happened
+    text: Edited the walkthrough notes
+    evidence_segments: [s-doc-walk]
+  - id: h-walk-who
+    deal: harbor-walkthrough
+    slot: who_involved
+    text: Ned Quinn
+    evidence_segments: [s-mail-walk]
+  - id: h-walk-next
+    deal: harbor-walkthrough
+    slot: next_step
+    text: keep the walkthrough Thursday
+    evidence_segments: [s-mail-walk]
+  - id: h-gr-outline
+    deal: globex-renewal
+    slot: what_happened
+    text: Drafted the renewal outline
+    evidence_segments: [s-doc-gr]
+  - id: h-gr-who
+    deal: globex-renewal
+    slot: who_involved
+    text: Priya Chen
+    evidence_segments: [s-mail-gr]
+  - id: h-gr-next
+    deal: globex-renewal
+    slot: next_step
+    text: need to update the outline tomorrow
+    evidence_segments: [s-mail-gr]

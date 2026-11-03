@@ -1,0 +1,119 @@
+day: day_meeting
+date: '2026-11-04'
+deals:
+  - id: harbor-walkthrough
+    name: Harbor Walkthrough
+    company: Harbor
+    lookalike_of: harbor-audit
+  - id: globex-renewal
+    name: Globex Renewal
+    company: Globex
+people:
+  - id: ned-quinn
+    name: Ned Quinn
+    company: Harbor
+  - id: ellis-voss
+    name: Ellis Voss
+    company: Harbor
+  - id: priya-chen
+    name: Priya Chen
+    company: Globex
+segments:
+  - id: s-call-walk
+    frame_ids: [f-call-walk]
+    deal: harbor-walkthrough
+    bundle_id: com.lumen.room
+    window_title: 'Lumen Room — Harbor walkthrough'
+    started_at: '2026-11-04T09:30:00Z'
+    channel: call
+  - id: s-doc-walk
+    frame_ids: [f-doc-walk]
+    deal: harbor-walkthrough
+    bundle_id: com.lumen.quill
+    window_title: 'Walkthrough notes — Harbor'
+    started_at: '2026-11-04T09:52:00Z'
+    channel: doc
+  - id: s-mail-walk
+    frame_ids: [f-mail-walk]
+    deal: harbor-walkthrough
+    bundle_id: com.lumen.mail
+    window_title: 'Re: Walkthrough — Ned Quinn | Harbor'
+    started_at: '2026-11-04T10:06:00Z'
+    channel: email
+  - id: s-mail-gr
+    frame_ids: [f-mail-gr]
+    deal: globex-renewal
+    bundle_id: com.lumen.mail
+    window_title: 'Re: Renewal — Priya Chen | Globex'
+    started_at: '2026-11-04T13:20:00Z'
+    channel: email
+  - id: s-doc-gr
+    frame_ids: [f-doc-gr]
+    deal: globex-renewal
+    bundle_id: com.lumen.quill
+    window_title: 'Renewal outline — Globex'
+    started_at: '2026-11-04T15:00:00Z'
+    channel: doc
+  - id: s-news-meet
+    frame_ids: [f-news-meet]
+    deal: none
+    bundle_id: com.lumen.compass
+    window_title: 'Cedar Daily — Lunch specials'
+    started_at: '2026-11-04T12:00:00Z'
+    channel: noise
+skipped: []
+frames:
+  f-call-walk:
+    text: >
+      Call kept the Harbor walkthrough on Thursday. Ned Quinn and Ellis Voss
+      on the line. Extra tokens mute waveform participant list transcript
+      cursor sidebar.
+  f-doc-walk:
+    text: >
+      Walkthrough notes. Thursday still holds. Extra tokens heading styles
+      margin ruler comments outline export thumbnail palette.
+  f-mail-walk:
+    text: >
+      Email from Ned Quinn. Keep the walkthrough Thursday. Extra tokens inbox
+      unread badge signature quoted thread attachment chip.
+  f-mail-gr:
+    text: >
+      Email from Priya Chen about the Globex renewal outline. Need to update
+      the outline tomorrow. Extra tokens inbox unread badge signature quoted
+      thread.
+  f-doc-gr:
+    text: >
+      Globex renewal outline draft. Extra tokens heading styles margin ruler
+      comments outline export thumbnail watermark.
+  f-news-meet:
+    text: Cedar Daily lunch specials soup sandwich weather.
+deal_summaries:
+  harbor-walkthrough:
+    what_happened:
+      - id: fact-walk-keep
+        required_terms: [walkthrough, thursday]
+        evidence_segments: [s-call-walk, s-doc-walk]
+      - id: fact-walk-notes
+        required_terms: [walkthrough, notes]
+        evidence_segments: [s-doc-walk]
+    who_involved:
+      - id: fact-walk-ned
+        person_id: ned-quinn
+        evidence_segments: [s-mail-walk, s-call-walk]
+    next_step:
+      - id: fact-walk-keep-next
+        required_terms: [keep, walkthrough, thursday]
+        evidence_segments: [s-mail-walk]
+  globex-renewal:
+    what_happened:
+      - id: fact-gr-outline
+        required_terms: [renewal, outline]
+        evidence_segments: [s-doc-gr, s-mail-gr]
+    who_involved:
+      - id: fact-gr-priya
+        person_id: priya-chen
+        evidence_segments: [s-mail-gr]
+    next_step:
+      - id: fact-gr-update
+        required_terms: [update, outline, tomorrow]
+        evidence_segments: [s-mail-gr]

@@ -5,6 +5,20 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-03, QA on #47 @d924f96):** Cited gold segments must **intersect** a fact's `evidence_segments`, and at most **one** cited segment may fall outside them. Containment (cited ⊆ evidence) is not the rule. Raw sliding-what plus full next/who dump windows, and nearby widths 5–7 / strides 1–3, must score < 0.85. §14 / D8 / D10 / D11 unchanged.
+
+**Changelog (2026-11-03, QA on #47 @7f3c41c):** A claim covers a fact only when its cited gold segments stay inside that fact's `evidence_segments` (overlap by containment, not "cite the whole deal"). Raw sliding-what plus full next/who dump windows, and nearby widths 5–7 / strides 1–3, must score < 0.85. Same-cover copies with partially overlapping citations still count once. §14 / D8 / D10 / D11 unchanged.
+
+**Changelog (2026-11-03, QA on #47 @d6325e4):** Copies that cover the same facts with overlapping citations count once before matching, regardless of text (no Jaccard / 3-fact gate). Sliding 6-term/stride-2 windows over unique or raw terms in every slot must score < 0.85. §14 / D8 / D10 / D11 unchanged.
+
+**Changelog (2026-11-03, QA on #47 @f0a84e9):** Pair claims to gold facts by maximum 1:1 matching, not the first covered fact in file order. Honest paraphrases that mention an earlier fact still take their own fact. Packed near-duplicates (same covered-fact set, overlapping citations) count once; extra copies stay in the precision denominator. Sliding 6-term/stride-2 keyword dumps must score < 0.85. §14 / D8 / D10 / D11 unchanged.
+
+**Changelog (2026-11-03, QA on #47 @855dd6a):** Duplicate claims collapse by what they cover, not by text: same deal, same slot, overlapping cited segments, and the same best gold fact count once. Extra copies are not true positives and do not raise precision. Keyword-dump (duplicate-what) variants (extra token, dropped last token, mixed fillers, need-to, three copies, ≥2-channel, reversed order, shifted window) must score < 0.85. §14 / D8 / D10 / D11 unchanged.
+
+**Changelog (2026-11-03, QA on #47 @089ee2a):** Identical or near-identical claims in the same deal and slot count once before 1:1 pairing. Keyword dump (duplicate-what) is a required negative baseline. §14 / D8 / D10 / D11 unchanged.
+
+**Changelog (2026-11-03, QA on #47 @03e3124):** Per-fact `aliases` may use `date:` / `amount:` keys for a slot value that is not a required term. §14 / D8 / D10 / D11 unchanged.
+
 **Changelog (2026-11-03, QA on #49 @a217ae6):** Each stored summary paragraph carries `deal_id`. Today cards bind blocks from that id, per deal; a count mismatch no longer blanks every card. Legacy rows without paragraph `deal_id` still render. Claimless deals stay empty; fallback-only deals keep their cited text.
 
 **Changelog (2026-11-03, QA on #49 @abdbf89):** Deal groups show on Today only (History and `/days` stay unchanged). Cards bind to summary blocks by stored `deal_id` / deal order, never by title. Deal insert stamps are offset so same-second UUID order cannot swap cards.
@@ -725,7 +739,7 @@ OCR checked for required terms is the redacted `frame_text` of those cited frame
 
 **Length cap (keyword stuffing).** After `normalize()` and dropping `ITEM_STOPWORDS`, a predicted claim may have at most **24 content tokens**. Over-length claims cannot cover any gold fact; they are precision misses (not unsupported) if their citations resolve.
 
-**One claim, one fact.** A predicted claim satisfies **at most one** gold fact. Pairing is 1:1 inside `(day, matched deal, slot)`: walk gold facts in file order; take the first unused predicted claim in emission order that covers it. A gold fact is consumed once.
+**One claim, one fact.** A predicted claim satisfies **at most one** gold fact. Pairing is 1:1 inside `(day, matched deal, slot)` by **maximum matching**: copies that cover the same facts with overlapping cited segments count once before matching (claim text is ignored), then matching assigns whichever fact maximises the number of pairs. File order does not choose the credited fact. Extra copies of a credited claim are not true positives and stay in the precision denominator. A gold fact is consumed once.
 
 **Slot-value contradiction (same day + deal + slot only).** A claim does **not** cover gold fact F if, in **that same slot**, it asserts a **different** person, calendar date, or amount than F's slot value. Extra people, dates, or amounts that are **correct for this deal** and appear in the claim's **cited evidence** do not contradict — they do not reject an honest sentence such as "Priya Natarajan emailed about pricing" or "send revised pricing by Friday". Person names, deal/company names, and dates mentioned in another **slot** are not contradictions. Cross-day and cross-deal terms are out of scope for this rule.
 
@@ -735,7 +749,7 @@ OCR checked for required terms is the redacted `frame_text` of those cited frame
 2. Every required term of **that one fact** appears as a **contiguous-word phrase** in the normalized predicted text (aliases count as the term). For a `who_involved` fact, this screen-text check means a **roster form** of that person's name (`name`, `name (company)`, or `name company`).
 3. The claim is within the 24-token cap and does not **contradict** F's slot value (person / date / amount) as defined above.
 4. Slot modal rules pass (below).
-5. Cited gold segments **overlap** that fact's `evidence_segments` (see evidence link).
+5. Cited gold segments **intersect** that fact's `evidence_segments`, and at most **one** cited segment may fall outside them (see evidence link). A dump that cites every deal segment does not cover a fact whose evidence is a proper subset.
 
 This is **not** exact-string equality. Paraphrase is allowed when the required terms of that one fact are present and the caps hold.
 
@@ -757,6 +771,7 @@ So a next step stated as done vs planned does not match, and `will` vs `may` doe
 2. **Number forms of the same value:** `2` / `two`. Not a different number.
 3. **Date forms of the same calendar date:** `14 nov` / `14 november` / `2026-11-14`. **A weekday never matches a date** (`friday` ≠ `14 nov`; 14 Nov 2026 is a Saturday).
 4. **Per-fact `aliases` map:** each required term → at most **3** contiguous phrases; each phrase has ≥ 1 content token; no phrase that is only `ITEM_STOPWORDS`; no phrase that is a required term or alias of a **different deal**; no phrase that is **exclusive** to a different fact on the same deal (shared terms such as `pricing` on two facts of one deal are allowed).
+5. **Slot-value keys** `date:` and `amount:` (not a required term) hold the fact's typed date or amount when that value must be in `fact_slot_values` for `contradicts()` but must **not** be required to cover. Swapping `14 nov` → `15 nov` or `$90k` → `$9k` still has every required term; only the contradiction check fails.
 
 A fixture-validation test rejects weekday↔date aliases, stopword aliases, **cross-deal aliases** (a phrase that is a required term or alias of a different deal), exclusive-to-another-fact aliases, and more than 3 aliases per term.
 
@@ -767,9 +782,9 @@ A fixture-validation test rejects weekday↔date aliases, stopword aliases, **cr
 3. If two or more roster people share that full name, the prediction must also include a company (or other roster qualifier) that uniquely selects one `person_id`. Otherwise it is unresolved.
 4. First name only, company only, or any proper substring is **not** a resolution.
 
-Two who-facts match iff they resolve to the same `person_id`. The gold who-fact's `person_id` is the required term. **Evidence link for who:** the claim's cited gold segments must **intersect** that who-fact's `evidence_segments` (the segments where that person is on screen). A correct who-claim that cites only some other segment of the same deal does not cover.
+Two who-facts match iff they resolve to the same `person_id`. The gold who-fact's `person_id` is the required term. **Evidence link for who:** the claim's cited gold segments must **intersect** that who-fact's `evidence_segments` with at most one cited segment outside them (the segments where that person is on screen). A correct who-claim that cites only some other segment of the same deal does not cover, and a dump that cites every deal segment does not cover a who-fact whose evidence is a proper subset.
 
-**Gold evidence link (all slots).** A claim is correct only if the gold segments of its cited frames **intersect** the paired fact's `evidence_segments`. Screen-text required-term checks on those cited frames still apply (for `who_involved`, a roster form of the person's name in that cited OCR). A citation that is merely "somewhere on the same deal" is not enough.
+**Gold evidence link (all slots).** A claim is correct only if the gold segments of its cited frames **intersect** the paired fact's `evidence_segments` and at most **one** cited segment falls outside them. Screen-text required-term checks on those cited frames still apply (for `who_involved`, a roster form of the person's name in that cited OCR). A citation that is merely "somewhere on the same deal" is not enough.
 
 **Correct predicted claim.** On a predicted cluster that **matches** a gold deal that day: the claim covers a still-unpaired gold fact in the same slot on that gold deal (1:1), with evidence-segment overlap. That is a true positive for precision and for that slot's recall.
 
@@ -779,7 +794,7 @@ Two who-facts match iff they resolve to the same `person_id`. The gold who-fact'
 2. **Cluster / deal membership** — two cases, do not mix them:
    - **Matched predicted deal:** at least one cited frame must belong to the matched gold deal that day. If none do → unsupported.
    - **Unmatched predicted deal:** test (2) checks **predicted-cluster membership only**. At least one cited frame must belong to that predicted cluster. If yes, and (1) passed, the claim is a **precision miss, not unsupported**. If no cited frame is on that cluster → unsupported. This is the only reading: an unmatched-deal claim is never both a precision miss and unsupported, and it never zeroes the summary score by itself.
-3. **Paired evidence text.** If the claim is paired with a gold fact, the cited frames' OCR must contain that fact's required terms **and** the cited gold segments must intersect `evidence_segments`. Failure → unsupported. Unpaired (extra) claims **skip** this clause.
+3. **Paired evidence text.** If the claim is paired with a gold fact, the cited frames' OCR must contain that fact's required terms **and** the cited gold segments must intersect `evidence_segments` with at most one cited segment outside them. Failure → unsupported. Unpaired (extra) claims **skip** this clause.
 
 Well-cited extra claims are **precision misses, not unsupported**. Gold facts on unmatched gold deals are recall misses. Claims are never skipped from the precision denominator.
 
@@ -807,6 +822,8 @@ The test **computes every trivial baseline on the actual gold corpus**. The buil
 | Empty summary | no claims | summary < 0.85 |
 | **Keyword dump (over-cap)** | for each gold fact, one claim whose text is the unique OCR tokens of **all** segments of that deal that day, cited to all those segments (always > 24 content tokens). Tests the length cap. | summary < 0.85 |
 | **Keyword dump (within-cap)** | for each deal-day, join that deal's required terms (no verbs or sentence wrapper added) and emit each ≤24-content-token window **in every slot**, cited to that deal's segments. Lists terms without being true claims. | summary < 0.85 |
+| **Keyword dump (duplicate-what)** | for each deal-day, emit each ≤24-content-token window of that deal's required terms **twice** in `what_happened`, as `will <window>` (or `need to <window>`) in `next_step`, and once in `who_involved`. Gold-free: dump windows only, no gold fact pairing. Required variants of the second `what_happened` copy: extra token (`also` / `again` / `ok` / `noted`); 4–12-token pads (`update status review progress` and longer); last token dropped; `please` on one copy and `also` on the other; three copies; duplicate only on deals with ≥ 2 channels; reversed word order; windows split at a different term offset. | summary < 0.85 |
+| **Keyword dump (sliding-window)** | for each deal-day, sliding 6-term windows at stride 2 of that deal's required terms (unique and raw). Each window in `what_happened`, as `will <window>` in `next_step`, and once in `who_involved`. Nearby widths 5–7 and strides 1–3 on both term lists are the same baseline. | summary < 0.85 |
 | **Honest summary (positive)** | a hand-written, well-cited correct summary for **each fixture deal** (committed next to the fixture, e.g. `honest_summary.yaml`): full names, deadlines, one claim per gold fact, cites overlapping `evidence_segments`. | summary **≥ 0.85** |
 
 The 12/1/1/1 Acme shape (60 segments, 12 noise, Acme 12/1/1/1, others 8/8/8/9, group-by-company F1 **0.905**, titles containing the roster company) is a **required failing fixture** of the group-by-company check: pytest must load that synthetic gold under `tests/fixtures` and assert group-by-company ≥ 0.85 so the validator is proven to catch it. The committed V1 corpus must then be a different shape that the same checker accepts (every negative baseline < 0.85, honest summary ≥ 0.85).

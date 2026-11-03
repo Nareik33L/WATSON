@@ -72,7 +72,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "ordinals-const",
         RECORDINGS,
-        '        mapping[token] = str(len(mapping) + 1)\n    return mapping\n',
+        "        mapping[token] = str(len(mapping) + 1)\n    return mapping\n",
         '        mapping[token] = "1"\n    return mapping\n',
     ),
     (

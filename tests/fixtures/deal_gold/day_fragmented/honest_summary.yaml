@@ -1,0 +1,56 @@
+claims:
+  - id: h-nw-term
+    deal: northwind-renewal
+    slot: what_happened
+    text: Agreed a two year term
+    evidence_segments: [s-mail-nw]
+  - id: h-nw-letter
+    deal: northwind-renewal
+    slot: what_happened
+    text: Edited the renewal letter
+    evidence_segments: [s-doc-nw]
+  - id: h-nw-who
+    deal: northwind-renewal
+    slot: who_involved
+    text: Mina Okonkwo
+    evidence_segments: [s-mail-nw]
+  - id: h-nw-next
+    deal: northwind-renewal
+    slot: next_step
+    text: send the term
+    evidence_segments: [s-mail-nw]
+  - id: h-nwx-seats
+    deal: northwind-expansion
+    slot: what_happened
+    text: Reviewed expansion seats
+    evidence_segments: [s-doc-nwx]
+  - id: h-nwx-who
+    deal: northwind-expansion
+    slot: who_involved
+    text: Mina Okonkwo
+    evidence_segments: [s-mail-nwx]
+  - id: h-nwx-next
+    deal: northwind-expansion
+    slot: next_step
+    text: file the expansion brief
+    evidence_segments: [s-mail-nwx]
+  - id: h-harbor-check
+    deal: harbor-audit
+    slot: what_happened
+    text: Updated the safety audit checklist
+    evidence_segments: [s-doc-harbor]
+  - id: h-harbor-who
+    deal: harbor-audit
+    slot: who_involved
+    text: Ellis Voss
+    evidence_segments: [s-mail-harbor]
+  - id: h-harbor-next
+    deal: harbor-audit
+    slot: next_step
+    text: will send the checklist Wednesday
+    evidence_segments: [s-mail-harbor]
+  - id: h-harbor-findings
+    deal: harbor-audit
+    slot: what_happened
+    text: Reviewed the audit findings
+    evidence_segments: [s-grid-harbor]

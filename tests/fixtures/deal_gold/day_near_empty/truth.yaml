@@ -1,0 +1,26 @@
+day: day_near_empty
+date: '2026-11-06'
+deals: []
+people: []
+segments:
+  - id: s-inbox
+    frame_ids: [f-inbox]
+    deal: none
+    bundle_id: com.lumen.mail
+    window_title: 'Inbox — Lumen Desk'
+    started_at: '2026-11-06T09:30:00Z'
+    channel: noise
+  - id: s-cal-empty
+    frame_ids: [f-cal-empty]
+    deal: none
+    bundle_id: com.lumen.compass
+    window_title: 'Pocket Calendar — Today'
+    started_at: '2026-11-06T14:00:00Z'
+    channel: noise
+skipped: []
+frames:
+  f-inbox:
+    text: Inbox lumen desk empty thread list.
+  f-cal-empty:
+    text: Pocket Calendar today glance empty afternoon.
+deal_summaries: {}
