@@ -81,8 +81,8 @@ DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_CONTEXT_WINDOW = 4096
 DEFAULT_KEEP_ALIVE = "5m"
 DEFAULT_OLLAMA_TIMEOUT_S = 300.0
-# Long enough for a 7B/8B/9B Q4 on the 8 GB min-spec Mac (plan §14).
-LARGE_LLM_TIMEOUT_S = 900.0
+# Schema maximum. Timing is not a min-spec issue (Kieran 21:53 / 21:55).
+LARGE_LLM_TIMEOUT_S = 3600.0
 DEFAULT_OLLAMA_NUM_PREDICT = 512
 DEFAULT_OLLAMA_UNLOAD_BETWEEN_PHASES = True
 
@@ -111,7 +111,7 @@ BAKEOFF_LLM_MODELS_LARGEST_FIRST: tuple[str, ...] = (
 
 
 def llm_preset(model: str) -> LlmPreset:
-    """Timeout and num_ctx for ``model``. Unknown names use 900 s / 4096."""
+    """Timeout and num_ctx for ``model``. Unknown names use 3600 s / 4096."""
     name = model.strip()
     if not name:
         return LlmPreset(DEFAULT_OLLAMA_TIMEOUT_S, DEFAULT_CONTEXT_WINDOW)
@@ -308,7 +308,7 @@ class OllamaClientConfig(_StrictModel):
         le=3600.0,
         description=(
             "urllib timeout for /api/chat and /api/embed. "
-            "Default 300 s for 3B; 7–9B presets use 900 s."
+            "Default 300 s for 3B; 7–9B presets use 3600 s."
         ),
     )
     num_ctx: int | None = Field(

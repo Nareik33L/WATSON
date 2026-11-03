@@ -249,18 +249,31 @@ def test_watson_llm_model_env_overrides_default(
     monkeypatch.setenv("WATSON_LLM_MODEL", FALLBACK_LLM_MODEL)
     config = load_config()
     assert config.intelligence.llm_model == FALLBACK_LLM_MODEL
+    assert config.intelligence.ollama.timeout_s == 300.0
     monkeypatch.delenv("WATSON_LLM_MODEL")
     again = load_config()
     assert again.intelligence.llm_model == DEFAULT_LLM_MODEL
 
 
 @pytest.mark.parametrize("model", ["qwen2.5:7b", "llama3.1:8b", "gemma2:9b"])
-def test_large_llm_presets_use_900s_timeout(model: str) -> None:
+def test_large_llm_presets_use_3600s_timeout(model: str) -> None:
     intel = IntelligenceConfig().with_llm_model(model)
     assert intel.llm_model == model
+    assert intel.ollama.timeout_s == 3600.0
     assert intel.ollama.timeout_s == LARGE_LLM_TIMEOUT_S
     assert intel.ollama_num_ctx() == 4096
-    assert llm_preset(model).timeout_s == LARGE_LLM_TIMEOUT_S
+    assert llm_preset(model).timeout_s == 3600.0
+
+
+@pytest.mark.parametrize("model", ["qwen2.5:7b", "llama3.1:8b", "gemma2:9b"])
+def test_watson_llm_model_env_applies_3600s_preset(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    monkeypatch.setenv("WATSON_LLM_MODEL", model)
+    config = load_config()
+    assert config.intelligence.llm_model == model
+    assert config.intelligence.ollama.timeout_s == 3600.0
+    assert config.intelligence.ollama.timeout_s == LARGE_LLM_TIMEOUT_S
 
 
 def test_gemma2_9b_variant_and_unknown_model_use_long_timeout(
@@ -269,13 +282,16 @@ def test_gemma2_9b_variant_and_unknown_model_use_long_timeout(
     monkeypatch.setenv("WATSON_LLM_MODEL", "gemma2:9b")
     config = load_config()
     assert config.intelligence.llm_model == "gemma2:9b"
+    assert config.intelligence.ollama.timeout_s == 3600.0
     assert config.intelligence.ollama.timeout_s == LARGE_LLM_TIMEOUT_S
     variant = IntelligenceConfig().with_llm_model("gemma2:9b-instruct-q4_0")
-    assert variant.ollama.timeout_s == LARGE_LLM_TIMEOUT_S
+    assert variant.ollama.timeout_s == 3600.0
     unknown = IntelligenceConfig().with_llm_model("custom-7b")
-    assert unknown.ollama.timeout_s == LARGE_LLM_TIMEOUT_S
+    assert unknown.ollama.timeout_s == 3600.0
     three_b = IntelligenceConfig().with_llm_model(FALLBACK_LLM_MODEL)
     assert three_b.ollama.timeout_s == 300.0
+    default_3b = IntelligenceConfig().with_llm_model(DEFAULT_LLM_MODEL)
+    assert default_3b.ollama.timeout_s == 300.0
     assert BAKEOFF_LLM_MODELS_LARGEST_FIRST == ("gemma2:9b", "llama3.1:8b", "qwen2.5:7b")
     explicit = IntelligenceConfig(
         llm_model="gemma2:9b",

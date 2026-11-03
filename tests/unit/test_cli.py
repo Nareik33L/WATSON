@@ -244,6 +244,7 @@ def test_eval_cli_llm_model_applies_large_preset(
     )
     config = captured["config"]
     assert getattr(config.intelligence, "llm_model") == model
+    assert getattr(config.intelligence.ollama, "timeout_s") == 3600.0
     assert getattr(config.intelligence.ollama, "timeout_s") == LARGE_LLM_TIMEOUT_S
     assert config.intelligence.ollama_num_ctx() == 4096
     set_key_provider(None)

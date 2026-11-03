@@ -292,6 +292,8 @@ def test_profile_peak_caps_are_gib() -> None:
     assert profiles["primary"]["worker_plus_model_peak_bytes"].maximum_exclusive == THREE_GB
     assert "worker_plus_model_peak_bytes" not in profiles["min-spec"]
     assert profiles["min-spec"]["completed_without_kill"].minimum == 1.0
+    assert "consolidate_s" not in profiles["min-spec"]
+    assert profiles["primary"]["consolidate_s"].maximum_exclusive == 900
     assert THREE_GB == 3 * 1024**3
     assert THREE_GB != 3 * 1000**3
     assert THREE_FIVE_GB == 3758096384
@@ -300,33 +302,63 @@ def test_profile_peak_caps_are_gib() -> None:
     assert HEADROOM_UNDERSTAND_P95_S == 30.0
 
 
-def test_unmeasured_consolidation_cap_fails_closed() -> None:
-    """§11.4 consolidation < 15 min is gated; a missing sample fails closed."""
-    for profile in ("primary", "min-spec"):
-        missing = gate_profile(
-            understand_p95_s=10.0,
-            worker_plus_model_peak_bytes=_ok_peak(profile),
-            completed_without_kill=1.0,
-            profile=profile,
-        )
-        assert missing["passed"] is False
-        assert "consolidate_s" in missing["failures"]
-
-
-def test_consolidation_15_min_boundary() -> None:
-    under = gate_profile(
+def test_unmeasured_consolidation_cap_fails_closed_on_primary_only() -> None:
+    """Primary still fail-closes on missing consolidate_s. Min-spec records it."""
+    missing_primary = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("primary"),
+        completed_without_kill=1.0,
+        profile="primary",
+    )
+    assert missing_primary["passed"] is False
+    assert "consolidate_s" in missing_primary["failures"]
+    missing_min = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=_ok_peak("min-spec"),
-        consolidate_s=899.999,
         completed_without_kill=1.0,
         profile="min-spec",
     )
-    at = gate_profile(
+    assert missing_min["passed"] is True
+    assert "consolidate_s" not in missing_min["failures"]
+
+
+def test_min_spec_passes_slow_consolidation_and_fails_on_kill() -> None:
+    """Kieran 02:59: min-spec records consolidate_s; gate is completed_without_kill."""
+    slow = gate_profile(
         understand_p95_s=10.0,
         worker_plus_model_peak_bytes=_ok_peak("min-spec"),
-        consolidate_s=900.0,
+        consolidate_s=10_000.0,
         completed_without_kill=1.0,
         profile="min-spec",
+    )
+    dead = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("min-spec"),
+        consolidate_s=10_000.0,
+        completed_without_kill=0.0,
+        profile="min-spec",
+    )
+    assert slow["passed"] is True
+    assert "consolidate_s" not in slow["failures"]
+    assert "consolidate_s" not in load_profile_thresholds()["min-spec"]
+    assert dead["passed"] is False
+    assert "completed_without_kill" in dead["failures"]
+
+
+def test_primary_still_fails_on_consolidate_s_at_900() -> None:
+    under = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("primary"),
+        consolidate_s=899.999,
+        completed_without_kill=1.0,
+        profile="primary",
+    )
+    at = gate_profile(
+        understand_p95_s=10.0,
+        worker_plus_model_peak_bytes=_ok_peak("primary"),
+        consolidate_s=900.0,
+        completed_without_kill=1.0,
+        profile="primary",
     )
     assert under["passed"] is True
     assert at["passed"] is False
