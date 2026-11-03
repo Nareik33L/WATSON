@@ -79,6 +79,8 @@ button {
 .cite { color: var(--accent); }
 .narrative { white-space: pre-wrap; }
 .claims { list-style: none; padding-left: 0; }
+.orphans { list-style: none; padding-left: 0; }
+.orphan-flag { color: #8a6a12; font-weight: 600; }
 .entity-list { list-style: none; padding-left: 0; }
 .entity-list li { margin-bottom: 8px; }
 .claim-actions {

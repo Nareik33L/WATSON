@@ -27,7 +27,9 @@ from watson.memory.corrections import (
     CorrectionError,
     apply_claim_corrections,
     claim_histories,
+    match_claim_corrections,
     merge_entities,
+    orphaned_corrections,
     overlay_from_history,
     record_claim_correction,
     rejected_claim_ids,
@@ -455,6 +457,135 @@ def test_rename_rejects_name_clash_and_too_long(tmp_path: Path) -> None:
             == "Acme Deal"
         )
         assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_correction_survives_pipeline_version_bump(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_claim(conn, text="Appendix drafted")
+        record_claim_correction(conn, seeded["claim_id"], "correct", new_text="Appendix published")
+        bumped = _insert_claim(
+            conn,
+            seeded["observation_id"],
+            seeded["day_id"],
+            seeded["segment_id"],
+            seeded["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Appendix drafted",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, seeded["day_id"], newer),
+            working_day_id=seeded["day_id"],
+            pipeline_version=newer,
+        )
+        assert [row["id"] for row in overlayed] == [bumped]
+        assert overlayed[0]["text"] == "Appendix published"
+        assert overlayed[0]["assertion"] == "user_corrected"
+        stored = conn.execute(
+            "SELECT target_id, pipeline_version, new_text FROM corrections"
+        ).fetchall()
+        assert len(stored) == 1
+        assert str(stored[0][0]) == seeded["claim_id"]
+        assert int(stored[0][1]) == PIPELINE_VERSION
+        assert str(stored[0][2]) == "Appendix published"
+        assert (
+            orphaned_corrections(conn, working_day_id=seeded["day_id"], pipeline_version=newer)
+            == ()
+        )
+    finally:
+        conn.close()
+
+
+def test_orphaned_correction_is_flagged_not_deleted(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_claim(conn, text="Appendix drafted")
+        recorded = record_claim_correction(
+            conn, seeded["claim_id"], "correct", new_text="Appendix published"
+        )
+        _insert_claim(
+            conn,
+            seeded["observation_id"],
+            seeded["day_id"],
+            seeded["segment_id"],
+            seeded["frame_id"],
+            kind="activity",
+            assertion="observed",
+            text="unrelated later claim",
+            pipeline_version=newer,
+            snippet="Different OCR line",
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, seeded["day_id"], newer),
+            working_day_id=seeded["day_id"],
+            pipeline_version=newer,
+        )
+        assert overlayed[0]["text"] == "unrelated later claim"
+        assert overlayed[0]["assertion"] == "observed"
+        orphans = orphaned_corrections(
+            conn, working_day_id=seeded["day_id"], pipeline_version=newer
+        )
+        assert [item.id for item in orphans] == [recorded.id]
+        assert orphans[0].target_id == seeded["claim_id"]
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
+        assert _claim_row(conn, seeded["claim_id"])[0] == "Appendix drafted"
+    finally:
+        conn.close()
+
+
+def test_corrections_are_idempotent_across_reprocessing(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_claim(conn, text="Appendix drafted")
+        record_claim_correction(conn, seeded["claim_id"], "correct", new_text="Appendix published")
+        runtime = _echo()
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        bumped = _insert_claim(
+            conn,
+            seeded["observation_id"],
+            seeded["day_id"],
+            seeded["segment_id"],
+            seeded["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Appendix drafted",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        first = apply_claim_corrections(
+            conn,
+            _load_claims(conn, seeded["day_id"], newer),
+            working_day_id=seeded["day_id"],
+            pipeline_version=newer,
+        )
+        second = apply_claim_corrections(
+            conn,
+            _load_claims(conn, seeded["day_id"], newer),
+            working_day_id=seeded["day_id"],
+            pipeline_version=newer,
+        )
+        assert first == second
+        assert first[0]["id"] == bumped
+        assert first[0]["text"] == "Appendix published"
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
+        histories, orphans = match_claim_corrections(
+            conn,
+            _load_claims(conn, seeded["day_id"], newer),
+            working_day_id=seeded["day_id"],
+        )
+        assert orphans == ()
+        assert len(histories[bumped]) == 1
     finally:
         conn.close()
 

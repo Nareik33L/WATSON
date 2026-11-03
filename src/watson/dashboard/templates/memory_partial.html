@@ -17,7 +17,24 @@
   </form>
   {% if not memory.claims %}
   <p>no claims</p>
-  {% else %}
+  {% endif %}
+  {% if memory.orphans %}
+  <h3>orphaned corrections</h3>
+  <ul class="orphans">
+    {% for item in memory.orphans %}
+    <li id="orphan-{{ item.id }}">
+      <p>
+        <span class="orphan-flag">orphaned</span>
+        {{ item.target_type }}/{{ item.action }}
+        <span class="mono">[{{ item.target_id }}]</span>
+        {% if item.new_text %} — {{ item.new_text }}{% endif %}
+        <span class="label">pipeline {{ item.pipeline_version }}</span>
+      </p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if memory.claims %}
   <ul class="claims">
     {% for item in memory.claims %}
     <li id="claim-{{ item.id }}">
