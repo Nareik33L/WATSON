@@ -28,8 +28,8 @@ _RAN = re.compile(r"(\d+) (passed|failed)")
 MUTANTS: tuple[tuple[str, str, str], ...] = (
     (
         "collapse-drop-slot",
-        "    return (claim.deal, claim.slot, tokens)\n",
-        '    return (claim.deal, "", tokens)\n',
+        "                and slot == claim.slot\n",
+        "                and False\n",
     ),
     (
         "contradict-evidence-only",
@@ -74,8 +74,8 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-drop-deal",
-        "    return (claim.deal, claim.slot, tokens)\n",
-        '    return ("", claim.slot, tokens)\n',
+        "                deal == claim.deal\n",
+        "                False\n",
     ),
     (
         "align-max",
@@ -83,15 +83,9 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         "        cover = max(\n            candidates,\n",
     ),
     (
-        "collapse-frozenset",
-        (
-            "    tokens = tuple(token for token in content_tokens(claim.text)"
-            " if token not in _NEAR_FILLERS)\n"
-        ),
-        (
-            "    tokens = frozenset(token for token in content_tokens(claim.text)"
-            " if token not in _NEAR_FILLERS)\n"
-        ),
+        "collapse-ignore-best",
+        "                and best_id == best.id\n",
+        "                and True\n",
     ),
     (
         "stored-empty",
@@ -136,8 +130,8 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         ),
         (
             "            if _claim_covers(day, pred, mapping, claim, fact):\n"
-            "                used.add(claim.id)\n"
             "                paired.append((claim, fact))\n"
+            "                break\n"
         ),
     ),
     (
@@ -192,13 +186,13 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-skip",
-        "        if key in seen:\n            continue\n",
-        "        if False and key in seen:\n            continue\n",
+        "        if duplicate:\n            continue\n",
+        "        if False and duplicate:\n            continue\n",
     ),
     (
-        "near-fillers-empty",
-        '_NEAR_FILLERS = frozenset({"please", "still", "revised", "discussed"})\n',
-        "_NEAR_FILLERS = frozenset()\n",
+        "collapse-best-none",
+        "        best = _claim_best_fact(day, pred, mapping, claim)\n",
+        "        best = None\n",
     ),
     (
         "amount-false-unit",
@@ -321,13 +315,16 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "assignment-missing",
-        "    if pred in {NONE, MISSING}:\n        return False\n",
-        "    if False and pred in {NONE, MISSING}:\n        return False\n",
+        "    return mapping.get(pred) == gold_deal\n",
+        "    return True\n",
     ),
     (
-        "pair-ignore-slot",
-        "            if claim.id in used or claim.deal != pred_id or claim.slot != fact.slot:\n",
-        "            if claim.id in used or claim.deal != pred_id:\n",
+        "precision-collapsed-denom",
+        "        claim_count += len(pred.claims)\n",
+        (
+            "        claim_count += len(_collapse_duplicate_claims("
+            "pred.claims, day, pred, mapping))\n"
+        ),
     ),
     (
         "pair-skip-used",
@@ -425,8 +422,8 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "duplicate-copies",
-        "        copies = 2 if duplicate else 1\n",
-        "        copies = 1\n",
+        "        n_copies = copies if duplicate else 1\n",
+        "        n_copies = 1\n",
     ),
     (
         "unsupported-zero",
@@ -444,9 +441,9 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         "        if False and _done_form_without_planned(tokens):\n            return False\n",
     ),
     (
-        "resolve-named-empty",
-        "    if not named:\n        return None\n",
-        "    if False and not named:\n        return None\n",
+        "resolve-first-named",
+        "    if len({person.id for person in named}) == 1:\n        return named[0].id\n",
+        "    if named:\n        return named[0].id\n",
     ),
     (
         "bait-no-frames",
@@ -487,13 +484,13 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-identity",
-        "    claims = _collapse_duplicate_claims(pred.claims)\n",
+        "    claims = _collapse_duplicate_claims(pred.claims, day, pred, mapping)\n",
         "    claims = list(pred.claims)\n",
     ),
     (
         "pair-pred-none",
-        "        if pred_id is None:\n            continue\n",
-        "        if False and pred_id is None:\n            continue\n",
+        "        cited = _claim_cited_segments(day, pred, claim)\n",
+        "        cited = frozenset()\n",
     ),
     (
         "covers-slot",

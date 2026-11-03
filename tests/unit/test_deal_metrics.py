@@ -20,10 +20,9 @@ from watson.intelligence.eval.deals import (
     PredictedDay,
     PredictedEvidence,
     PredictedSegment,
-    _claim_near_key,
-    _collapse_duplicate_claims,
     _fact_signature,
     align_segments,
+    baseline_keyword_dump_packed,
     company_cluster,
     content_tokens,
     contradicts,
@@ -100,6 +99,41 @@ def test_greedy_max_overlap_then_gold_id() -> None:
     mapping = match_clusters(day, labels)
     assert mapping["p1"] == "a"
     assert mapping["p2"] == "b"
+
+
+def test_assignment_requires_mapped_cluster() -> None:
+    day = _day(
+        deals=[Deal("a", "A"), Deal("b", "B")],
+        segments=[
+            _seg("s1", "a", "f1"),
+            _seg("s2", "a", "f2"),
+            _seg("s3", "b", "f3"),
+            _seg("s4", "b", "f4"),
+        ],
+        frames={
+            "f1": Frame("f1", "a"),
+            "f2": Frame("f2", "a"),
+            "f3": Frame("f3", "b"),
+            "f4": Frame("f4", "b"),
+        },
+    )
+    gold = DealCorpus(days=[day])
+    predicted = PredictedCorpus(
+        days=[
+            PredictedDay(
+                name="day_x",
+                segments=[
+                    PredictedSegment("s1", ("f1",), "p-b"),
+                    PredictedSegment("s2", ("f2",), "p-b"),
+                    PredictedSegment("s3", ("f3",), "p-b"),
+                    PredictedSegment("s4", ("f4",), "p-b"),
+                ],
+                claims=[],
+            )
+        ]
+    )
+    score = score_deals(gold, predicted)
+    assert score.grouping.assignment_accuracy < 1.0
 
 
 def test_none_is_its_own_class() -> None:
@@ -541,17 +575,73 @@ def test_extract_amounts_currency_and_comma_groups() -> None:
     assert "amt:12000:eur" not in extract_amounts("12k")
 
 
-def test_collapse_keeps_slot_and_word_order() -> None:
-    what = PredictedClaim("c1", "acme-q4", "what_happened", "Priya sent pricing to Acme")
-    who = PredictedClaim("c2", "acme-q4", "who_involved", "Priya sent pricing to Acme")
-    swapped = PredictedClaim("c3", "acme-q4", "what_happened", "Acme sent pricing to Priya")
-    filled = PredictedClaim("c4", "acme-q4", "what_happened", "please Priya sent pricing to Acme")
-    other_deal = PredictedClaim("c5", "globex-pilot", "what_happened", "Priya sent pricing to Acme")
-    collapsed = _collapse_duplicate_claims([what, who, swapped, filled, other_deal])
-    assert [claim.id for claim in collapsed] == ["c1", "c2", "c3", "c5"]
-    assert _claim_near_key(what)[1] == "what_happened"
-    assert _claim_near_key(who)[1] == "who_involved"
-    assert _claim_near_key(what)[2] != _claim_near_key(swapped)[2]
+def test_semantic_collapse_keeps_distinct_facts_and_drops_near_duplicates() -> None:
+    priya = Person("priya-natarajan", "Priya Natarajan", "Acme")
+    day = _day(
+        people=[priya],
+        deals=[Deal("acme-q4", "Acme Q4", "Acme")],
+        facts=[
+            GoldFact("f-priya", "acme-q4", "what_happened", ("priya", "pricing"), {}, ("s1",)),
+            GoldFact("f-acme", "acme-q4", "what_happened", ("acme", "deck"), {}, ("s1",)),
+        ],
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "Priya pricing Acme deck")},
+    )
+    gold = DealCorpus(days=[day])
+    distinct = PredictedCorpus(
+        days=[
+            PredictedDay(
+                name=day.name,
+                segments=[PredictedSegment("s1", ("f1",), "acme-q4", "2026-01-01T09:00:00Z")],
+                claims=[
+                    PredictedClaim(
+                        "c1",
+                        "acme-q4",
+                        "what_happened",
+                        "Priya sent pricing",
+                        [PredictedEvidence(segment_id="s1")],
+                    ),
+                    PredictedClaim(
+                        "c2",
+                        "acme-q4",
+                        "what_happened",
+                        "Acme deck revised",
+                        [PredictedEvidence(segment_id="s1")],
+                    ),
+                ],
+            )
+        ]
+    )
+    near = PredictedCorpus(
+        days=[
+            PredictedDay(
+                name=day.name,
+                segments=distinct.days[0].segments,
+                claims=[
+                    PredictedClaim(
+                        "c1",
+                        "acme-q4",
+                        "what_happened",
+                        "Priya pricing Acme deck",
+                        [PredictedEvidence(segment_id="s1")],
+                    ),
+                    PredictedClaim(
+                        "c2",
+                        "acme-q4",
+                        "what_happened",
+                        "Priya pricing Acme deck also",
+                        [PredictedEvidence(segment_id="s1")],
+                    ),
+                ],
+            )
+        ]
+    )
+    kept = score_deals(gold, distinct)
+    dumped = score_deals(gold, near)
+    assert kept.summary.correct == 2
+    assert dumped.summary.correct == 1
+    assert dumped.summary.claims == 2
+    assert dumped.summary.what_happened_recall == 0.5
 
 
 def test_is_multi_fact_two_signatures_and_same_person() -> None:
@@ -618,6 +708,19 @@ def test_is_multi_fact_two_signatures_and_same_person() -> None:
     )
     both = PredictedClaim("c", "acme-q4", "who_involved", "Priya Natarajan and Priya Chen")
     assert is_multi_fact_claim(both, two_people) is True
+
+
+def test_packed_dump_skips_single_fact_slot() -> None:
+    day = _day(
+        deals=[Deal("acme-q4", "Acme Q4", "Acme")],
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+        ],
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call")},
+    )
+    packed = baseline_keyword_dump_packed(DealCorpus(days=[day]))
+    assert packed.days[0].claims == []
 
 
 def test_next_step_requires_commitment_or_imperative() -> None:
@@ -707,8 +810,6 @@ def test_contradicts_off_deal_value_in_evidence_still_conflicts() -> None:
         segments=[_seg("s1", "acme-q4", "f1")],
         frames={"f1": Frame("f1", "Priya Chen on the pricing call")},
     )
-    claim = PredictedClaim(
-        "c", "acme-q4", "what_happened", "Priya Chen joined the pricing call"
-    )
+    claim = PredictedClaim("c", "acme-q4", "what_happened", "Priya Chen joined the pricing call")
     assert contradicts(claim, what, day, "Priya Chen on the pricing call") is True
     assert contradicts(claim, what, day, "pricing call") is True

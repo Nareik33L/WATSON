@@ -49,7 +49,6 @@ WHAT_FUTURE = frozenset({"will", "should"})
 WHAT_FUTURE_PHRASES = ("need to", "going to", "plan to")
 NEXT_HEDGES = frozenset({"might", "may", "could"})
 NEXT_NEGATION = frozenset({"not", "never", "wont"})
-_NEAR_FILLERS = frozenset({"please", "still", "revised", "discussed"})
 _NOT_MONEY_UNITS = frozenset({"walk", "run", "monitor", "display", "screen", "video", "ram"})
 _VERSION = re.compile(r"\bv\d+(?:\.\d+)+\b", re.IGNORECASE)
 ACTION_VERBS = frozenset(
@@ -1099,7 +1098,55 @@ def baseline_keyword_dump_duplicate_what_filled(gold: DealCorpus, filler: str) -
     return identity_prediction(
         gold,
         lambda _day, segment: segment.deal,
-        claims_of=lambda day: _duplicate_what_claims(day, filler=filler),
+        claims_of=lambda day: _duplicate_what_claims(day, extra=filler),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_extra(gold: DealCorpus, extra: str) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, extra=extra),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_drop_last(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, drop_last=True),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_mixed_fillers(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, extra_first="please", extra="also"),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_three(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, copies=3),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_reversed(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, reverse=True),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_offset(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, term_offset=1),
     )
 
 
@@ -1628,25 +1675,61 @@ def _deal_non_bait_count(day: DayGold, deal_id: str) -> int:
     )
 
 
-def _claim_near_key(claim: PredictedClaim) -> tuple[str, str, tuple[str, ...]]:
-    """Same-deal, same-slot identity after dropping please/still/revised/discussed.
+def _claim_cited_segments(
+    day: DayGold, pred: PredictedDay, claim: PredictedClaim
+) -> frozenset[str]:
+    frames = resolve_claim_frames(claim, pred, day)
+    if not frames:
+        return frozenset()
+    return frozenset(_gold_segments_for_frames(day, frames))
 
-    Token order is kept, so ``Priya sent pricing to Acme`` does not collapse
-    with ``Acme sent pricing to Priya``.
+
+def _claim_best_fact(
+    day: DayGold,
+    pred: PredictedDay,
+    mapping: dict[str, str],
+    claim: PredictedClaim,
+) -> GoldFact | None:
+    """First gold fact this claim covers (file order). That is the only fact it may credit."""
+    for fact in day.facts:
+        if _claim_covers(day, pred, mapping, claim, fact):
+            return fact
+    return None
+
+
+def _collapse_duplicate_claims(
+    claims: Sequence[PredictedClaim],
+    day: DayGold,
+    pred: PredictedDay,
+    mapping: dict[str, str],
+) -> list[PredictedClaim]:
+    """Keep one covering claim per deal+slot+best-fact with overlapping citations.
+
+    Text is ignored. Two dumps that cover the same best fact and share a cited
+    segment count once for pairing. Claims that cover nothing stay as separate
+    precision misses so repeats cannot inflate the numerator by collapsing FPs.
     """
-    tokens = tuple(token for token in content_tokens(claim.text) if token not in _NEAR_FILLERS)
-    return (claim.deal, claim.slot, tokens)
-
-
-def _collapse_duplicate_claims(claims: Sequence[PredictedClaim]) -> list[PredictedClaim]:
-    """Keep the first of identical or near-identical claims in one deal+slot."""
-    seen: set[tuple[str, str, tuple[str, ...]]] = set()
+    kept: list[tuple[str, str, str, frozenset[str]]] = []
     out: list[PredictedClaim] = []
     for claim in claims:
-        key = _claim_near_key(claim)
-        if key in seen:
+        best = _claim_best_fact(day, pred, mapping, claim)
+        cited = _claim_cited_segments(day, pred, claim)
+        if best is None or not cited:
+            out.append(claim)
             continue
-        seen.add(key)
+        duplicate = False
+        for deal, slot, best_id, kept_cited in kept:
+            if (
+                deal == claim.deal
+                and slot == claim.slot
+                and best_id == best.id
+                and kept_cited & cited
+            ):
+                duplicate = True
+                break
+        if duplicate:
+            continue
+        kept.append((claim.deal, claim.slot, best.id, cited))
         out.append(claim)
     return out
 
@@ -1658,16 +1741,15 @@ def _pair_claims(
 ) -> list[tuple[PredictedClaim, GoldFact]]:
     """1:1 inside (day, matched deal, slot).
 
-    Collapse identical / near-identical claims in the same predicted deal and
-    slot first. Then walk gold facts in file order and assign the first unused
-    covering claim. ``used`` credits each remaining claim (and therefore each
-    fact) once, so a claim with terms from several facts is paired with a
-    single fact.
+    Collapse claims that do the same work (same deal, slot, best fact, overlapping
+    cited segments), then walk gold facts in file order and assign the first unused
+    covering claim. Each remaining claim credits at most one fact. Extra copies of
+    a credited claim are not true positives; they stay in the precision denominator.
     """
     used: set[str] = set()
     paired: list[tuple[PredictedClaim, GoldFact]] = []
     inverse = {gold_id: pred_id for pred_id, gold_id in mapping.items()}
-    claims = _collapse_duplicate_claims(pred.claims)
+    claims = _collapse_duplicate_claims(pred.claims, day, pred, mapping)
     for fact in day.facts:
         pred_id = inverse.get(fact.deal_id)
         if pred_id is None:
@@ -2012,31 +2094,65 @@ def _extra_what_will_next_claims(day: DayGold) -> list[PredictedClaim]:
     return claims + extras
 
 
+def _tweak_dump_window(
+    window: str,
+    *,
+    extra: str = "",
+    drop_last: bool = False,
+    reverse: bool = False,
+) -> str:
+    tokens = content_tokens(window)
+    if drop_last and len(tokens) > 1:
+        tokens = tokens[:-1]
+    if reverse:
+        tokens = list(reversed(tokens))
+    text = " ".join(tokens) if tokens else window
+    if extra:
+        text = f"{text} {extra}".strip()
+    return text
+
+
 def _duplicate_what_claims(
     day: DayGold,
     *,
     next_prefix: str = "will",
     min_channels: int = 0,
     three_channel_only: bool = False,
-    filler: str = "",
+    extra: str = "",
+    extra_first: str = "",
+    drop_last: bool = False,
+    reverse: bool = False,
+    copies: int = 2,
+    term_offset: int = 0,
 ) -> list[PredictedClaim]:
-    """Gold-free dump: window×2 in what, prefixed window in next_step, window in who."""
+    """Gold-free dump: window×N in what, prefixed window in next_step, window in who."""
     claims: list[PredictedClaim] = []
-    suffix = f" {filler}".rstrip()
     for deal in day.deals:
         segs = _deal_segments(day, deal.id)
         evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
-        windows = dump_windows(deal_term_list(day, deal.id))
+        terms = deal_term_list(day, deal.id)
+        windows = dump_windows(terms)
+        shifted = dump_windows(terms[term_offset:]) if term_offset else windows
         channels = {segment.channel for segment in segs}
         duplicate = True
         if three_channel_only and not {"email", "call", "doc"} <= channels:
             duplicate = False
         if min_channels and len(channels) < min_channels:
             duplicate = False
-        copies = 2 if duplicate else 1
+        n_copies = copies if duplicate else 1
         for window_index, window in enumerate(windows):
-            what_text = f"{window}{suffix}".strip()
-            for copy in range(copies):
+            for copy in range(n_copies):
+                source = (
+                    shifted[min(window_index, len(shifted) - 1)] if copy and shifted else window
+                )
+                if copy == 0:
+                    what_text = (
+                        _tweak_dump_window(window, extra=extra_first) if extra_first else window
+                    )
+                else:
+                    what_text = _tweak_dump_window(
+                        source, extra=extra, drop_last=drop_last, reverse=reverse
+                    )
                 claims.append(
                     PredictedClaim(
                         id=f"dump-dup-what-{day.name}-{deal.id}-{window_index}-{copy}",
@@ -2051,7 +2167,7 @@ def _duplicate_what_claims(
                     id=f"dump-dup-next-{day.name}-{deal.id}-{window_index}",
                     deal=deal.id,
                     slot="next_step",
-                    text=f"{next_prefix} {window}{suffix}".strip(),
+                    text=f"{next_prefix} {window}".strip(),
                     evidence=list(evidence),
                 )
             )
@@ -2060,7 +2176,7 @@ def _duplicate_what_claims(
                     id=f"dump-dup-who-{day.name}-{deal.id}-{window_index}",
                     deal=deal.id,
                     slot="who_involved",
-                    text=f"{window}{suffix}".strip(),
+                    text=window,
                     evidence=list(evidence),
                 )
             )
@@ -2072,8 +2188,6 @@ def _packed_dump_claims(day: DayGold, *, suffix: str = "") -> list[PredictedClai
     claims: list[PredictedClaim] = []
     for slot in SLOTS:
         facts = [fact for fact in day.facts if fact.slot == slot]
-        if len({_fact_signature(fact) for fact in facts}) < 2:
-            continue
         terms: list[str] = []
         for fact in facts:
             if fact.person_id:
@@ -2472,7 +2586,13 @@ __all__ = [
     "baseline_keyword_dump_duplicate_what",
     "baseline_keyword_dump_duplicate_what_2ch",
     "baseline_keyword_dump_duplicate_what_3ch",
+    "baseline_keyword_dump_duplicate_what_drop_last",
+    "baseline_keyword_dump_duplicate_what_extra",
     "baseline_keyword_dump_duplicate_what_filled",
+    "baseline_keyword_dump_duplicate_what_mixed_fillers",
+    "baseline_keyword_dump_duplicate_what_offset",
+    "baseline_keyword_dump_duplicate_what_reversed",
+    "baseline_keyword_dump_duplicate_what_three",
     "baseline_keyword_dump_extra_what",
     "baseline_keyword_dump_extra_what_will_next",
     "baseline_keyword_dump_need_to",

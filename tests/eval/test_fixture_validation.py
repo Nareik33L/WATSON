@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,13 @@ from watson.intelligence.eval.deals import (
     baseline_keyword_dump_duplicate_what,
     baseline_keyword_dump_duplicate_what_2ch,
     baseline_keyword_dump_duplicate_what_3ch,
+    baseline_keyword_dump_duplicate_what_drop_last,
+    baseline_keyword_dump_duplicate_what_extra,
     baseline_keyword_dump_duplicate_what_filled,
+    baseline_keyword_dump_duplicate_what_mixed_fillers,
+    baseline_keyword_dump_duplicate_what_offset,
+    baseline_keyword_dump_duplicate_what_reversed,
+    baseline_keyword_dump_duplicate_what_three,
     baseline_keyword_dump_extra_what,
     baseline_keyword_dump_extra_what_will_next,
     baseline_keyword_dump_need_to,
@@ -37,6 +44,7 @@ from watson.intelligence.eval.deals import (
     honest_has_roster_name_and_deadline,
     honest_prediction,
     honest_prediction_filled,
+    is_multi_fact_claim,
     load_deal_corpus,
     load_failing_acme_1211,
     load_v1_deal_corpus,
@@ -125,6 +133,21 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-duplicate-what-2ch": score_deals(
             gold, baseline_keyword_dump_duplicate_what_2ch(gold)
         ).summary.accuracy,
+        "keyword-dump-duplicate-drop-last": score_deals(
+            gold, baseline_keyword_dump_duplicate_what_drop_last(gold)
+        ).summary.accuracy,
+        "keyword-dump-duplicate-mixed": score_deals(
+            gold, baseline_keyword_dump_duplicate_what_mixed_fillers(gold)
+        ).summary.accuracy,
+        "keyword-dump-duplicate-three": score_deals(
+            gold, baseline_keyword_dump_duplicate_what_three(gold)
+        ).summary.accuracy,
+        "keyword-dump-duplicate-reversed": score_deals(
+            gold, baseline_keyword_dump_duplicate_what_reversed(gold)
+        ).summary.accuracy,
+        "keyword-dump-duplicate-offset": score_deals(
+            gold, baseline_keyword_dump_duplicate_what_offset(gold)
+        ).summary.accuracy,
         "keyword-dump-within-cap-will-next": score_deals(
             gold, baseline_keyword_dump_within_cap_will_next(gold)
         ).summary.accuracy,
@@ -135,6 +158,10 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
     for filler in ("please", "still", "revised", "discussed"):
         rows[f"keyword-dump-duplicate-{filler}"] = score_deals(
             gold, baseline_keyword_dump_duplicate_what_filled(gold, filler)
+        ).summary.accuracy
+    for extra in ("also", "again", "ok", "noted"):
+        rows[f"keyword-dump-duplicate-{extra}"] = score_deals(
+            gold, baseline_keyword_dump_duplicate_what_extra(gold, extra)
         ).summary.accuracy
     for name, score in rows.items():
         assert score < GATE, f"{name} summary {score:.3f} must be < {GATE}"
@@ -315,6 +342,50 @@ def test_baseline_score_table(gold) -> None:
         f"{'acme-12/1/1/1 company':<24} {'grouping':<22} {fail_score.accuracy:8.3f}"
         f"  (P={fail_score.pairwise_precision:.3f} F1={fail_score.pairwise_f1:.3f})"
     )
+
+
+def test_packed_dump_only_keeps_multi_fact_slots(gold) -> None:
+    packed = baseline_keyword_dump_packed(gold)
+    gold_by_name = {day.name: day for day in gold.days}
+    checked = 0
+    for day in packed.days:
+        gday = gold_by_name[day.name]
+        for claim in day.claims:
+            assert is_multi_fact_claim(claim, gday), claim.text
+            checked += 1
+    assert checked >= 1
+
+
+def test_duplicate_what_emits_two_what_copies_per_window(gold) -> None:
+    predicted = baseline_keyword_dump_duplicate_what(gold)
+    saw_pair = False
+    for day in predicted.days:
+        by_deal: dict[str, list[str]] = {}
+        for claim in day.claims:
+            if claim.slot == "what_happened":
+                by_deal.setdefault(claim.deal, []).append(claim.text)
+        for texts in by_deal.values():
+            if max(Counter(texts).values(), default=0) >= 2:
+                saw_pair = True
+    assert saw_pair
+
+
+def test_extra_what_only_adds_copies_on_three_channel_deals(gold) -> None:
+    within = {day.name: len(day.claims) for day in baseline_keyword_dump_within_cap(gold).days}
+    extra = baseline_keyword_dump_extra_what(gold)
+    gold_by_name = {day.name: day for day in gold.days}
+    for day in extra.days:
+        gday = gold_by_name[day.name]
+        three = False
+        for deal in gday.deals:
+            channels = {segment.channel for segment in gday.segments if segment.deal == deal.id}
+            if {"email", "call", "doc"} <= channels:
+                three = True
+                break
+        if three:
+            assert len(day.claims) > within[day.name]
+        else:
+            assert len(day.claims) == within[day.name]
 
 
 def test_within_cap_dump_emits_each_window_in_every_slot(gold) -> None:

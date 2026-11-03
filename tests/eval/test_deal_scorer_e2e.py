@@ -23,8 +23,6 @@ from watson.intelligence.eval.deals import (
     PredictedEvidence,
     PredictedSegment,
     _claim_covers,
-    _claim_near_key,
-    _collapse_duplicate_claims,
     _fact_signature,
     _pair_claims,
     _stored_pipeline_texts,
@@ -44,6 +42,7 @@ from watson.intelligence.eval.deals import (
     load_deal_corpus,
     match_clusters,
     matching_slot_facts,
+    person_entities_match,
     privacy_bait_legal,
     required_terms_present,
     resolve_person_id,
@@ -672,6 +671,44 @@ def test_score_deals_unmatched_cite_off_cluster_is_unsupported() -> None:
     score = score_deals(DealCorpus(days=[day]), predicted)
     assert score.summary.unsupported == 1
     assert score.summary.accuracy == 0.0
+
+
+def test_who_shared_roster_name_needs_company() -> None:
+    acme = Person("priya-acme", "Priya Natarajan", "Acme")
+    globex = Person("priya-globex", "Priya Natarajan", "Globex")
+    people = [acme, globex]
+    fact = GoldFact(
+        "g",
+        "acme-q4",
+        "who_involved",
+        (),
+        {},
+        ("s1",),
+        person_id="priya-acme",
+    )
+    assert person_entities_match("Priya Natarajan", "priya-acme", people) is False
+    assert person_entities_match("Priya Natarajan Acme", "priya-acme", people) is True
+    assert fact_terms_satisfied("Priya Natarajan", fact, people) is False
+    assert fact_terms_satisfied("Priya Natarajan Acme", fact, people) is True
+
+
+def test_honest_roster_name_and_deadline_must_be_what_happened() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "Priya Natarajan Friday pricing")},
+        people=[PRIYA],
+    )
+    gold = DealCorpus(days=[day])
+    nxt = _pred(
+        day,
+        claims=[_claim("Priya Natarajan will send pricing Friday", slot="next_step")],
+    )
+    what = _pred(
+        day,
+        claims=[_claim("Priya Natarajan sent pricing Friday")],
+    )
+    assert honest_has_roster_name_and_deadline(gold, nxt) is False
+    assert honest_has_roster_name_and_deadline(gold, what) is True
 
 
 def test_score_deals_honest_control_on_gold() -> None:
@@ -1428,16 +1465,36 @@ def test_extract_amounts_rejects_units_and_versions() -> None:
     assert extract_amounts("GBP 40k") != extract_amounts("40k")
 
 
-def test_collapse_duplicate_claims_keeps_slot_and_word_order() -> None:
-    priya_to_acme = _claim("Priya sent pricing to Acme", claim_id="c1")
-    acme_to_priya = _claim("Acme sent pricing to Priya", claim_id="c2")
-    other_slot = _claim("Priya sent pricing to Acme", claim_id="c3", slot="who_involved")
-    collapsed = _collapse_duplicate_claims([priya_to_acme, acme_to_priya, other_slot])
-    assert [claim.id for claim in collapsed] == ["c1", "c2", "c3"]
-    deal, slot, tokens = _claim_near_key(priya_to_acme)
-    assert deal == "acme-q4"
-    assert slot == "what_happened"
-    assert tokens != _claim_near_key(acme_to_priya)[2]
+def test_semantic_collapse_keeps_priya_acme_pair_and_drops_near_duplicates() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "Priya sent pricing to Acme deck")},
+        facts=[
+            GoldFact("f-priya", "acme-q4", "what_happened", ("priya", "pricing"), {}, ("s1",)),
+            GoldFact("f-acme", "acme-q4", "what_happened", ("acme", "deck"), {}, ("s1",)),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    distinct = _pred(
+        day,
+        claims=[
+            _claim("Priya sent pricing", claim_id="c1"),
+            _claim("Acme deck landed", claim_id="c2"),
+        ],
+    )
+    near = _pred(
+        day,
+        claims=[
+            _claim("Priya pricing Acme deck", claim_id="c1"),
+            _claim("Priya pricing Acme deck also", claim_id="c2"),
+        ],
+    )
+    kept = score_deals(gold, distinct)
+    dumped = score_deals(gold, near)
+    assert kept.summary.correct == 2
+    assert dumped.summary.correct == 1
+    assert dumped.summary.claims == 2
+    assert dumped.summary.what_happened_recall == 0.5
 
 
 def test_is_multi_fact_claim_threshold_and_person_signature() -> None:
