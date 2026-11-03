@@ -10,8 +10,10 @@ issued are replaced with prompt-order ordinals (fixture UUIDs/dates stay).
 Stored responses use those same ordinals; replay maps them back to the
 current prompt's IDs so ``[c:N]`` cites the same claim. New-format files
 (``format: prompt-hash-v1``) hash with the recorded model and reject a
-configured model/params mismatch. Legacy files (no format marker) still
-match window titles and unique phrases, filtered by call type.
+configured model/params mismatch, including CLI replay temperature.
+Legacy files (no format marker) still match window titles and unique
+phrases, filtered by call type. The report labels those
+``legacy (unverified)`` rather than echoing the configured model.
 """
 
 from __future__ import annotations
@@ -137,6 +139,7 @@ class RecordingRuntime:
         mode: str = "replay",
         strict: bool | None = None,
         expected_model: str = "",
+        expected_temperature: float | None = None,
     ) -> None:
         if mode not in {"replay", "record"}:
             raise ValueError('eval mode must be "replay" or "record"')
@@ -149,6 +152,9 @@ class RecordingRuntime:
         self.path = path or DEFAULT_RECORDINGS
         self.inner = inner
         self.expected_model = str(expected_model or "")
+        self.expected_temperature = (
+            float(expected_temperature) if expected_temperature is not None else None
+        )
         self.name = "replay" if inner is None else str(getattr(inner, "name", "record"))
         self.strict = mode == "replay" if strict is None else bool(strict)
         self._recordings = _load(self.path) if self.path.is_file() else _empty()
@@ -367,8 +373,17 @@ class RecordingRuntime:
 
     @property
     def recorded_model(self) -> str:
-        """Model name stored on a new-format file, else the inner/expected model."""
-        return self._recorded_model() or self._configured_model()
+        """Model name stored on a new-format file.
+
+        Legacy files carry no model — report ``legacy (unverified)`` rather
+        than echoing the configured model (an unverified claim).
+        """
+        recorded = self._recorded_model()
+        if recorded:
+            return recorded
+        if not self._is_new_format():
+            return "legacy (unverified)"
+        return self._configured_model()
 
     def _is_new_format(self) -> bool:
         return _is_new_format(self._recordings)
@@ -377,6 +392,13 @@ class RecordingRuntime:
         if self.inner is not None:
             return self._model_name()
         return self.expected_model
+
+    def _configured_temperature(self) -> float | None:
+        if self.inner is not None:
+            return self._temperature()
+        if self.expected_temperature is not None:
+            return float(self.expected_temperature)
+        return None
 
     def _hash_model(self) -> str:
         return self._configured_model() or self._recorded_model()
@@ -417,12 +439,10 @@ class RecordingRuntime:
         configured = self._configured_model()
         if configured and recorded and configured != recorded:
             raise ReplayParamsError(f"recordings are for {recorded}, not {configured}")
-        if self.inner is not None:
-            rec_temp = self._recorded_temperature()
-            if rec_temp is not None and self._temperature() != rec_temp:
-                raise ReplayParamsError(
-                    f"recordings temperature is {rec_temp}, not {self._temperature()}"
-                )
+        rec_temp = self._recorded_temperature()
+        configured_temp = self._configured_temperature()
+        if rec_temp is not None and configured_temp is not None and configured_temp != rec_temp:
+            raise ReplayParamsError(f"recordings temperature is {rec_temp}, not {configured_temp}")
 
     def _model_name(self) -> str:
         inner = self.inner
@@ -517,6 +537,24 @@ def _id_ordinals(blob: str, run_ids: Sequence[str]) -> dict[str, str]:
     return mapping
 
 
+def _cite_ordinals(blob: str, run_ids: Sequence[str]) -> dict[str, str]:
+    """Map run-issued ``[c:uuid]`` tokens to 1-based ordinals in cite order.
+
+    A run-issued ID that appears in the prompt before the claims (a
+    preamble id, day id, …) must not shift ``[c:N]`` onto the wrong claim.
+    """
+    known = {item.casefold() for item in run_ids}
+    mapping: dict[str, str] = {}
+    for match in _CITE.finditer(blob):
+        token = match.group(1)
+        if not _RUN_UUID.fullmatch(token):
+            continue
+        if token.casefold() not in known or token in mapping:
+            continue
+        mapping[token] = str(len(mapping) + 1)
+    return mapping
+
+
 def _apply_run_ids(text: str, mapping: Mapping[str, str], stamps: Sequence[str]) -> str:
     known_stamps = set(stamps)
 
@@ -561,12 +599,15 @@ def _rewrite_value(value: Any, mapping: Mapping[str, str], stamps: Sequence[str]
     return value
 
 
+_ID_RESTORE_KEYS = frozenset({"id", "claim_id", "claim_ids", "ids"})
+
+
 def _ordinalize_response(
     messages: Sequence[Message] | str, response: dict[str, Any]
 ) -> dict[str, Any]:
-    """Rewrite prompt run-IDs in the stored response to prompt-order ordinals."""
+    """Rewrite prompt cite-IDs in the stored response to cite-order ordinals."""
     blob = "\n".join(item["content"] for item in _turns(messages))
-    mapping = _id_ordinals(blob, _run_ids(None))
+    mapping = _cite_ordinals(blob, _run_ids(None))
     rewritten = _rewrite_value(response, mapping, _run_stamps(None))
     return rewritten if isinstance(rewritten, dict) else dict(response)
 
@@ -574,17 +615,17 @@ def _ordinalize_response(
 def _restore_response(
     messages: Sequence[Message] | str, response: dict[str, Any]
 ) -> dict[str, Any]:
-    """Map stored prompt-order ordinals back to this run's IDs."""
+    """Map stored cite-order ordinals back to this run's claim IDs."""
     blob = "\n".join(item["content"] for item in _turns(messages))
-    mapping = _id_ordinals(blob, _run_ids(None))
+    mapping = _cite_ordinals(blob, _run_ids(None))
     inverse = {ordinal: token for token, ordinal in mapping.items()}
     restored = _restore_value(response, inverse)
     return restored if isinstance(restored, dict) else dict(response)
 
 
-def _restore_value(value: Any, inverse: Mapping[str, str]) -> Any:
+def _restore_value(value: Any, inverse: Mapping[str, str], *, as_id: bool = False) -> Any:
     if isinstance(value, str):
-        if value in inverse:
+        if as_id and value in inverse:
             return inverse[value]
 
         def replace_cite(match: re.Match[str]) -> str:
@@ -595,9 +636,12 @@ def _restore_value(value: Any, inverse: Mapping[str, str]) -> Any:
 
         return _CITE.sub(replace_cite, value)
     if isinstance(value, list):
-        return [_restore_value(item, inverse) for item in value]
+        return [_restore_value(item, inverse, as_id=as_id) for item in value]
     if isinstance(value, dict):
-        return {str(key): _restore_value(item, inverse) for key, item in value.items()}
+        return {
+            str(key): _restore_value(item, inverse, as_id=str(key) in _ID_RESTORE_KEYS)
+            for key, item in value.items()
+        }
     return value
 
 

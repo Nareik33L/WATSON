@@ -158,10 +158,19 @@ def build_eval_runtime(
                 "Use --mode replay (default) or --runtime fake."
             )
         expected = ""
+        expected_temperature: float | None = None
         if config is not None:
             intel = getattr(config, "intelligence", None)
             expected = str(getattr(intel, "llm_model", "") or "")
-        return RecordingRuntime(path=recordings, mode="replay", expected_model=expected)
+            raw_temp = getattr(intel, "temperature", None)
+            if raw_temp is not None:
+                expected_temperature = float(raw_temp)
+        return RecordingRuntime(
+            path=recordings,
+            mode="replay",
+            expected_model=expected,
+            expected_temperature=expected_temperature,
+        )
     if runtime_name != "ollama":
         raise RuntimeUnavailable(
             "record mode requires --runtime ollama (FakeRuntime is --runtime fake)."

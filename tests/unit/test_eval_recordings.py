@@ -124,6 +124,30 @@ def _write_recordings(path: Path, rows: list[dict[str, Any]]) -> Path:
     return path
 
 
+def _write_v1(
+    path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    model: str = "qwen2.5:7b",
+    temperature: float = 0.0,
+) -> Path:
+    path.write_text(
+        json.dumps(
+            {
+                "format": "prompt-hash-v1",
+                "model": model,
+                "temperature": temperature,
+                "source": "test",
+                "complete": rows,
+                "embeddings": {},
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 class _StubInner:
     name = "stub"
 
@@ -431,6 +455,17 @@ def test_prompt_hash_strips_run_scoped_ids() -> None:
     ) == prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[send_b])
 
 
+def test_prompt_hash_run_id_ordinals_follow_appearance_not_sort() -> None:
+    """First-seen ordinals, not sorted UUID order. Swapped IDs in the same slots match."""
+    send = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    edit = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    left = f"note {send} then {edit}"
+    right = f"note {edit} then {send}"
+    assert prompt_hash(
+        [{"role": "user", "content": left}], schema={}, run_ids=[send, edit]
+    ) == prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[send, edit])
+
+
 def test_prompt_hash_keeps_claim_prompt_order() -> None:
     """Sorted order must not be the key — prompt order is."""
     send = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -450,17 +485,18 @@ def test_prompt_hash_keeps_claim_prompt_order() -> None:
     ) != prompt_hash([{"role": "user", "content": swapped}], schema={}, run_ids=[send, edit])
 
 
-def test_prompt_hash_leaves_fixture_uuid_and_timestamp() -> None:
-    """Surviving mutant: uuid-to-constant / overbroad-dates."""
+def test_prompt_hash_leaves_fixture_uuid() -> None:
+    """Fixture UUIDs stay verbatim. Only run-issued IDs become ordinals."""
     fixture_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
     run_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     other_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    left = f"Window: note {fixture_id} at 2026-10-31T12:00:00Z\n[c:{run_id}]"
-    right = f"Window: note {other_id} at 2026-10-31T12:00:01Z\n[c:{run_id}]"
+    stamp = "2026-10-31T12:00:00Z"
+    left = f"Window: note {fixture_id} at {stamp}\n[c:{run_id}]"
+    right = f"Window: note {other_id} at {stamp}\n[c:{run_id}]"
     assert prompt_hash(
         [{"role": "user", "content": left}], schema={}, run_ids=[run_id]
     ) != prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[run_id])
-    same_fixture = f"Window: note {fixture_id} at 2026-10-31T12:00:00Z\n[c:{other_id}]"
+    same_fixture = f"Window: note {fixture_id} at {stamp}\n[c:{other_id}]"
     assert prompt_hash(
         [{"role": "user", "content": left}], schema={}, run_ids=[run_id]
     ) == prompt_hash(
@@ -468,6 +504,17 @@ def test_prompt_hash_leaves_fixture_uuid_and_timestamp() -> None:
         schema={},
         run_ids=[other_id],
     )
+
+
+def test_prompt_hash_leaves_fixture_timestamp() -> None:
+    """Unregistered timestamps stay verbatim. Same fixture UUID, times differ."""
+    fixture_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    run_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    left = f"Window: note {fixture_id} at 2026-10-31T12:00:00Z\n[c:{run_id}]"
+    right = f"Window: note {fixture_id} at 2026-10-31T12:00:01Z\n[c:{run_id}]"
+    assert prompt_hash(
+        [{"role": "user", "content": left}], schema={}, run_ids=[run_id]
+    ) != prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[run_id])
 
 
 def test_replay_maps_ordinal_cites_to_prompt_order_not_sorted(tmp_path: Path) -> None:
@@ -526,6 +573,7 @@ def test_replay_maps_ordinal_cites_to_prompt_order_not_sorted(tmp_path: Path) ->
     text = str(result["paragraphs"][0]["text"])
     assert edit2 in text
     assert send2 not in text
+    assert result["paragraphs"][0]["claim_ids"] == [edit2]
     assert replay.miss_count == 0
 
 
@@ -846,3 +894,336 @@ def test_report_names_recorded_model(
     payload = json.loads((tmp_path / "replay" / "report.json").read_text(encoding="utf-8"))
     assert "qwen2.5:7b" in markdown
     assert payload["model"] == "qwen2.5:7b"
+
+
+def test_miss_increments_count_logs_and_sets_last_miss(tmp_path: Path, caplog: Any) -> None:
+    """Surviving mutants: miss_count not incremented / no last_miss / no miss log."""
+    path = _write_recordings(tmp_path / "empty.json", [])
+    runtime = RecordingRuntime(path=path, mode="replay")
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(ReplayMiss, match=r"understanding key=[0-9a-f]{64}"):
+            _complete(runtime, "Window: Mystery App\n1. nothing")
+    assert runtime.miss_count == 1
+    assert runtime.last_miss is not None
+    assert runtime.last_miss.startswith("ReplayMiss:")
+    assert "understanding" in runtime.last_miss
+    assert "key=" in runtime.last_miss
+    assert any("replay miss for understanding" in rec.getMessage() for rec in caplog.records)
+
+
+def test_lenient_miss_count_fails_pipeline_without_exception(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """Surviving mutant: miss_count gate ignored. Deterministic, no lease wait."""
+    from watson.intelligence.eval import run as run_mod
+    from watson.intelligence.eval.run import DayEval
+    from watson.intelligence.eval.thresholds import load_thresholds
+
+    path = _write_recordings(tmp_path / "empty.json", [])
+
+    def build(
+        *, mode: str, runtime_name: str, recordings: Path, config: object
+    ) -> RecordingRuntime:
+        del mode, runtime_name, config
+        return RecordingRuntime(path=recordings, mode="replay", strict=False)
+
+    metrics = {name: 1.0 for name in load_thresholds()}
+    metrics["unsupported_achievements"] = 0.0
+    metrics["duplicate_observation_rate"] = 0.0
+
+    def fake_one(
+        fixture: Path, *, runtime: Any, out_dir: Path, key: bytes, now_fn: object
+    ) -> DayEval:
+        del out_dir, key, now_fn
+        runtime.complete([{"role": "user", "content": "Window: Mystery App\n1. nothing"}], {})
+        return DayEval(
+            name=fixture.name,
+            date="2026-11-06",
+            metrics=metrics,
+            derived_first={"summaries": 1},
+            derived_second={"summaries": 1},
+            summary_present=True,
+            identical_counts=True,
+            narrative_nonempty=True,
+            citation_count=1,
+            claims=1,
+        )
+
+    monkeypatch.setattr(run_mod, "build_eval_runtime", build)
+    monkeypatch.setattr(run_mod, "_eval_one", fake_one)
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=path,
+        out_dir=tmp_path / "lenient-miss",
+        key=TEST_KEY,
+    )
+    assert report.pipeline_passed is False
+    reason = report.failure_reason or ""
+    assert "ReplayMiss" in reason
+    assert "understanding" in reason
+    assert "key=" in reason
+
+
+def test_prompt_hash_leaves_unregistered_iso_date() -> None:
+    """Surviving mutant: over-broad date normalisation (YYYY-MM-DD without time)."""
+    run_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    left = f"Working day 2026-10-31\n[c:{run_id}]"
+    right = f"Working day 2026-11-04\n[c:{run_id}]"
+    assert prompt_hash(
+        [{"role": "user", "content": left}], schema={}, run_ids=[run_id]
+    ) != prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[run_id])
+
+
+def test_prompt_hash_strips_registered_run_stamps() -> None:
+    """Surviving mutant: stamps not registered via iso_now/note_stamp."""
+    from datetime import UTC, datetime
+
+    from watson.memory.db import iso_now
+    from watson.memory.ids import issued_stamps
+
+    token = bind_issued()
+    try:
+        first = iso_now(datetime(2026, 10, 31, 12, 0, 0, tzinfo=UTC))
+        second = iso_now(datetime(2026, 10, 31, 13, 0, 0, tzinfo=UTC))
+        assert first in issued_stamps()
+        assert second in issued_stamps()
+        run_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        left = f"Claims at {first}\n[c:{run_id}]"
+        right = f"Claims at {second}\n[c:{run_id}]"
+        assert prompt_hash(
+            [{"role": "user", "content": left}], schema={}, run_ids=[run_id]
+        ) == prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[run_id])
+    finally:
+        reset_issued(token)
+
+
+def test_extract_does_not_consume_window_row(tmp_path: Path) -> None:
+    """Surviving mutant: extract kind 'any' serves understand window rows."""
+    path = _write_recordings(
+        tmp_path / "extract-kind.json",
+        [{"match": "cedar daily", "response": {"activity_type": "non_work", "claims": []}}],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    with pytest.raises(ReplayMiss, match=r"day_extract key=[0-9a-f]{64}"):
+        _complete(runtime, _EXTRACT_PREFIX + "Claims:\n1. cedar daily leftover\n")
+
+
+def test_consolidation_structured_reraises_replay_miss(tmp_path: Path) -> None:
+    """Surviving mutant: consolidation swallows ReplayMiss into ConsolidationError."""
+    from watson.intelligence.schemas.consolidation import DayExtractOutput
+    from watson.pipeline.consolidation import DAY_EXTRACT_JSON_SCHEMA, _structured
+
+    path = _write_recordings(tmp_path / "empty.json", [])
+    runtime = RecordingRuntime(path=path, mode="replay")
+    with pytest.raises(ReplayMiss, match=r"day_extract key=[0-9a-f]{64}"):
+        _structured(
+            runtime,
+            [{"role": "user", "content": _EXTRACT_PREFIX + "Claims:\n1. Alice\n"}],
+            DayExtractOutput,
+            DAY_EXTRACT_JSON_SCHEMA,
+            "day extract",
+        )
+
+
+def test_understanding_does_not_consume_extract_row(tmp_path: Path) -> None:
+    """Surviving mutant: understanding kind 'any' serves extract rows."""
+    path = _write_recordings(
+        tmp_path / "kind.json",
+        [
+            {
+                "match": "[commitment] Send the slides",
+                "response": {"commitments": [{"text": "extract-only"}]},
+            }
+        ],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    with pytest.raises(ReplayMiss, match=r"understanding key=[0-9a-f]{64}"):
+        _complete(runtime, "Window: Inbox — [commitment] Send the slides\n1. something")
+
+
+def test_new_format_does_not_use_legacy_lookup(tmp_path: Path) -> None:
+    """Surviving mutant: legacy lookup still runs on prompt-hash-v1 files."""
+    blob = "Window: cedar daily — harbor ferry\n1. civic news"
+    path = _write_v1(
+        tmp_path / "new.json",
+        [{"match": "cedar daily", "response": {"activity_type": "non_work", "claims": []}}],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    with pytest.raises(ReplayMiss, match=r"understanding key=[0-9a-f]{64}"):
+        _complete(runtime, blob)
+
+
+def test_new_format_rejects_temperature_mismatch_without_inner(tmp_path: Path) -> None:
+    """Surviving mutant: temperature reject gated on inner is not None."""
+    path = tmp_path / "named.json"
+    runtime = RecordingRuntime(path=path, inner=_NamedInner(), mode="record")
+    _complete(runtime, _EXTRACT_PREFIX + "Claims:\n1. Alice\n")
+    runtime.save()
+    with pytest.raises(ReplayParamsError, match="temperature"):
+        RecordingRuntime(path=path, mode="replay", expected_temperature=0.7)
+
+
+def test_build_eval_runtime_passes_expected_temperature() -> None:
+    from watson.intelligence.eval.run import build_eval_runtime
+
+    class _Intel:
+        llm_model = "qwen2.5:7b"
+        temperature = 0.7
+
+    class _Config:
+        intelligence = _Intel()
+
+    runtime = build_eval_runtime(
+        mode="replay",
+        runtime_name="replay",
+        recordings=RECORDINGS,
+        config=_Config(),
+    )
+    assert runtime.expected_temperature == 0.7
+    assert runtime.expected_model == "qwen2.5:7b"
+
+
+def test_replay_eval_rejects_configured_temperature_mismatch(
+    tmp_path: Path, key_provider: object
+) -> None:
+    """Config 0.7 vs a file recorded at 0.0 must fail the pipeline (CLI exit 1)."""
+    path = tmp_path / "named.json"
+    runtime = RecordingRuntime(path=path, inner=_NamedInner(), mode="record")
+    _complete(runtime, _EXTRACT_PREFIX + "Claims:\n1. Alice\n")
+    runtime.save()
+
+    class _Intel:
+        llm_model = "qwen2.5:7b"
+        temperature = 0.7
+
+    class _Config:
+        intelligence = _Intel()
+
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=path,
+        out_dir=tmp_path / "temp-mismatch",
+        key=TEST_KEY,
+        config=_Config(),
+    )
+    assert report.pipeline_passed is False
+    reason = report.failure_reason or ""
+    assert "ReplayParamsError" in reason
+    assert "0.7" in reason
+    assert (0 if report.pipeline_passed else 1) != 0
+
+
+def test_legacy_recorded_model_is_unverified_not_config() -> None:
+    """Surviving mutant / G1: legacy files must not echo the configured model."""
+    runtime = RecordingRuntime(path=RECORDINGS, mode="replay", expected_model="llama3.1:8b")
+    assert runtime.recorded_model == "legacy (unverified)"
+    assert "llama3.1:8b" not in runtime.recorded_model
+
+
+def test_legacy_eval_report_model_is_unverified(tmp_path: Path, key_provider: object) -> None:
+    class _Intel:
+        llm_model = "llama3.1:8b"
+        temperature = 0.0
+
+    class _Config:
+        intelligence = _Intel()
+
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=RECORDINGS,
+        out_dir=tmp_path / "legacy-model",
+        key=TEST_KEY,
+        config=_Config(),
+    )
+    assert report.model == "legacy (unverified)"
+    markdown = (tmp_path / "legacy-model" / "report.md").read_text(encoding="utf-8")
+    payload = json.loads((tmp_path / "legacy-model" / "report.json").read_text(encoding="utf-8"))
+    assert "legacy (unverified)" in markdown
+    assert "llama3.1:8b" not in markdown
+    assert payload["model"] == "legacy (unverified)"
+
+
+def test_restore_does_not_rewrite_rank_string_ordinal(tmp_path: Path) -> None:
+    """A whole-string ordinal must not rewrite non-id fields such as rank."""
+    send = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    prompt = f"Write the daily narrative\nClaims:\n1. [c:{send}] (commitment/observed) Send it\n"
+    digest = prompt_hash(
+        [{"role": "user", "content": prompt}],
+        schema={},
+        model="qwen2.5:7b",
+        temperature=0.0,
+        run_ids=[send],
+    )
+    path = _write_v1(
+        tmp_path / "rank.json",
+        [
+            {
+                "match": digest,
+                "model": "qwen2.5:7b",
+                "temperature": 0.0,
+                "response": {
+                    "paragraphs": [{"text": "Sent it [c:1].", "rank": "1", "claim_ids": ["1"]}]
+                },
+            }
+        ],
+    )
+    token = bind_issued([send], [])
+    try:
+        replay = RecordingRuntime(path=path, mode="replay")
+        result = replay.complete([{"role": "user", "content": prompt}], {})
+    finally:
+        reset_issued(token)
+    paragraph = result["paragraphs"][0]
+    assert paragraph["rank"] == "1"
+    assert send in str(paragraph["text"])
+    assert paragraph["claim_ids"] == [send]
+
+
+def test_cite_ordinals_ignore_preamble_run_id(tmp_path: Path) -> None:
+    """Index-form [c:N] follows claim cites, not a run-issued ID before them."""
+    preamble = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    send = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    edit = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    prompt = (
+        f"Context id {preamble}\nWrite the daily narrative\nClaims:\n"
+        f"1. [c:{send}] (commitment/observed) Send it\n"
+        f"2. [c:{edit}] (activity/observed) Edit doc\n"
+    )
+    digest = prompt_hash(
+        [{"role": "user", "content": prompt}],
+        schema={},
+        model="qwen2.5:7b",
+        temperature=0.0,
+        run_ids=[preamble, send, edit],
+    )
+    path = _write_v1(
+        tmp_path / "preamble.json",
+        [
+            {
+                "match": digest,
+                "model": "qwen2.5:7b",
+                "temperature": 0.0,
+                "response": {"paragraphs": [{"text": "Edited the doc [c:2].", "claim_ids": ["2"]}]},
+            }
+        ],
+    )
+    token = bind_issued([preamble, send, edit], [])
+    try:
+        replay = RecordingRuntime(path=path, mode="replay")
+        result = replay.complete([{"role": "user", "content": prompt}], {})
+    finally:
+        reset_issued(token)
+    text = str(result["paragraphs"][0]["text"])
+    assert edit in text
+    assert send not in text
+    assert preamble not in text
+    assert result["paragraphs"][0]["claim_ids"] == [edit]
