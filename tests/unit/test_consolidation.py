@@ -1264,6 +1264,7 @@ def test_failure_marks_failed_and_leaves_spool(
         assert marker.is_file()
         assert derived_counts(conn, seeded["day_id"]) == {
             "activities": 0,
+            "deals": 0,
             "decisions": 0,
             "commitments": 0,
             "achievements": 0,
@@ -2015,6 +2016,7 @@ def test_runtime_down_during_understand_holds_without_consolidating(
         assert row["last_error"] == "ConsolidationWait"
         assert derived_counts(conn, day_id) == {
             "activities": 0,
+            "deals": 0,
             "decisions": 0,
             "commitments": 0,
             "achievements": 0,
@@ -3141,6 +3143,4 @@ def test_summarize_day_falls_back_when_model_returns_empty_paragraphs() -> None:
     runtime = FakeRuntime(complete_queue=[{"paragraphs": []}])
     claims = [{"id": "claim-1", "kind": "decision", "assertion": "observed", "text": "Go"}]
     out = _summarize_day(runtime, claims, "Write the daily narrative")
-    assert out.paragraphs
-    assert out.paragraphs[0].claim_ids == ["claim-1"]
-    assert "[c:claim-1]" in out.paragraphs[0].text
+    assert out.paragraphs == []

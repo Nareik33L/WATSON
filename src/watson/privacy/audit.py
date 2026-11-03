@@ -66,6 +66,7 @@ _COUNT_KEY_STEMS = frozenset(
         "unprocessed",
         "refused",
         "activities",
+        "deals",
         "decisions",
         "commitments",
         "achievements",
@@ -102,6 +103,7 @@ _ALLOWED_DETAIL_KEYS: dict[str, frozenset[str]] = {
         {
             "workingdayid",
             "activities",
+            "deals",
             "decisions",
             "commitments",
             "achievements",

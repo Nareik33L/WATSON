@@ -34,7 +34,9 @@ from watson.config.schema import (
     WatsonConfig,
 )
 from watson.intelligence.citations import (
+    CITATION_RE,
     VerifiedNarrative,
+    _cited_fallback,
     expand_index_citations,
     verify_narrative,
 )
@@ -62,6 +64,7 @@ from watson.intelligence.schemas.consolidation import (
     ClusteringOutput,
     DailySummaryOutput,
     DayExtractOutput,
+    DealCluster,
     SummaryParagraph,
 )
 from watson.intelligence.structured import complete_structured
@@ -97,7 +100,10 @@ WORKER_ID = "watson-consolidate"
 CLUSTER_PROMPT_TASK = "clustering"
 EXTRACT_PROMPT_TASK = "day_extract"
 SUMMARY_PROMPT_TASK = "daily_summary"
-PROMPT_VERSION = "v1"
+CLUSTER_PROMPT_VERSION = "v2"
+EXTRACT_PROMPT_VERSION = "v1"
+SUMMARY_PROMPT_VERSION = "v2"
+PROMPT_VERSION = EXTRACT_PROMPT_VERSION
 # Keep clustering / extract / summary user lists inside the 4096-token window.
 _CLUSTER_ITEM_MAX = 120
 _EXTRACT_CLAIM_MAX = 160
@@ -111,12 +117,14 @@ TERMINAL_FRAME_STATES = frozenset(
 )
 _DERIVED_TABLES = (
     "activities",
+    "deals",
     "decisions",
     "commitments",
     "achievement_candidates",
     "entity_history",
     "daily_summaries",
 )
+_NONE_DEAL_TITLES = frozenset({"none", "n/a", "no deal", "non-deal", "no-deal", "not a deal"})
 
 
 class ConsolidationWait(Exception):
@@ -673,47 +681,40 @@ def _replace_derived(
         working_day_id=working_day_id,
         pipeline_version=settings.pipeline_version,
     )
-    cluster_prompt = load_prompt(CLUSTER_PROMPT_TASK, PROMPT_VERSION)
-    extract_prompt = load_prompt(EXTRACT_PROMPT_TASK, PROMPT_VERSION)
-    summary_prompt = load_prompt(SUMMARY_PROMPT_TASK, PROMPT_VERSION)
+    cluster_prompt = load_prompt(CLUSTER_PROMPT_TASK, CLUSTER_PROMPT_VERSION)
+    extract_prompt = load_prompt(EXTRACT_PROMPT_TASK, EXTRACT_PROMPT_VERSION)
+    summary_prompt = load_prompt(SUMMARY_PROMPT_TASK, SUMMARY_PROMPT_VERSION)
     clustering = (
         _cluster_observations(language, observations, cluster_prompt.text)
         if observations
-        else ClusteringOutput(activities=[])
+        else ClusteringOutput()
     )
     extract = (
         _extract_day(language, claims, _load_entities(conn), extract_prompt.text)
         if claims
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
     )
+    deal_groups = _group_claims_by_deal(clustering, observations, claims)
+    cite_claims = [row for _key, _title, grouped in deal_groups for row in grouped]
     raw_summary = (
-        _summarize_day(language, claims, summary_prompt.text)
-        if claims
+        _summarize_day(
+            language,
+            cite_claims,
+            summary_prompt.text,
+            deal_groups=deal_groups,
+        )
+        if deal_groups and cite_claims
         else DailySummaryOutput(paragraphs=[])
     )
     end_runtime_phase(language)
-    verified = verify_narrative(
-        expand_index_citations(
-            [
-                {"text": item.text, "claim_ids": list(item.claim_ids)}
-                for item in raw_summary.paragraphs
-            ],
-            claims,
-        ),
-        claims,
+    buckets, slot_drafts, cited, unverified = _bucket_deal_paragraphs(
+        raw_summary,
+        deal_groups,
         working_day_id=working_day_id,
         pipeline_version=settings.pipeline_version,
+        claims=claims,
     )
     skipped = skipped_understand or []
-    if skipped:
-        note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
-        paragraphs = (*verified.paragraphs, note)
-        verified = VerifiedNarrative(
-            narrative_md="\n\n".join(paragraphs),
-            paragraphs=paragraphs,
-            claim_ids=verified.claim_ids,
-            unverified=verified.unverified,
-        )
     stamp = iso_now(now)
     try:
         _delete_derived(conn, working_day_id, settings.pipeline_version)
@@ -726,6 +727,25 @@ def _replace_derived(
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
         )
+        inserted_deals = _insert_deals(
+            conn,
+            working_day_id,
+            clustering,
+            observations,
+            prompt_version=cluster_prompt.prompt_version,
+            pipeline_version=settings.pipeline_version,
+            stamp=stamp,
+        )
+        verified = _narrative_from_stored_deals(inserted_deals, buckets, cited, unverified)
+        if skipped:
+            note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
+            paragraphs = (*verified.paragraphs, note)
+            verified = VerifiedNarrative(
+                narrative_md="\n\n".join(paragraphs),
+                paragraphs=paragraphs,
+                claim_ids=verified.claim_ids,
+                unverified=verified.unverified,
+            )
         _insert_extract(
             conn,
             working_day_id,
@@ -748,6 +768,7 @@ def _replace_derived(
             prompt_version=summary_prompt.prompt_version,
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
+            extra_sections=_summary_deal_sections(inserted_deals, slot_drafts),
         )
         conn.commit()
     except Exception:
@@ -762,7 +783,7 @@ def _cluster_observations(
     system: str,
 ) -> ClusteringOutput:
     numbered = _trim_numbered(
-        [str(row["description"]) for row in observations],
+        [_observation_cluster_text(row) for row in observations],
         item_max=_CLUSTER_ITEM_MAX,
         list_max=_PROMPT_LIST_MAX,
     )
@@ -770,12 +791,30 @@ def _cluster_observations(
         {"role": "system", "content": system},
         {
             "role": "user",
-            "content": f"Cluster these observations into activities.\n\n{numbered}",
+            "content": (
+                "Cluster these observations into deals. "
+                "Same sales opportunity across email, call, and docs is one deal. "
+                "none is its own class — leave those observations out.\n\n"
+                f"{numbered}"
+            ),
         },
     ]
     result = _structured(language, messages, ClusteringOutput, CLUSTERING_JSON_SCHEMA, "clustering")
     if result is None:
         return _fallback_clustering(observations)
+    if not result.deals and result.activities:
+        # Old recordings emit activities; V1 grouping consumes them as deals.
+        return ClusteringOutput(
+            activities=list(result.activities),
+            deals=[
+                DealCluster(
+                    title=item.title,
+                    summary=item.summary,
+                    observation_indexes=list(item.observation_indexes),
+                )
+                for item in result.activities
+            ],
+        )
     return result
 
 
@@ -815,28 +854,48 @@ def _summarize_day(
     language: LanguageRuntime,
     claims: list[dict[str, Any]],
     system: str,
+    *,
+    deal_groups: list[tuple[object, str, list[dict[str, Any]]]] | None = None,
 ) -> DailySummaryOutput:
-    claim_lines = _trim_numbered(
-        [f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}" for row in claims],
-        item_max=_SUMMARY_CLAIM_MAX,
-        list_max=_PROMPT_LIST_MAX,
-    )
+    if deal_groups:
+        blocks: list[str] = []
+        for _key, title, grouped in deal_groups:
+            lines = _trim_numbered(
+                [
+                    f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}"
+                    for row in grouped
+                ],
+                item_max=_SUMMARY_CLAIM_MAX,
+                list_max=_PROMPT_LIST_MAX,
+            )
+            blocks.append(f"Deal: {title}\nClaims:\n{lines}")
+        claim_block = "\n\n".join(blocks)
+    else:
+        claim_lines = _trim_numbered(
+            [f"[c:{row['id']}] ({row['kind']}/{row['assertion']}) {row['text']}" for row in claims],
+            item_max=_SUMMARY_CLAIM_MAX,
+            list_max=_PROMPT_LIST_MAX,
+        )
+        claim_block = f"Claims:\n{claim_lines}"
     messages: list[Message] = [
         {"role": "system", "content": system},
         {
             "role": "user",
             "content": (
                 "Write the daily narrative from these claims. "
-                "Cite each used claim inline as [c:<id>].\n\n"
-                f"Claims:\n{claim_lines}\n"
+                "Cite each used claim inline as [c:<id>]. "
+                "For each deal write what happened, who was involved, and the next step "
+                "from that deal's claims only.\n\n"
+                f"{claim_block}\n"
             ),
         },
     ]
     result = _structured(
         language, messages, DailySummaryOutput, DAILY_SUMMARY_JSON_SCHEMA, "daily summary"
     )
-    if result is None or (claims and not result.paragraphs):
-        return _fallback_summary(claims)
+    if result is None or not result.paragraphs:
+        # Per-deal verify falls back from that deal's claims only.
+        return DailySummaryOutput(paragraphs=[])
     return result
 
 
@@ -907,6 +966,80 @@ def _insert_activities(
                 pipeline_version,
             ),
         )
+
+
+def _insert_deals(
+    conn: sqlcipher.Connection,
+    working_day_id: str,
+    clustering: ClusteringOutput,
+    observations: list[dict[str, Any]],
+    *,
+    prompt_version: str,
+    pipeline_version: int,
+    stamp: str,
+) -> list[dict[str, Any]]:
+    """Persist deal clusters and assign ``segments.deal_id``. Unassigned is ``none``."""
+    conn.execute(
+        "UPDATE segments SET deal_id = NULL WHERE working_day_id = ?",
+        (working_day_id,),
+    )
+    obs_ids = [str(row["id"]) for row in observations]
+    obs_by_id = {str(row["id"]): row for row in observations}
+    inserted: list[dict[str, Any]] = []
+    assigned_obs: set[str] = set()
+    for index, cluster in enumerate(clustering.deals):
+        if _is_none_deal_title(cluster.title):
+            continue
+        chosen = [
+            item
+            for item in _pick_indexes(cluster.observation_indexes, obs_ids)
+            if item not in assigned_obs
+        ]
+        if not chosen:
+            continue
+        assigned_obs.update(chosen)
+        deal_id = new_id()
+        group_key = _deal_group_key(index, cluster.title)
+        conn.execute(
+            """
+            INSERT INTO deals (
+                id, created_at, updated_at, working_day_id, title, summary,
+                observation_ids, prompt_version, pipeline_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                deal_id,
+                stamp,
+                stamp,
+                working_day_id,
+                cluster.title,
+                cluster.summary,
+                json.dumps(chosen),
+                prompt_version,
+                pipeline_version,
+            ),
+        )
+        for observation_id in chosen:
+            segment_id = str(obs_by_id[observation_id].get("segment_id") or "")
+            if not segment_id:
+                continue
+            conn.execute(
+                """
+                UPDATE segments
+                SET deal_id = ?
+                WHERE id = ? AND working_day_id = ? AND deal_id IS NULL
+                """,
+                (deal_id, segment_id, working_day_id),
+            )
+        inserted.append(
+            {
+                "id": deal_id,
+                "title": cluster.title,
+                "observation_ids": chosen,
+                "index": group_key,
+            }
+        )
+    return inserted
 
 
 def _insert_extract(
@@ -1113,7 +1246,11 @@ def _insert_summary(
     prompt_version: str,
     pipeline_version: int,
     stamp: str,
+    extra_sections: dict[str, Any] | None = None,
 ) -> None:
+    sections = verified.sections_json()
+    if extra_sections:
+        sections.update(extra_sections)
     conn.execute(
         """
         INSERT INTO daily_summaries (
@@ -1127,7 +1264,7 @@ def _insert_summary(
             stamp,
             working_day_id,
             verified.narrative_md,
-            json.dumps(verified.sections_json()),
+            json.dumps(sections),
             json.dumps(list(verified.claim_ids)),
             prompt_version,
             pipeline_version,
@@ -1224,6 +1361,7 @@ def _apply_retention_and_sweep(
         detail={
             "working_day_id": working_day_id,
             "activities": counts["activities"],
+            "deals": counts["deals"],
             "decisions": counts["decisions"],
             "commitments": counts["commitments"],
             "achievements": counts["achievements"],
@@ -1272,7 +1410,7 @@ def _load_observations(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT o.id, o.description
+        SELECT o.id, o.description, o.segment_id, o.raw_json
         FROM observations o
         JOIN segments s ON s.id = o.segment_id
         WHERE s.working_day_id = ? AND o.pipeline_version = ?
@@ -1280,7 +1418,15 @@ def _load_observations(
         """,
         (working_day_id, pipeline_version),
     ).fetchall()
-    return [{"id": str(row["id"]), "description": str(row["description"])} for row in rows]
+    return [
+        {
+            "id": str(row["id"]),
+            "description": str(row["description"]),
+            "segment_id": str(row["segment_id"]),
+            "raw_json": str(row["raw_json"] or ""),
+        }
+        for row in rows
+    ]
 
 
 def _load_claims(
@@ -1288,7 +1434,7 @@ def _load_claims(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT id, working_day_id, kind, assertion, text, pipeline_version
+        SELECT id, observation_id, working_day_id, kind, assertion, text, pipeline_version
         FROM claims
         WHERE working_day_id = ? AND pipeline_version = ?
         ORDER BY created_at, kind, assertion, text, id
@@ -1298,6 +1444,7 @@ def _load_claims(
     return [
         {
             "id": str(row["id"]),
+            "observation_id": str(row["observation_id"]),
             "working_day_id": str(row["working_day_id"]),
             "kind": str(row["kind"]),
             "assertion": str(row["assertion"]),
@@ -1559,7 +1706,206 @@ def _trim_numbered(items: list[str], *, item_max: int, list_max: int) -> str:
     return "\n".join(lines)
 
 
+def _is_none_deal_title(title: str) -> bool:
+    return " ".join(title.casefold().split()) in _NONE_DEAL_TITLES
+
+
+def _deal_group_key(index: int, title: str) -> int | str:
+    """Identity for a deal cluster. Title is not unique across look-alike deals."""
+    return index
+
+
+def _deal_candidates_from_raw(raw_json: str) -> list[str]:
+    """Understanding deal/project candidates feed clustering (D3)."""
+    try:
+        payload = json.loads(raw_json) if raw_json else {}
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for key in ("deal_candidates", "project_candidates"):
+        values = payload.get(key)
+        if not isinstance(values, list):
+            continue
+        for item in values:
+            if not isinstance(item, str):
+                continue
+            name = " ".join(item.split())
+            folded = name.casefold()
+            if not name or folded in seen:
+                continue
+            seen.add(folded)
+            names.append(name)
+    return names
+
+
+def _observation_cluster_text(row: dict[str, Any]) -> str:
+    description = str(row.get("description") or "")
+    candidates = _deal_candidates_from_raw(str(row.get("raw_json") or ""))
+    if not candidates:
+        return description
+    return f"{description} (deal candidates: {', '.join(candidates)})"
+
+
+def _group_claims_by_deal(
+    clustering: ClusteringOutput,
+    observations: list[dict[str, Any]],
+    claims: list[dict[str, Any]],
+) -> list[tuple[object, str, list[dict[str, Any]]]]:
+    obs_ids = [str(row["id"]) for row in observations]
+    assigned: set[str] = set()
+    groups: list[tuple[object, str, list[dict[str, Any]]]] = []
+    for index, cluster in enumerate(clustering.deals):
+        if _is_none_deal_title(cluster.title):
+            continue
+        chosen = [
+            item
+            for item in _pick_indexes(cluster.observation_indexes, obs_ids)
+            if item not in assigned
+        ]
+        if not chosen:
+            continue
+        assigned.update(chosen)
+        chosen_set = set(chosen)
+        grouped = [row for row in claims if str(row.get("observation_id") or "") in chosen_set]
+        if grouped:
+            groups.append((_deal_group_key(index, cluster.title), cluster.title, grouped))
+    return groups
+
+
+def _bucket_deal_paragraphs(
+    raw_summary: DailySummaryOutput,
+    deal_groups: list[tuple[object, str, list[dict[str, Any]]]],
+    *,
+    working_day_id: str,
+    pipeline_version: int,
+    claims: list[dict[str, Any]],
+) -> tuple[
+    dict[object, list[str]],
+    list[tuple[object, str, list[str]]],
+    set[str],
+    tuple[dict[str, str], ...],
+]:
+    """Assign each paragraph to one deal. Drop cross-deal and unmatched text."""
+    buckets: dict[object, list[str]] = {key: [] for key, _title, _grouped in deal_groups}
+    cited_by_key: dict[object, set[str]] = {key: set() for key, _title, _grouped in deal_groups}
+    slot_drafts: list[tuple[object, str, list[str]]] = []
+    if not deal_groups or not claims:
+        return buckets, slot_drafts, set(), ()
+
+    for para in raw_summary.paragraphs:
+        owners: list[object] = []
+        expanded_by_key: dict[object, dict[str, Any]] = {}
+        payload = {"text": para.text, "claim_ids": list(para.claim_ids)}
+        for key, _title, grouped in deal_groups:
+            expanded = expand_index_citations([payload], grouped)[0]
+            grouped_ids = {str(row["id"]) for row in grouped}
+            cited_toks = [
+                tok for tok in CITATION_RE.findall(str(expanded["text"])) if tok in grouped_ids
+            ]
+            mapped = [cid for cid in expanded["claim_ids"] if cid in grouped_ids]
+            if cited_toks or mapped:
+                owners.append(key)
+                expanded_by_key[key] = expanded
+        if len(owners) != 1:
+            continue
+        key = owners[0]
+        grouped = next(rows for group_key, _title, rows in deal_groups if group_key == key)
+        cite_claims = grouped
+        verified = verify_narrative(
+            [expanded_by_key[key]],
+            cite_claims,
+            working_day_id=working_day_id,
+            pipeline_version=pipeline_version,
+            fallback=False,
+        )
+        if not verified.paragraphs:
+            continue
+        buckets[key].extend(_strip_leading_headings(body) for body in verified.paragraphs)
+        cited_by_key[key].update(verified.claim_ids)
+        if para.slot:
+            slot_drafts.append((key, para.slot, list(verified.claim_ids)))
+
+    for key, _title, grouped in deal_groups:
+        if buckets[key] or not grouped:
+            continue
+        cite_claims = grouped
+        fallback = _cited_fallback(cite_claims)
+        buckets[key].extend(_strip_leading_headings(body) for body in fallback.paragraphs)
+        cited_by_key[key].update(fallback.claim_ids)
+
+    cited_ids: set[str] = set()
+    unverified: list[dict[str, str]] = []
+    for key, _title, grouped in deal_groups:
+        cited_ids.update(cited_by_key[key])
+        for row in grouped:
+            if str(row["id"]) not in cited_by_key[key]:
+                unverified.append(
+                    {
+                        "id": str(row["id"]),
+                        "kind": str(row["kind"]),
+                        "text": str(row["text"]),
+                    }
+                )
+    return buckets, slot_drafts, cited_ids, tuple(unverified)
+
+
+def _strip_leading_headings(text: str) -> str:
+    """Drop model ``##`` lines so the stored deal title is the only heading."""
+    lines = text.splitlines()
+    while lines and lines[0].lstrip().startswith("##"):
+        lines.pop(0)
+        if lines and not lines[0].strip():
+            lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def _narrative_from_stored_deals(
+    deals: list[dict[str, Any]],
+    buckets: dict[object, list[str]],
+    cited: set[str],
+    unverified: tuple[dict[str, str], ...],
+) -> VerifiedNarrative:
+    """Headings come from the stored deal title, never leftover unmatched text."""
+    parts: list[str] = []
+    for deal in deals:
+        paras = buckets.get(deal["index"], [])
+        if not paras:
+            continue
+        parts.append(f"## {deal['title']}\n\n" + "\n\n".join(paras))
+    body = "\n\n".join(parts)
+    return VerifiedNarrative(
+        narrative_md=body,
+        paragraphs=tuple(parts),
+        claim_ids=tuple(sorted(cited)),
+        unverified=unverified,
+    )
+
+
+def _summary_deal_sections(
+    deals: list[dict[str, Any]],
+    slot_drafts: list[tuple[object, str, list[str]]],
+) -> dict[str, Any]:
+    """Store validated slot citations with deal_id; never raw model index tokens."""
+    key_to_id = {row["index"]: str(row["id"]) for row in deals}
+    slots: list[dict[str, Any]] = []
+    for key, slot, claim_ids in slot_drafts:
+        deal_id = key_to_id.get(key)
+        if not deal_id or not slot or not claim_ids:
+            continue
+        if any(not cid or cid.isdigit() for cid in claim_ids):
+            continue
+        slots.append({"slot": slot, "claim_ids": list(claim_ids), "deal_id": deal_id})
+    return {
+        "deals": [{"id": row["id"], "title": row["title"]} for row in deals],
+        "slots": slots,
+    }
+
+
 def _fallback_clustering(observations: list[dict[str, Any]]) -> ClusteringOutput:
+    """Parked one-activity-per-observation; deals stay empty so leftover is ``none``."""
     activities: list[ActivityCluster] = []
     for index, row in enumerate(observations, start=1):
         description = " ".join(str(row.get("description") or "segment").split()) or "segment"
@@ -1570,7 +1916,7 @@ def _fallback_clustering(observations: list[dict[str, Any]]) -> ClusteringOutput
                 observation_indexes=[index],
             )
         )
-    return ClusteringOutput(activities=activities)
+    return ClusteringOutput(activities=activities, deals=[])
 
 
 def _fallback_summary(claims: list[dict[str, Any]]) -> DailySummaryOutput:

@@ -14,6 +14,8 @@ from watson.intelligence.eval.recordings import (
     RecordingRuntime,
     ReplayMiss,
     ReplayParamsError,
+    _is_window_key,
+    _key_matches_kind,
     prompt_hash,
 )
 from watson.intelligence.eval.run import run_eval
@@ -1009,6 +1011,58 @@ def test_prompt_hash_strips_registered_run_stamps() -> None:
         ) == prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[run_id])
     finally:
         reset_issued(token)
+
+
+def test_acme_clustering_key_is_not_a_window_key() -> None:
+    key = "Reading mail about the Acme Q4 proposal."
+    assert not _is_window_key(key)
+    assert _key_matches_kind(key, "clustering")
+    assert _is_window_key("cedar daily")
+    assert not _key_matches_kind("cedar daily", "clustering")
+
+
+def test_clustering_does_not_serve_window_key_row(tmp_path: Path) -> None:
+    path = _write_recordings(
+        tmp_path / "cluster-kind.json",
+        [
+            {
+                "match": "cedar daily",
+                "response": {"deals": [{"title": "From window", "observation_indexes": [1]}]},
+            }
+        ],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    with pytest.raises(ReplayMiss, match=r"clustering key=[0-9a-f]{64}"):
+        _complete(runtime, "Cluster these observations into deals.\n1. cedar daily leftover\n")
+
+
+def test_clustering_prefers_non_window_phrase_over_catchall(tmp_path: Path) -> None:
+    path = _write_recordings(
+        tmp_path / "cluster-phrase.json",
+        [
+            {
+                "match": "Reading mail about the Acme Q4 proposal.",
+                "response": {
+                    "deals": [{"title": "Acme Q4 proposal", "observation_indexes": [1, 2, 3]}]
+                },
+            },
+            {
+                "match": "Cluster these observations",
+                "response": {"deals": [{"title": "Day work", "observation_indexes": [1]}]},
+            },
+            {
+                "match": "cedar daily",
+                "response": {"deals": [{"title": "From window", "observation_indexes": [1]}]},
+            },
+        ],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    result = _complete(
+        runtime,
+        "Cluster these observations into deals.\n"
+        "1. Reading mail about the Acme Q4 proposal. (deal candidates: Acme)\n",
+    )
+    assert result["deals"][0]["title"] == "Acme Q4 proposal"
 
 
 def test_extract_does_not_consume_window_row(tmp_path: Path) -> None:

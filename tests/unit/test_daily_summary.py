@@ -44,7 +44,7 @@ def test_summary_cites_day_claims_and_lists_uncited(tmp_path: Path) -> None:
             (seeded["day_id"],),
         ).fetchone()
         assert row is not None
-        assert row["prompt_version"] == "daily_summary/v1"
+        assert row["prompt_version"] == "daily_summary/v2"
         assert int(row["pipeline_version"]) == PIPELINE_VERSION
         narrative = str(row["narrative_md"])
         assert "[c:" in narrative
@@ -60,9 +60,11 @@ def test_summary_cites_day_claims_and_lists_uncited(tmp_path: Path) -> None:
         stored = set(json.loads(str(row["claim_ids"])))
         assert stored
         assert stored <= day_ids
+        assert seeded["no_change"] not in stored
         sections = json.loads(str(row["sections_json"]))
         unverified_ids = {item["id"] for item in sections["unverified"]}
-        assert unverified_ids == day_ids - stored
+        assert seeded["no_change"] not in unverified_ids
+        assert unverified_ids == day_ids - stored - {seeded["no_change"]}
         assert derived_counts(conn, seeded["day_id"])["summaries"] == 1
     finally:
         conn.close()
@@ -86,7 +88,15 @@ def test_summary_strips_foreign_and_missing_citations(tmp_path: Path) -> None:
         missing = "99999999-9999-4999-8999-999999999999"
         runtime = FakeRuntime(
             complete_queue=[
-                {"activities": []},
+                {
+                    "deals": [
+                        {
+                            "title": "Acme Q4 proposal",
+                            "summary": "same opportunity",
+                            "observation_indexes": [1, 2],
+                        }
+                    ]
+                },
                 {"entity_deltas": [], "decisions": [], "commitments": []},
                 {
                     "paragraphs": [
@@ -129,7 +139,15 @@ def test_summary_strips_uncited_body_sentences(tmp_path: Path) -> None:
         seeded = _seed_day(conn)
         runtime = FakeRuntime(
             complete_queue=[
-                {"activities": []},
+                {
+                    "deals": [
+                        {
+                            "title": "Acme Q4 proposal",
+                            "summary": "same opportunity",
+                            "observation_indexes": [1, 2],
+                        }
+                    ]
+                },
                 {"entity_deltas": [], "decisions": [], "commitments": []},
                 {
                     "paragraphs": [

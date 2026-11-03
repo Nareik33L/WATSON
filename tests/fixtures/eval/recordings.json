@@ -7,15 +7,36 @@
       "response": {
         "paragraphs": [
           {
-            "text": "Work continued across the day's open documents and threads [c:1].",
-            "claim_ids": ["1"]
+            "text": "What happened: Work continued across the day's open documents and threads [c:1].",
+            "claim_ids": ["1"],
+            "slot": "what_happened"
+          }
+        ]
+      }
+    },
+    {
+      "match": "Reading mail about the Acme Q4 proposal.",
+      "response": {
+        "deals": [
+          {
+            "title": "Acme Q4 proposal",
+            "summary": "Mail, pricing, and follow-up on the same opportunity.",
+            "observation_indexes": [1, 2, 3, 4, 5, 6, 7, 8]
           }
         ]
       }
     },
     {
       "match": "Cluster these observations",
-      "response": { "activities": [] }
+      "response": {
+        "deals": [
+          {
+            "title": "Day work",
+            "summary": "Observations grouped for the daily summary.",
+            "observation_indexes": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+          }
+        ]
+      }
     },
     {
       "match": "Extract cross-segment",

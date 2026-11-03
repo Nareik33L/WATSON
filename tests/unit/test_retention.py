@@ -295,7 +295,7 @@ def test_on_delete_cascade_and_migration_roundtrip(data_dir: Path, key_provider:
     finally:
         conn.close()
 
-    assert upgrade_head(path, TEST_KEY) == "0010_m4b_corrections"
+    assert upgrade_head(path, TEST_KEY) == "0011_m3f_deals"
     conn = connect(path, TEST_KEY, load_vec=False)
     try:
         actions = _fk_actions(conn)

@@ -50,12 +50,15 @@ def verify_narrative(
     *,
     working_day_id: str | None = None,
     pipeline_version: int | None = None,
+    fallback: bool = True,
 ) -> VerifiedNarrative:
     """Keep only sentences with valid same-day citations; uncited claims → Unverified.
 
     §7.2 / §3.7 step 7: a body sentence without a resolvable ``[c:id]`` is
     removed. ``working_day_id`` / ``pipeline_version`` drop foreign rows so a
     caller cannot cite another day or another pipeline version.
+    ``fallback`` (default True) emits a cited body from ``day_claims`` when
+    nothing stays; deal summaries pass False and fall back per deal instead.
     """
     scoped = [
         row
@@ -87,7 +90,7 @@ def verify_narrative(
         for row in scoped
         if str(row["id"]) not in cited
     )
-    if not kept_paragraphs and scoped:
+    if not kept_paragraphs and scoped and fallback:
         return _cited_fallback(scoped)
     return VerifiedNarrative(
         narrative_md="\n\n".join(kept_paragraphs),

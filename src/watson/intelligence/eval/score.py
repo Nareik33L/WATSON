@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
@@ -187,15 +188,22 @@ def collect_predicted(
         ).fetchone()[0]
     )
     narrative = ""
+    sections: dict[str, Any] = {}
     summary = conn.execute(
         """
-        SELECT narrative_md FROM daily_summaries
+        SELECT narrative_md, sections_json FROM daily_summaries
         WHERE working_day_id = ? AND pipeline_version = ?
         """,
         (working_day_id, pipeline_version),
     ).fetchone()
     if summary is not None:
         narrative = str(summary[0])
+        try:
+            loaded = json.loads(str(summary[1] or "{}"))
+        except json.JSONDecodeError:
+            loaded = None
+        if isinstance(loaded, dict):
+            sections = loaded
     claim_ids = {
         str(row[0])
         for row in conn.execute(
@@ -209,6 +217,49 @@ def collect_predicted(
         resolvable = 0.0
     else:
         resolvable = 1.0 if citations_resolvable(narrative, claim_ids) else 0.0
+    deal_titles = _texts(
+        conn,
+        """
+        SELECT title FROM deals
+        WHERE working_day_id = ? AND pipeline_version = ?
+        ORDER BY created_at, id
+        """,
+        (working_day_id, pipeline_version),
+    )
+    segment_deals = [
+        {
+            "segment_id": str(row[0]),
+            "deal_id": str(row[1]) if row[1] else "none",
+            "title": str(row[2]) if row[2] else "none",
+        }
+        for row in conn.execute(
+            """
+            SELECT s.id, s.deal_id, d.title
+            FROM segments s
+            LEFT JOIN deals d ON d.id = s.deal_id
+            WHERE s.working_day_id = ?
+            ORDER BY s.started_at, s.id
+            """,
+            (working_day_id,),
+        )
+    ]
+    raw_slots = sections.get("slots")
+    slots: list[dict[str, Any]] = []
+    if isinstance(raw_slots, list):
+        for item in raw_slots:
+            if not isinstance(item, dict):
+                continue
+            deal_id = str(item.get("deal_id") or "")
+            slot_name = str(item.get("slot") or "")
+            slot_claim_ids = item.get("claim_ids")
+            if not deal_id or slot_name not in {"what_happened", "who_involved", "next_step"}:
+                continue
+            if not isinstance(slot_claim_ids, list) or not slot_claim_ids:
+                continue
+            resolved = [str(cid) for cid in slot_claim_ids]
+            if any(not cid or cid.isdigit() for cid in resolved):
+                continue
+            slots.append({"slot": slot_name, "claim_ids": resolved, "deal_id": deal_id})
     return {
         "projects": projects,
         "people": people,
@@ -223,6 +274,9 @@ def collect_predicted(
         "narrative_nonempty": bool(narrative.strip()),
         "summary_present": summary is not None,
         "claims": claims,
+        "deal_titles": deal_titles,
+        "segment_deals": segment_deals,
+        "summary_slots": slots,
     }
 
 

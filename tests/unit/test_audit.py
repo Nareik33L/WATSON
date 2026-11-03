@@ -208,6 +208,7 @@ def test_unknown_kind_is_rejected(data_dir: Path, key_provider: object) -> None:
             {
                 "working_day_id": SAMPLE_FRAME_ID,
                 "activities": 1,
+                "deals": 1,
                 "decisions": 1,
                 "commitments": 1,
                 "achievements": 0,
