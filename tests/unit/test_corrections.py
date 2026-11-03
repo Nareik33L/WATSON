@@ -1599,6 +1599,44 @@ def test_s26_o1_reject_then_edit_keeps_the_edit(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_s26b_o1_reject_then_edit_read_at_v1(tmp_path: Path) -> None:
+    mid = PIPELINE_VERSION + 1
+    snippet = "Still editing: Acme proposal appendix"
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        record_claim_correction(conn, intro["claim_id"], "reject")
+        mid_intro = _later_claim(
+            conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=mid
+        )
+        record_claim_correction(
+            conn, mid_intro, "correct", new_text="Published intro", pipeline_version=mid
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], mid),
+            working_day_id=intro["day_id"],
+            pipeline_version=mid,
+        )
+        assert [str(row["id"]) for row in overlayed] == [mid_intro]
+        assert overlayed[0]["text"] == "Published intro"
+        assert overlayed[0]["assertion"] == "user_corrected"
+        histories, orphans = match_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], mid),
+            working_day_id=intro["day_id"],
+            pipeline_version=mid,
+        )
+        assert orphans == ()
+        assert [item.action for item in histories[mid_intro]] == ["reject", "correct"]
+        assert histories[mid_intro][-1].action == "correct"
+        assert mid_intro not in rejected_claim_ids(
+            conn, working_day_id=intro["day_id"], pipeline_version=mid
+        )
+    finally:
+        conn.close()
+
+
 def test_s27_h1_merge_chain_rematches_under_root(tmp_path: Path) -> None:
     newer = PIPELINE_VERSION + 1
     conn = _open(tmp_path)
