@@ -150,6 +150,26 @@ Compute these on the actual gold corpus (no model). The build **fails** if any n
 
 The 12/1/1/1 Acme corpus (group-by-company F1 **0.905**) is a required **failing** input of this checker. Guidance counts do not replace it.
 
+### Spec tightenings (#46)
+
+These pin the four QA follow-ups from #45 so the scorer and fixtures agree.
+
+**Dump window.** Join that deal-day's required terms **including roster names**, in fact file order, unique after `normalize()`. Pack them into consecutive non-overlapping windows of at most 24 content tokens. A multi-word term (for example `priya natarajan`) is atomic: the packer never splits it across windows. If the next term does not fit, start a new window. Emit each window in every slot, with no verb or sentence wrapper added. Over-cap dump is a different baseline (all unique OCR tokens of the deal-day, always > 24).
+
+**Contradiction slot values.** A fact's slot values are the typed person / date / amount items on that fact only:
+
+| Kind | What counts |
+|---|---|
+| person | `person_id`, plus any required term or alias that is a roster full name |
+| date | a weekday token (`friday`) **or** a canonical calendar date (`14 nov` / `14 november` / `2026-11-14` → `cal:11-14`). Weekday ≠ date. |
+| amount | an integer from digits or number-words (`2` / `two`). Quarters (`q4`) are not amounts. |
+
+A claim contradicts F only in the **same slot** on the same day and deal, and only when it asserts a value of one of those kinds that is **not** F's value and is **not** both (a) a slot value of some fact on this deal and (b) present in the cited evidence. A fact with no person/date/amount is not contradicted by extra deal-correct evidenced values. Person / date / amount mentioned in another slot do not contradict.
+
+**Honest-control scoring.** The positive control is scored with the same scorer against **gold grouping**: each non-bait segment's predicted cluster id is that segment's gold deal id (bait stays `none`). Claims come from `honest_summary.yaml` next to the day fixture. The control must include at least one `what_happened` claim that names a full roster person and a deadline (weekday or calendar date). Gate: deal summary accuracy ≥ 0.85 (and unsupported = 0).
+
+**Fixture shape.** V1 gold lives under `tests/fixtures/deal_gold/{day_focused,day_fragmented,day_meeting,day_sensitive,day_near_empty}/` as `truth.yaml` plus `honest_summary.yaml`. The 12/1/1/1 failing shape is `tests/fixtures/deal_gold/failing_acme_1211/truth.yaml`. A day file has `deals`, `people`, `segments` (`id`, `frame_ids`, `deal`, `bundle_id`, `window_title`, `started_at`, `channel`, optional `privacy_bait`), `frames`, `skipped`, and `deal_summaries` (atomic facts with `required_terms` or `person_id`, optional `aliases`, `evidence_segments`). Some slot on the V1 corpus has **≥ 1.2 gold facts per deal-day** so a single within-cap window cannot cover every fact (recall ≤ 1/1.2 < 0.85).
+
 ## Thresholds
 
 One config: `src/watson/intelligence/eval/thresholds.json` (plan §11.2). **Until M3f** that file is the bake-off / `--strict` quality gate (parked Revision 2 rows, including strict decisions/commitments precision ≥ 0.85). **At M3f** those rows become **report-only**; the gate is deal grouping accuracy ≥ 0.85 and deal summary accuracy ≥ 0.85 (implies unsupported summary claims = 0). Structural hard gates that stay: claims-with-evidence = 100%; citations-resolvable = 100% over a **non-empty** citation set when the day has claims.
