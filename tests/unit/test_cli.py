@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from watson import cli
+from watson import __version__, cli
 from watson.memory.keys import InMemoryKeyProvider, set_key_provider
 
 TEST_KEY = bytes.fromhex("11" * 32)
@@ -19,7 +19,14 @@ def test_cli_imports_and_version(capsys: pytest.CaptureFixture[str]) -> None:
         cli.main(["--version"])
 
     assert exited.value.code == 0
-    assert "watson" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f"W.A.T.S.O.N {__version__}" in out
+    with pytest.raises(SystemExit) as help_exit:
+        cli.main(["--help"])
+    assert help_exit.value.code == 0
+    help_out = capsys.readouterr().out
+    assert "W.A.T.S.O.N — local-first work memory." in help_out
+    assert "usage: watson" in help_out
 
 
 def test_eval_help_is_not_a_stub(capsys: pytest.CaptureFixture[str]) -> None:
@@ -407,6 +414,7 @@ def test_doctor_and_db_commands(
 
     assert cli.main(["doctor"]) == 0
     doctor = capsys.readouterr().out
+    assert doctor.startswith("W.A.T.S.O.N doctor")
     assert str(data_dir) in doctor
     assert "db_status: missing" in doctor
     assert TEST_KEY.hex() not in doctor

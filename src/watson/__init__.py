@@ -1,4 +1,4 @@
-"""WATSON — local-first work memory."""
+"""W.A.T.S.O.N — local-first work memory."""
 
 from importlib.metadata import PackageNotFoundError, version
 

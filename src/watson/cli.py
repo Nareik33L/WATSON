@@ -1,4 +1,4 @@
-"""WATSON command-line interface: run, replay, models, db, doctor, status, dashboard."""
+"""W.A.T.S.O.N command-line interface: run, replay, models, db, doctor, status, dashboard."""
 
 from __future__ import annotations
 
@@ -43,12 +43,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="watson",
-        description="Local-first work memory.",
+        description="W.A.T.S.O.N — local-first work memory.",
     )
     parser.add_argument(
         "--version",
         action="version",
-        version=f"watson {__version__}",
+        version=f"W.A.T.S.O.N {__version__}",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -223,7 +223,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
 def _cmd_doctor(_args: argparse.Namespace) -> int:
     config = load_config()
     lines = [
-        "WATSON doctor",
+        "W.A.T.S.O.N doctor",
         f"config_path: {config.config_path}{_absent(config.config_path)}",
         f"data_dir: {config.data_dir}",
         f"spool_dir: {config.spool_dir}{_absent(config.spool_dir)}",

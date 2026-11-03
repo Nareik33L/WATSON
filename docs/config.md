@@ -1,4 +1,4 @@
-# WATSON configuration
+# W.A.T.S.O.N configuration
 
 Runtime settings live in `config.toml` under the data directory
 (`~/Library/Application Support/WATSON` or `WATSON_DATA_DIR`). The file

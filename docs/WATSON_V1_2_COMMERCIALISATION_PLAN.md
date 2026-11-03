@@ -1,10 +1,10 @@
-# WATSON V1.2 — Commercialisation, Licensing & B2C Launch: Engineering Plan (Revision 2)
+# W.A.T.S.O.N V1.2 — Commercialisation, Licensing & B2C Launch: Engineering Plan (Revision 2)
 
-**Supersedes:** WATSON V1.2 Product Scope — Commercialisation, Licensing & B2C Launch Preparation (v1.2, proposed)
+**Supersedes:** W.A.T.S.O.N V1.2 Product Scope — Commercialisation, Licensing & B2C Launch Preparation (v1.2, proposed)
 **Depends on:** `WATSON_V1_ENGINEERING_PLAN.md` (V1.0, including the packaging and documentation work deferred from it) and `WATSON_V1_1_AUDIO_MEETINGS_PLAN.md` (V1.1)
 **Status:** Proposed engineering baseline
 
-The commercial intent of the v1.2 scope stands: WATSON Personal is bought once, belongs to the individual, runs locally, never needs a subscription or a cloud account, and keeps working offline. This plan changes how that is engineered. The main shifts are: licensing is **offline-verifiable and soft-enforced** so it can never lock a customer out of their own history; tax, checkout, key issuance and refunds are **outsourced to a merchant of record** so no licence server has to exist on launch day; the macOS app becomes a **native Swift shell** around the Python core so signing, notarisation, login items, permissions, updates and onboarding behave like a normal Mac app; models are **downloaded from a signed manifest on first run** rather than shipped in the installer; and the Personal/Organisation boundary is enforced in **package structure and the egress guard**, not in prose.
+The commercial intent of the v1.2 scope stands: W.A.T.S.O.N Personal is bought once, belongs to the individual, runs locally, never needs a subscription or a cloud account, and keeps working offline. This plan changes how that is engineered. The main shifts are: licensing is **offline-verifiable and soft-enforced** so it can never lock a customer out of their own history; tax, checkout, key issuance and refunds are **outsourced to a merchant of record** so no licence server has to exist on launch day; the macOS app becomes a **native Swift shell** around the Python core so signing, notarisation, login items, permissions, updates and onboarding behave like a normal Mac app; models are **downloaded from a signed manifest on first run** rather than shipped in the installer; and the Personal/Organisation boundary is enforced in **package structure and the egress guard**, not in prose.
 
 ---
 
@@ -23,7 +23,7 @@ The commercial intent of the v1.2 scope stands: WATSON Personal is bought once, 
 | Hardware support | "Assess Intel where practical" | **Apple Silicon only, macOS 14+, 8 GB minimum (reduced profile), 16 GB recommended**; Intel declared unsupported | No MLX on Intel, poor llama.cpp performance, shrinking base; honesty beats a half-working tier |
 | Personal/Organisation boundary | Principles | **Package layering (`core` → `commerce` → `sharing` extension point), capability object, egress allow-list, export audit** | Architecture boundaries that are enforced by imports and tests survive; principles do not |
 | Launch | Website + purchase + install | **Founding-member private beta first**, then public listing | The founding tier exists to validate; use it before launch, not after |
-| Legal/privacy | Document list | Same list plus **UK consumer-law specifics** (14-day digital-content cooling-off and its waiver, refund terms), **data-controller scoping** (customer account data only; no work content ever reaches the company), **continuity commitment** if WATSON ceases trading | These are the questions customers and reviewers actually ask |
+| Legal/privacy | Document list | Same list plus **UK consumer-law specifics** (14-day digital-content cooling-off and its waiver, refund terms), **data-controller scoping** (customer account data only; no work content ever reaches the company), **continuity commitment** if W.A.T.S.O.N ceases trading | These are the questions customers and reviewers actually ask |
 
 Everything in v1.2 §2 (editions), §3.1 (pricing proposals), §12 (exclusions) and §15 (product definition) stands.
 
@@ -79,7 +79,7 @@ This means the company's only online systems at launch are a static website, the
 
 ### C4 — Native Swift shell around the Python core
 
-The existing `watson-capture` Swift package grows into **WATSON.app**: a menu-bar application that owns
+The existing `watson-capture` Swift package grows into **W.A.T.S.O.N.app**: a menu-bar application that owns
 
 - login item (`SMAppService`), menu bar state and pause controls,
 - Screen Recording permission flow with deep links to System Settings,
@@ -162,7 +162,7 @@ The onboarding is driven end-to-end in UI tests with a fresh user account on CI 
 - **Bundle contents:** `WATSON.app/Contents/MacOS/WATSON` (Swift shell), `Contents/Resources/core/` (Python 3.12 runtime + site-packages + `watson` + sqlcipher3 + sqlite-vec + llama.cpp/MLX runtime), `Contents/Resources/prompts/`, `Contents/Resources/manifest.json`, `Contents/Frameworks/Sparkle.framework`.
 - **Data locations unchanged** from V1.0 (`~/Library/Application Support/WATSON`), so a developer install upgrades in place.
 - **Upgrade:** Alembic migrations run on first launch of a new version after an automatic pre-migration backup of `watson.db` (encrypted, same key) to `backups/`; downgrade is blocked with a clear message if the schema is newer than the app.
-- **Uninstall:** "Remove WATSON…" in the app menu offers *keep my data* (removes app + login item + Keychain token; leaves data folder with a README) or *delete everything* (V1.0 delete-all path, then removes the folder and Keychain items, audit event written to a final log line). A standalone `Uninstall WATSON.app` is included in the DMG for when the main app will not start.
+- **Uninstall:** "Remove W.A.T.S.O.N…" in the app menu offers *keep my data* (removes app + login item + Keychain token; leaves data folder with a README) or *delete everything* (V1.0 delete-all path, then removes the folder and Keychain items, audit event written to a final log line). A standalone `Uninstall WATSON.app` is included in the DMG for when the main app will not start.
 - **Compatibility:** macOS 14, 15 and the current major release tested on clean user accounts; Apple Silicon only; 8 GB minimum (reduced profile), 16 GB recommended; ~6 GB disk for app + 16 GB-profile models. The System Requirements page is generated from the same table the hardware check uses.
 - **No developer tools:** CI's clean-account test runs on a machine image without Xcode or Command Line Tools.
 
@@ -183,7 +183,7 @@ Required documents (owner: founder with legal review; engineering supplies the t
 
 | Document | Engineering input |
 |---|---|
-| EULA | Perpetual definition; device limit (informational at launch); transfer by file; update entitlement as encoded in licence; **continuity clause**: if WATSON ceases commercial operation, a build that treats all installations as licensed is published; no remote kill-switch exists |
+| EULA | Perpetual definition; device limit (informational at launch); transfer by file; update entitlement as encoded in licence; **continuity clause**: if W.A.T.S.O.N ceases commercial operation, a build that treats all installations as licensed is published; no remote kill-switch exists |
 | Privacy policy | Scope: website visits, purchase records held by the merchant, support emails, optional diagnostics bundles. **The company never receives work content, screenshots, audio, transcripts, summaries or memory**; the app's local data handling is described for transparency but the company is not a processor of it |
 | Terms and refund policy | UK Consumer Contracts Regulations: 14-day cancellation for digital content, waived with express consent at download; practical policy proposal: 14-day no-questions refund regardless, since the trial exists |
 | Support policy | Response targets; supported versions (current and previous minor); security-fix policy (backported to current minor for the entitlement period) |
@@ -199,7 +199,7 @@ Claims discipline: no "military-grade", no "unhackable", no "forensically erased
 ## 6. Support, diagnostics and maintenance
 
 - **Version identity:** SemVer + build number in About, `watson --version`, diagnostics and crash logs; the running Python core and Swift shell versions must match or the shell refuses to start the core.
-- **Diagnostics bundle:** `watson doctor --bundle` (and the About window button) produces a zip with: versions, macOS version, chip and RAM, config with paths and secrets removed, permission states, model manifest status and hashes, database schema version and row counts only, job queue states, last 500 lines of **redacted** logs, crash reports from `~/Library/Logs/DiagnosticReports` for WATSON processes. A preview screen lists every file before the user chooses to send it. A unit test asserts the bundle contains no `frame_text`, `merged_text`, `snippet`, transcript or report text.
+- **Diagnostics bundle:** `watson doctor --bundle` (and the About window button) produces a zip with: versions, macOS version, chip and RAM, config with paths and secrets removed, permission states, model manifest status and hashes, database schema version and row counts only, job queue states, last 500 lines of **redacted** logs, crash reports from `~/Library/Logs/DiagnosticReports` for W.A.T.S.O.N processes. A preview screen lists every file before the user chooses to send it. A unit test asserts the bundle contains no `frame_text`, `merged_text`, `snippet`, transcript or report text.
 - **Crash handling:** no third-party crash SDK. The shell records crash counts locally and offers the diagnostics flow.
 - **Updates:** Sparkle, EdDSA-signed appcast, delta updates, release notes rendered from `CHANGELOG.md`; checks opt-in; critical security fixes flagged in the appcast so the app shows a stronger prompt if the user has checks enabled.
 - **Vulnerability reporting:** `security@` mailbox, `security.txt`, acknowledgement target, fix policy in the support policy.
@@ -236,7 +236,7 @@ Merchant-of-record selection; Apple Developer Program enrolment; domain, tradema
 
 ### C-M1 — Swift shell and signed build pipeline (long pole; start first)
 
-WATSON.app shell with menu bar, login item, permission flow, core process management, WKWebView dashboard window; PyInstaller core with all binaries signed; hardened-runtime entitlement spike; CI job producing a notarised DMG from a tag.
+W.A.T.S.O.N.app shell with menu bar, login item, permission flow, core process management, WKWebView dashboard window; PyInstaller core with all binaries signed; hardened-runtime entitlement spike; CI job producing a notarised DMG from a tag.
 *Acceptance:* notarised DMG launches on a clean macOS 14 account, passes Gatekeeper, captures a synthetic day; CPU/RSS within V1.0 targets.
 
 ### C-M2 — Licensing

@@ -1,6 +1,6 @@
 # GitHub Actions budget
 
-WATSON is a **private** repo. GitHub's free allowance is **2,000 minutes per month**. macOS minutes count **10x** (one minute on `macos-15` bills as ten). That allowance is already used up.
+W.A.T.S.O.N is a **private** repo. GitHub's free allowance is **2,000 minutes per month**. macOS minutes count **10x** (one minute on `macos-15` bills as ten). That allowance is already used up.
 
 Linux CI runs on pull requests and on pushes to `main` or `v*` tags. Feature-branch pushes do not start a second Linux run; the `pull_request` event covers them. The three macOS workflows are not on push, PR, or tags (they used to be path-filtered, not "every push").
 

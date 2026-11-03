@@ -1,4 +1,4 @@
-# WATSON A0 transcription bake-off — 2026-10-31
+# W.A.T.S.O.N A0 transcription bake-off — 2026-10-31
 
 Harness-generated report. **Engine/size pairs are candidates, not chosen defaults.**
 A human fills Recommendation after the development-Mac run (plan A0 / A5).

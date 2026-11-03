@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>{% block title %}WATSON status{% endblock %}</title>
+  <title>{% block title %}W.A.T.S.O.N status{% endblock %}</title>
   <link rel="stylesheet" href="/static/status.css">
   <script src="/static/htmx.min.js" defer></script>
   <script src="/static/dashboard.js" defer></script>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
   <header class="bar">
-    <p class="brand">WATSON</p>
+    <p class="brand">W.A.T.S.O.N</p>
     <p class="tag">local · 127.0.0.1 only</p>
     {% if status is not none %}
     <p class="capture-state">{{ status.capture_state }}</p>

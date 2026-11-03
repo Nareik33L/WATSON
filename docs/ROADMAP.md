@@ -1,14 +1,14 @@
-# WATSON release ladder
+# W.A.T.S.O.N release ladder
 
 Each release has one question it must answer. Scope that does not help answer that question moves to the release where it does.
 
 | Release | Question it answers | Plan | Ships when |
 |---|---|---|---|
-| **V1.0 — Personal build** | Does WATSON work, every day, for its author on an 8 GB Apple Silicon Mac? | `WATSON_V1_ENGINEERING_PLAN.md`, milestones M0–M7 | The author has relied on it for ten consecutive working days and produced two weekly reports from its output (M7 acceptance) |
+| **V1.0 — Personal build** | Does W.A.T.S.O.N work, every day, for its author on an 8 GB Apple Silicon Mac? | `WATSON_V1_ENGINEERING_PLAN.md`, milestones M0–M7 | The author has relied on it for ten consecutive working days and produced two weekly reports from its output (M7 acceptance) |
 | **V1.1 — Meeting intelligence** | Can imported, authorised recordings feed the same memory as the screen? | `WATSON_V1_1_AUDIO_MEETINGS_PLAN.md`, milestones A0–A3 | Author has processed ten real authorised recordings; eval gates hold |
 | **V1.2 — Commercialisation** | Can an individual buy it, install it on a clean Mac, activate it and keep it forever without a subscription or a server? | `WATSON_V1_2_COMMERCIALISATION_PLAN.md`, milestones C-M0–C-M6 | Notarised build, offline-verifiable licensing, onboarding, documents and website live; founding-member beta through two update cycles |
 | **V2.0 — Personal refinement** | What do paying customers need next? (candidates: speaker diarization, live-microphone assessment, 16 GB+ visual understanding, more report types) | Open decisions carried from the V1.1 and V1.2 plans | Paid upgrade; not planned in detail |
-| **V3.0+ — WATSON Organisation** | Can teams share approved artefacts and integrate business tools without touching personal memory? | v1.2 scope §2.2 and §10; boundary enforced from V1.2 (`core` / `commerce` / `sharing`) | Separate subscription product; not planned in detail |
+| **V3.0+ — W.A.T.S.O.N Organisation** | Can teams share approved artefacts and integrate business tools without touching personal memory? | v1.2 scope §2.2 and §10; boundary enforced from V1.2 (`core` / `commerce` / `sharing`) | Separate subscription product; not planned in detail |
 
 ## Rules that hold across every release
 
@@ -16,10 +16,10 @@ Each release has one question it must answer. Scope that does not help answer th
 2. Individual-first: the person owns the memory and decides what is shared.
 3. Raw captures and recordings are temporary; useful, evidenced claims are what persist.
 4. No autonomous actions, no email sending, no covert capture or recording.
-5. Evidence-based: every statement WATSON repeats cites a claim with evidence.
+5. Evidence-based: every statement W.A.T.S.O.N repeats cites a claim with evidence.
 6. Nothing in a later release weakens a privacy guarantee made in an earlier one.
 7. Personal is bought once and never depends on a server to run or to read its own data.
-8. **8 GB min-spec is the testing laptop for every release** (Kieran, 2026-11-02 21:53 via CoS). WATSON must complete eval on it without crash or OOM kill. Understand p95 is recorded, not gated. Primary (32 GB) keeps p95 < 20 s, worker+model < 3 GB, consolidation < 15 min. Strict precision ≥ 0.85 on both. 7–9B Q4 models are allowed in V1; the default is the largest model that completes on 8 GB with precision ≥ 0.85 (bake-off, biggest first: `gemma2:9b`, `llama3.1:8b`, `qwen2.5:7b`, then smaller). Baseline until bake-off: `qwen2.5:3b`.
+8. **8 GB min-spec is the testing laptop for every release** (Kieran, 2026-11-02 21:53 via CoS). W.A.T.S.O.N must complete eval on it without crash or OOM kill. Understand p95 is recorded, not gated. Primary (32 GB) keeps p95 < 20 s, worker+model < 3 GB, consolidation < 15 min. Strict precision ≥ 0.85 on both. 7–9B Q4 models are allowed in V1; the default is the largest model that completes on 8 GB with precision ≥ 0.85 (bake-off, biggest first: `gemma2:9b`, `llama3.1:8b`, `qwen2.5:7b`, then smaller). Baseline until bake-off: `qwen2.5:3b`.
 
 ## V1 model bake-off (in POC)
 

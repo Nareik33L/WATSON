@@ -1,4 +1,4 @@
-# WATSON M0-B certification artefacts (metadata only)
+# W.A.T.S.O.N M0-B certification artefacts (metadata only)
 
 From: Device Ops, dev Mac (Apple M1, 8 GB, macOS 14.5)
 Collected: 2026-10-31 18:33 Europe/London (GMT, which is UTC+0 today, so every `Z` time below is also London time)
@@ -333,7 +333,7 @@ total 0
 drwx------@ 2 user  staff   64 Oct 31 18:30 .
 drwx------  7 user  staff  224 Oct 31 18:32 ..
 ```
-Note: the WATSON `spool` directory exists again but is **empty**. It was re-created at 18:30 Europe/London by the separate M1 work in `~/WATSON` (the same parent also holds logs, models, session and watson.db). It is not left over from M0-B.
+Note: the W.A.T.S.O.N `spool` directory exists again but is **empty**. It was re-created at 18:30 Europe/London by the separate M1 work in `~/WATSON` (the same parent also holds logs, models, session and watson.db). It is not left over from M0-B.
 
 ## 11. Decision notes
 

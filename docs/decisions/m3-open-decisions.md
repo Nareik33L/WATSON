@@ -33,7 +33,7 @@ Measurements needed:
 
 ## §14 #9 — 8 GB LLM vs rule-based summaries
 
-Decide whether V1 ships LLM consolidation or OCR + segments + rule-based summaries (LLM only for Ask WATSON).
+Decide whether V1 ships LLM consolidation or OCR + segments + rule-based summaries (LLM only for Ask W.A.T.S.O.N).
 
 **Decision (Kieran, 2026-11-02 16:41, option A; 21:53/21:55 via CoS):** V1 keeps LLM consolidation.
 

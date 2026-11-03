@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "watson-bench"
 version = "0.1.0"
-description = "WATSON M0-A / A0 bake-off harness"
+description = "W.A.T.S.O.N M0-A / A0 bake-off harness"
 requires-python = ">=3.12"
 
 [project.scripts]

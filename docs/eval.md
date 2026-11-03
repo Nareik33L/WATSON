@@ -1,4 +1,4 @@
-# WATSON eval harness (M3 / §11.2)
+# W.A.T.S.O.N eval harness (M3 / §11.2)
 
 `watson eval` runs understanding → entity resolver → day consolidation → daily summary over every V1 day fixture and scores the result against that fixture’s `truth.yaml`.
 
