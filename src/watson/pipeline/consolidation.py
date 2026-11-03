@@ -860,6 +860,8 @@ def _structured[T: BaseModel](
     except JobFailure:
         raise
     except Exception as exc:
+        if exc.__class__.__name__ == "ReplayMiss":
+            raise
         raise ConsolidationError(f"{label} complete failed", retryable=True) from exc
 
 

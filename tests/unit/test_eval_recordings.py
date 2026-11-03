@@ -403,3 +403,213 @@ def test_exact_prompt_hash_wins_over_legacy_prefix(tmp_path: Path) -> None:
     )
     runtime = RecordingRuntime(path=path, mode="replay")
     assert _complete(runtime, blob)["commitments"][0]["text"] == "hashed"
+
+
+def test_prompt_hash_uses_every_message_not_just_the_first() -> None:
+    """Surviving mutant: hash-first-message."""
+    left = [{"role": "system", "content": "S"}, {"role": "user", "content": "U1"}]
+    right = [{"role": "system", "content": "S"}, {"role": "user", "content": "U2"}]
+    assert prompt_hash(left, schema={}) != prompt_hash(right, schema={})
+    assert prompt_hash(left, schema={}) != prompt_hash(
+        [{"role": "user", "content": "U1"}], schema={}
+    )
+
+
+def test_prompt_hash_strips_run_scoped_ids() -> None:
+    left = "Claims:\n[c:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa] (commitment/observed) Send it\n"
+    right = "Claims:\n[c:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb] (commitment/observed) Send it\n"
+    assert prompt_hash([{"role": "user", "content": left}], schema={}) == prompt_hash(
+        [{"role": "user", "content": right}], schema={}
+    )
+
+
+def test_prompt_hash_ignores_claim_order_and_original_numbers() -> None:
+    """Surviving mutant: hash still includes DB list position / UUIDv7 order."""
+    left = (
+        "Extract cross-segment\n\nEntities:\n- person: Bob\n- project: Acme\n\n"
+        "Claims:\n"
+        "1. [c:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa] (commitment/observed) Send it\n"
+        "2. [c:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb] (activity/observed) Edit doc\n"
+    )
+    right = (
+        "Extract cross-segment\n\nEntities:\n- project: Acme\n- person: Bob\n\n"
+        "Claims:\n"
+        "1. [c:cccccccc-cccc-4ccc-8ccc-cccccccccccc] (activity/observed) Edit doc\n"
+        "8. [c:dddddddd-dddd-4ddd-8ddd-dddddddddddd] (commitment/observed) Send it\n"
+    )
+    assert prompt_hash([{"role": "user", "content": left}], schema={}) == prompt_hash(
+        [{"role": "user", "content": right}], schema={}
+    )
+
+
+class _NamedInner:
+    name = "ollama"
+    llm_model = "qwen2.5:7b"
+    temperature = 0.0
+
+    def complete(
+        self,
+        messages: list[dict[str, str]],
+        schema: dict[str, Any],
+        *,
+        num_predict: int | None = None,
+    ) -> dict[str, Any]:
+        del messages, schema, num_predict
+        return {"commitments": [{"text": "named"}]}
+
+
+def test_replay_uses_recorded_model_when_inner_is_missing(tmp_path: Path) -> None:
+    """Surviving mutant: model-const (replay hashed empty model / temp 0)."""
+    path = tmp_path / "named.json"
+    runtime = RecordingRuntime(path=path, inner=_NamedInner(), mode="record")
+    blob = _EXTRACT_PREFIX + "Claims:\n1. Alice\n"
+    _complete(runtime, blob)
+    runtime.save()
+    row = json.loads(path.read_text(encoding="utf-8"))["complete"][0]
+    assert row["model"] == "qwen2.5:7b"
+    assert row["temperature"] == 0.0
+    replay = RecordingRuntime(path=path, mode="replay")
+    assert _complete(replay, blob)["commitments"][0]["text"] == "named"
+    assert replay.miss_count == 0
+
+
+def test_legacy_matches_by_prompt_date_without_set_day(tmp_path: Path) -> None:
+    """Surviving mutant: run-no-set_day."""
+    prefix = _EXTRACT_PREFIX[:80]
+    path = _write_recordings(
+        tmp_path / "dates.json",
+        [
+            {
+                "match": prefix,
+                "day": "day_acme_q4",
+                "date": "2026-10-31",
+                "response": {"commitments": [{"text": "acme"}]},
+            },
+            {
+                "match": prefix,
+                "day": "day_meeting_heavy",
+                "date": "2026-11-04",
+                "response": {"commitments": [{"text": "meeting"}]},
+            },
+        ],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    blob = _EXTRACT_PREFIX + "Working day 2026-11-04\nClaims:\n1. standup\n"
+    assert _complete(runtime, blob)["commitments"][0]["text"] == "meeting"
+
+
+def test_record_replay_round_trip_with_real_model_name(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """Record with qwen2.5:7b, different claim IDs on two runs, then replay."""
+    from watson.intelligence.eval import run as run_mod
+    from watson.intelligence.runtime.fake import FakeRuntime
+
+    class _NamedFake:
+        name = "ollama"
+        llm_model = "qwen2.5:7b"
+        temperature = 0.0
+
+        def __init__(self) -> None:
+            self._fake = FakeRuntime(recordings=RECORDINGS)
+
+        def complete(
+            self,
+            messages: list[dict[str, str]],
+            schema: dict[str, Any],
+            *,
+            num_predict: int | None = None,
+        ) -> dict[str, Any]:
+            return self._fake.complete(messages, schema, num_predict=num_predict)
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return self._fake.embed(texts)
+
+        def end_phase(self) -> None:
+            self._fake.end_phase()
+
+    rec1 = tmp_path / "round1.json"
+    rec2 = tmp_path / "round2.json"
+
+    def build(
+        *, mode: str, runtime_name: str, recordings: Path, config: object
+    ) -> RecordingRuntime:
+        del runtime_name, config
+        if mode == "record":
+            return RecordingRuntime(path=recordings, inner=_NamedFake(), mode="record")
+        return RecordingRuntime(path=recordings, mode="replay")
+
+    monkeypatch.setattr(run_mod, "build_eval_runtime", build)
+    names = ("day_acme_q4", "day_near_empty")
+    run_eval(
+        fixtures_root=FIXTURES,
+        names=names,
+        mode="record",
+        runtime_name="ollama",
+        recordings=rec1,
+        out_dir=tmp_path / "record-a",
+        key=TEST_KEY,
+    )
+    run_eval(
+        fixtures_root=FIXTURES,
+        names=names,
+        mode="record",
+        runtime_name="ollama",
+        recordings=rec2,
+        out_dir=tmp_path / "record-b",
+        key=TEST_KEY,
+    )
+    keys1 = [row["match"] for row in json.loads(rec1.read_text(encoding="utf-8"))["complete"]]
+    keys2 = [row["match"] for row in json.loads(rec2.read_text(encoding="utf-8"))["complete"]]
+    assert keys1 == keys2
+    assert keys1
+    models = {row.get("model") for row in json.loads(rec1.read_text(encoding="utf-8"))["complete"]}
+    assert models == {"qwen2.5:7b"}
+    first = run_eval(
+        fixtures_root=FIXTURES,
+        names=names,
+        mode="replay",
+        runtime_name="replay",
+        recordings=rec1,
+        out_dir=tmp_path / "replay-a",
+        key=TEST_KEY,
+    )
+    second = run_eval(
+        fixtures_root=FIXTURES,
+        names=names,
+        mode="replay",
+        runtime_name="replay",
+        recordings=rec1,
+        out_dir=tmp_path / "replay-b",
+        key=TEST_KEY,
+    )
+    assert first.failure_reason is None
+    assert first.pipeline_passed is True
+    assert second.pipeline_passed is True
+    assert first.aggregate == second.aggregate
+    assert sum(day.citation_count for day in first.days) > 0
+    assert all(not day.error for day in first.days)
+
+
+def test_dropped_recording_row_fails_eval(tmp_path: Path, key_provider: object) -> None:
+    payload = json.loads(RECORDINGS.read_text(encoding="utf-8"))
+    payload["complete"] = [
+        row
+        for row in payload["complete"]
+        if "cedar daily" not in str(row.get("match") or "").casefold()
+    ]
+    path = tmp_path / "dropped.json"
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_acme_q4",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=path,
+        out_dir=tmp_path / "dropped-run",
+        key=TEST_KEY,
+    )
+    assert report.pipeline_passed is False
+    assert report.failure_reason == "ReplayMiss" or any(day.error for day in report.days)
+    exit_code = 0 if report.pipeline_passed else 1
+    assert exit_code != 0

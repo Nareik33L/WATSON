@@ -401,6 +401,8 @@ def _understand_segment_body(
     except JobFailure:
         raise
     except Exception as exc:
+        if exc.__class__.__name__ == "ReplayMiss":
+            raise
         raise JobFailure("understanding complete failed", retryable=True) from exc
 
     stamp = iso_now(now)
