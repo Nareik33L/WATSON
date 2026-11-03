@@ -118,11 +118,14 @@ def collect_predicted(
     completed = _texts(
         conn,
         """
+        SELECT text FROM claims
+        WHERE working_day_id = ? AND pipeline_version = ?
+          AND kind IN ('achievement', 'outcome') AND assertion = 'observed'
+        UNION
         SELECT text FROM achievement_candidates
         WHERE working_day_id = ? AND pipeline_version = ?
-        ORDER BY text, id
         """,
-        (working_day_id, pipeline_version),
+        (working_day_id, pipeline_version, working_day_id, pipeline_version),
     )
     observation_rows = [
         {

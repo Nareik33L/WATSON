@@ -170,13 +170,10 @@ def _seed(conn: object) -> str:
         ("achievement", "Onboarding Guide section 3 published"),
     ]
     first_claim = ""
-    achievement_claim = ""
     for kind, text in texts:
         claim_id = new_id()
         if not first_claim:
             first_claim = claim_id
-        if kind == "achievement":
-            achievement_claim = claim_id
         conn.execute(
             """
             INSERT INTO claims (
@@ -215,22 +212,6 @@ def _seed(conn: object) -> str:
                 """,
                 (new_id(), stamp, stamp, day_id, text, f'["{claim_id}"]', PIPELINE_VERSION),
             )
-    conn.execute(
-        """
-        INSERT INTO achievement_candidates (
-            id, created_at, updated_at, working_day_id, claim_id, text, pipeline_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            new_id(),
-            stamp,
-            stamp,
-            day_id,
-            achievement_claim,
-            "Onboarding Guide section 3 published",
-            PIPELINE_VERSION,
-        ),
-    )
     conn.execute(
         """
         INSERT INTO daily_summaries (
