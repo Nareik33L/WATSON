@@ -20,6 +20,7 @@ from watson.intelligence.runtime import FakeRuntime
 from watson.intelligence.runtime.types import OutputParseError
 from watson.intelligence.schemas.consolidation import ClusteringOutput, SummaryParagraph
 from watson.pipeline.consolidation import (
+    _summary_deal_sections,
     consolidate_working_day,
     derived_counts,
 )
@@ -106,7 +107,7 @@ def _seed_channels(conn: object) -> dict[str, str]:
         description="Editing the Acme Q4 deck after the call",
         project_candidates=["Acme Q4 proposal"],
     )
-    _insert_observation(
+    noise_obs = _insert_observation(
         conn,
         noise_seg,
         description="Reading civic news in Cedar Daily",
@@ -145,6 +146,17 @@ def _seed_channels(conn: object) -> dict[str, str]:
         text="Kieran will send revised pricing",
         created_at="2026-10-31T11:00:01Z",
     )
+    noise_claim = _insert_claim(
+        conn,
+        noise_obs,
+        day_id,
+        noise_seg,
+        noise,
+        kind="activity",
+        assertion="observed",
+        text="Ferry timetable update",
+        created_at="2026-10-31T12:00:01Z",
+    )
     return {
         "day_id": day_id,
         "mail": mail_seg,
@@ -154,6 +166,7 @@ def _seed_channels(conn: object) -> dict[str, str]:
         "sent": sent,
         "who": who,
         "next": nxt,
+        "noise_claim": noise_claim,
     }
 
 
@@ -245,10 +258,16 @@ def test_multichannel_observations_assign_one_deal_and_none_stays_none(
         assert "Who involved:" in narrative
         assert "Next step:" in narrative
         assert f"[c:{seeded['sent']}]" in narrative
+        assert f"[c:{seeded['noise_claim']}]" not in narrative
+        assert "Ferry timetable" not in narrative
         sections = json.loads(str(row["sections_json"]))
         assert sections["deals"][0]["title"] == "Acme Q4 proposal"
         slots = {item["slot"] for item in sections["slots"]}
         assert slots == {"what_happened", "who_involved", "next_step"}
+        assert all(item.get("deal_id") == deal_id for item in sections["slots"])
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
     finally:
         conn.close()
 
@@ -256,8 +275,15 @@ def test_multichannel_observations_assign_one_deal_and_none_stays_none(
 def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
-        seeded = _seed_day(conn)
-        runtime = FakeRuntime(
+        seeded = _seed_channels(conn)
+        captured: list[str] = []
+
+        class CaptureRuntime(FakeRuntime):
+            def complete(self, messages, schema, *, num_predict=None):  # type: ignore[no-untyped-def]
+                captured.append("\n".join(item["content"] for item in messages))
+                return super().complete(messages, schema, num_predict=num_predict)
+
+        runtime = CaptureRuntime(
             recordings={
                 "complete": [
                     {
@@ -267,7 +293,7 @@ def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
                                 {
                                     "title": "none",
                                     "summary": "not a deal",
-                                    "observation_indexes": [1, 2],
+                                    "observation_indexes": [1, 2, 3, 4],
                                 }
                             ]
                         },
@@ -282,7 +308,15 @@ def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
                     },
                     {
                         "match": "Write the daily narrative",
-                        "response": {"paragraphs": []},
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "Noise leaked [c:1].",
+                                    "claim_ids": ["1"],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
                     },
                 ]
             }
@@ -294,6 +328,19 @@ def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
             (seeded["day_id"],),
         ).fetchone()[0]
         assert int(nulls) == 0
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert "## none" not in narrative
+        assert "Noise leaked" not in narrative
+        assert f"[c:{seeded['noise_claim']}]" not in narrative
+        assert "Ferry timetable" not in narrative
+        assert not any("Write the daily narrative" in blob for blob in captured)
+        sections = json.loads(str(row["sections_json"]))
+        assert sections["deals"] == []
+        assert sections["slots"] == []
     finally:
         conn.close()
 
@@ -398,5 +445,521 @@ def test_eval_collect_predicted_exposes_segment_deals(tmp_path: Path) -> None:
         assert by_segment[seeded["noise"]]["title"] == "none"
         slots = {item["slot"] for item in predicted["summary_slots"]}
         assert slots == {"what_happened", "who_involved", "next_step"}
+        assert all(item.get("deal_id") not in {"", "none"} for item in predicted["summary_slots"])
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"])
+            for item in predicted["summary_slots"]
+        )
+        assert seeded["noise_claim"] not in {
+            cid for item in predicted["summary_slots"] for cid in item["claim_ids"]
+        }
+        deal_id = by_segment[seeded["mail"]]["deal_id"]
+        conn.execute(
+            """
+            UPDATE daily_summaries
+            SET sections_json = ?
+            WHERE working_day_id = ?
+            """,
+            (
+                json.dumps(
+                    {
+                        "deals": [{"id": deal_id, "title": "Acme Q4 proposal"}],
+                        "slots": [
+                            {
+                                "slot": "what_happened",
+                                "claim_ids": ["1"],
+                                "deal_id": deal_id,
+                            },
+                            {
+                                "slot": "who_involved",
+                                "claim_ids": [seeded["who"]],
+                                "deal_id": "",
+                            },
+                            {
+                                "slot": "next_step",
+                                "claim_ids": [seeded["next"]],
+                                "deal_id": deal_id,
+                            },
+                        ],
+                    }
+                ),
+                seeded["day_id"],
+            ),
+        )
+        conn.commit()
+        filtered = collect_predicted(conn, seeded["day_id"])["summary_slots"]
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in filtered
+        )
+        assert all(item.get("deal_id") for item in filtered)
+        assert {item["slot"] for item in filtered} == {"next_step"}
+    finally:
+        conn.close()
+
+
+def test_summary_prompt_and_body_omit_noise_claims(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        captured: list[str] = []
+
+        class CaptureRuntime(FakeRuntime):
+            def complete(self, messages, schema, *, num_predict=None):  # type: ignore[no-untyped-def]
+                captured.append("\n".join(item["content"] for item in messages))
+                return super().complete(messages, schema, num_predict=num_predict)
+
+        runtime = CaptureRuntime(recordings=_DEAL_RECORDINGS)
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        narrative_prompts = [blob for blob in captured if "Write the daily narrative" in blob]
+        assert narrative_prompts
+        prompt = narrative_prompts[0]
+        assert seeded["sent"] in prompt
+        assert seeded["noise_claim"] not in prompt
+        assert "Ferry timetable" not in prompt
+        narrative = str(
+            conn.execute(
+                "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+                (seeded["day_id"],),
+            ).fetchone()[0]
+        )
+        assert "Ferry timetable" not in narrative
+        assert f"[c:{seeded['noise_claim']}]" not in narrative
+    finally:
+        conn.close()
+
+
+def test_invalid_citation_does_not_dump_noise_into_deal_summary(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "same opportunity",
+                                    "observation_indexes": [1, 2, 3],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "Ghost cite [c:99].",
+                                    "claim_ids": ["99"],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert "Ghost cite" not in narrative
+        assert "[c:99]" not in narrative
+        assert "Ferry timetable" not in narrative
+        assert f"[c:{seeded['noise_claim']}]" not in narrative
+        assert "## Acme Q4 proposal" in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
+        sections = json.loads(str(row["sections_json"]))
+        assert sections["slots"] == []
+        assert all(item.get("id") and item.get("title") for item in sections["deals"])
+    finally:
+        conn.close()
+
+
+def test_sentence_citing_deal_and_noise_is_dropped(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "same opportunity",
+                                    "observation_indexes": [1, 2, 3],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": (
+                                        f"What happened: Sent the pricing pack "
+                                        f"[c:{seeded['sent']}]."
+                                    ),
+                                    "claim_ids": [seeded["sent"]],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": (
+                                        f"Also the ferry timetable "
+                                        f"[c:{seeded['sent']}] "
+                                        f"[c:{seeded['noise_claim']}]."
+                                    ),
+                                    "claim_ids": [seeded["sent"], seeded["noise_claim"]],
+                                    "slot": "who_involved",
+                                },
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert "ferry" not in narrative.casefold()
+        assert f"[c:{seeded['noise_claim']}]" not in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
+        sections = json.loads(str(row["sections_json"]))
+        assert all(
+            seeded["noise_claim"] not in item["claim_ids"] for item in sections["slots"]
+        )
+    finally:
+        conn.close()
+
+
+def test_summary_deal_sections_keep_validated_slots_only() -> None:
+    payload = _summary_deal_sections(
+        [{"id": "deal-1", "title": "Acme Q4 proposal"}],
+        [
+            ("Acme Q4 proposal", "what_happened", ["1"]),
+            ("Acme Q4 proposal", "who_involved", [""]),
+            ("missing deal", "next_step", ["claim-uuid"]),
+            ("Acme Q4 proposal", "next_step", ["claim-uuid"]),
+        ],
+    )
+    assert payload["slots"] == [
+        {"slot": "next_step", "claim_ids": ["claim-uuid"], "deal_id": "deal-1"}
+    ]
+
+
+def test_two_deal_and_cross_deal_citations(tmp_path: Path) -> None:
+    from tests.unit.test_consolidation import _insert_day
+
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        acme_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T09:00:00Z")
+        globex_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T10:00:00Z")
+        acme_seg = _insert_segment(
+            conn, day_id, acme_frame, started_at="2026-10-31T09:00:00Z", merged="Acme mail"
+        )
+        globex_seg = _insert_segment(
+            conn, day_id, globex_frame, started_at="2026-10-31T10:00:00Z", merged="Globex mail"
+        )
+        acme_obs = _insert_observation(
+            conn, acme_seg, description="Emailing Acme", project_candidates=["Acme Q4 proposal"]
+        )
+        globex_obs = _insert_observation(
+            conn, globex_seg, description="Emailing Globex", project_candidates=["Globex pilot"]
+        )
+        acme_claim = _insert_claim(
+            conn,
+            acme_obs,
+            day_id,
+            acme_seg,
+            acme_frame,
+            kind="activity",
+            assertion="observed",
+            text="Sent Acme pricing",
+            created_at="2026-10-31T09:00:01Z",
+        )
+        globex_claim = _insert_claim(
+            conn,
+            globex_obs,
+            day_id,
+            globex_seg,
+            globex_frame,
+            kind="activity",
+            assertion="observed",
+            text="Sent Globex intro",
+            created_at="2026-10-31T10:00:01Z",
+        )
+        leftover = "Unmatched leftover paragraph with no deal."
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "Acme thread",
+                                    "observation_indexes": [1],
+                                },
+                                {
+                                    "title": "Globex pilot",
+                                    "summary": "Globex thread",
+                                    "observation_indexes": [2],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": f"What happened: Sent Acme pricing [c:{acme_claim}].",
+                                    "claim_ids": [acme_claim],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": f"What happened: Sent Globex intro [c:{globex_claim}].",
+                                    "claim_ids": [globex_claim],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": (
+                                        f"Mixed both [c:{acme_claim}] and [c:{globex_claim}]."
+                                    ),
+                                    "claim_ids": [acme_claim, globex_claim],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": leftover,
+                                    "claim_ids": [],
+                                    "slot": "next_step",
+                                },
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (day_id,),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert narrative.index("## Acme Q4 proposal") < narrative.index("## Globex pilot")
+        acme_block = narrative.split("## Globex pilot")[0]
+        globex_block = narrative.split("## Globex pilot")[1]
+        assert f"[c:{acme_claim}]" in acme_block
+        assert f"[c:{globex_claim}]" not in acme_block
+        assert f"[c:{globex_claim}]" in globex_block
+        assert f"[c:{acme_claim}]" not in globex_block
+        assert "Mixed both" not in narrative
+        assert leftover not in narrative
+        sections = json.loads(str(row["sections_json"]))
+        by_deal = {item["title"]: item["id"] for item in sections["deals"]}
+        slots = sections["slots"]
+        assert {item["slot"] for item in slots} == {"what_happened"}
+        assert {item["deal_id"] for item in slots} == set(by_deal.values())
+        acme_slot = next(item for item in slots if item["deal_id"] == by_deal["Acme Q4 proposal"])
+        globex_slot = next(item for item in slots if item["deal_id"] == by_deal["Globex pilot"])
+        assert acme_slot["claim_ids"] == [acme_claim]
+        assert globex_slot["claim_ids"] == [globex_claim]
+    finally:
+        conn.close()
+
+
+def test_deal_fallback_does_not_pull_the_other_deal(tmp_path: Path) -> None:
+    from tests.unit.test_consolidation import _insert_day
+
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        acme_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T09:00:00Z")
+        globex_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T10:00:00Z")
+        acme_seg = _insert_segment(
+            conn, day_id, acme_frame, started_at="2026-10-31T09:00:00Z", merged="Acme mail"
+        )
+        globex_seg = _insert_segment(
+            conn, day_id, globex_frame, started_at="2026-10-31T10:00:00Z", merged="Globex mail"
+        )
+        acme_obs = _insert_observation(conn, acme_seg, description="Emailing Acme")
+        globex_obs = _insert_observation(conn, globex_seg, description="Emailing Globex")
+        acme_claim = _insert_claim(
+            conn,
+            acme_obs,
+            day_id,
+            acme_seg,
+            acme_frame,
+            kind="activity",
+            assertion="observed",
+            text="Sent Acme pricing",
+            created_at="2026-10-31T09:00:01Z",
+        )
+        globex_claim = _insert_claim(
+            conn,
+            globex_obs,
+            day_id,
+            globex_seg,
+            globex_frame,
+            kind="activity",
+            assertion="observed",
+            text="Sent Globex intro",
+            created_at="2026-10-31T10:00:01Z",
+        )
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "Acme thread",
+                                    "observation_indexes": [1],
+                                },
+                                {
+                                    "title": "Globex pilot",
+                                    "summary": "Globex thread",
+                                    "observation_indexes": [2],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "Ghost [c:99].",
+                                    "claim_ids": ["99"],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": f"What happened: Sent Globex intro [c:{globex_claim}].",
+                                    "claim_ids": [globex_claim],
+                                    "slot": "what_happened",
+                                },
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        narrative = str(
+            conn.execute(
+                "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+                (day_id,),
+            ).fetchone()[0]
+        )
+        acme_block = narrative.split("## Globex pilot")[0]
+        assert f"[c:{acme_claim}]" in acme_block
+        assert f"[c:{globex_claim}]" not in acme_block
+        assert "Sent Globex intro" not in acme_block
+    finally:
+        conn.close()
+
+
+def test_stored_heading_uses_deal_title_not_model_heading(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "same opportunity",
+                                    "observation_indexes": [1, 2, 3],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": (
+                                        "## Model heading\nWhat happened: "
+                                        f"Sent the pricing pack [c:{seeded['sent']}]."
+                                    ),
+                                    "claim_ids": [seeded["sent"]],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        narrative = str(
+            conn.execute(
+                "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+                (seeded["day_id"],),
+            ).fetchone()[0]
+        )
+        assert narrative.startswith("## Acme Q4 proposal")
+        assert "## Model heading" not in narrative
     finally:
         conn.close()

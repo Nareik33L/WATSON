@@ -36,6 +36,7 @@ from watson.config.schema import (
 from watson.intelligence.citations import (
     CITATION_RE,
     VerifiedNarrative,
+    _cited_fallback,
     expand_index_citations,
     verify_narrative,
 )
@@ -694,42 +695,26 @@ def _replace_derived(
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
     )
     deal_groups = _group_claims_by_deal(clustering, observations, claims)
-    summary_claims = [row for _title, grouped in deal_groups for row in grouped]
-    cite_claims = summary_claims if deal_groups else claims
+    cite_claims = [row for _title, grouped in deal_groups for row in grouped]
     raw_summary = (
         _summarize_day(
             language,
             cite_claims,
             summary_prompt.text,
-            deal_groups=deal_groups or None,
+            deal_groups=deal_groups,
         )
-        if cite_claims
+        if deal_groups and cite_claims
         else DailySummaryOutput(paragraphs=[])
     )
     end_runtime_phase(language)
-    verified = verify_narrative(
-        expand_index_citations(
-            [
-                {"text": item.text, "claim_ids": list(item.claim_ids)}
-                for item in raw_summary.paragraphs
-            ],
-            cite_claims,
-        ),
-        claims,
+    buckets, slot_drafts, cited, unverified = _bucket_deal_paragraphs(
+        raw_summary,
+        deal_groups,
         working_day_id=working_day_id,
         pipeline_version=settings.pipeline_version,
+        claims=claims,
     )
-    verified = _attach_deal_headings(verified, deal_groups)
     skipped = skipped_understand or []
-    if skipped:
-        note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
-        paragraphs = (*verified.paragraphs, note)
-        verified = VerifiedNarrative(
-            narrative_md="\n\n".join(paragraphs),
-            paragraphs=paragraphs,
-            claim_ids=verified.claim_ids,
-            unverified=verified.unverified,
-        )
     stamp = iso_now(now)
     try:
         _delete_derived(conn, working_day_id, settings.pipeline_version)
@@ -751,6 +736,18 @@ def _replace_derived(
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
         )
+        verified = _narrative_from_stored_deals(
+            inserted_deals, buckets, cited, unverified
+        )
+        if skipped:
+            note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
+            paragraphs = (*verified.paragraphs, note)
+            verified = VerifiedNarrative(
+                narrative_md="\n\n".join(paragraphs),
+                paragraphs=paragraphs,
+                claim_ids=verified.claim_ids,
+                unverified=verified.unverified,
+            )
         _insert_extract(
             conn,
             working_day_id,
@@ -773,7 +770,7 @@ def _replace_derived(
             prompt_version=summary_prompt.prompt_version,
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
-            extra_sections=_summary_deal_sections(inserted_deals, raw_summary),
+            extra_sections=_summary_deal_sections(inserted_deals, slot_drafts),
         )
         conn.commit()
     except Exception:
@@ -898,8 +895,9 @@ def _summarize_day(
     result = _structured(
         language, messages, DailySummaryOutput, DAILY_SUMMARY_JSON_SCHEMA, "daily summary"
     )
-    if result is None or (claims and not result.paragraphs):
-        return _fallback_summary(claims)
+    if result is None or not result.paragraphs:
+        # Per-deal verify falls back from that deal's claims only.
+        return DailySummaryOutput(paragraphs=[])
     return result
 
 
@@ -1772,53 +1770,134 @@ def _group_claims_by_deal(
     return groups
 
 
-def _attach_deal_headings(
-    verified: VerifiedNarrative,
+def _bucket_deal_paragraphs(
+    raw_summary: DailySummaryOutput,
     deal_groups: list[tuple[str, list[dict[str, Any]]]],
-) -> VerifiedNarrative:
-    """Prefix per-deal headings after citation verify (headings have no [c:id])."""
-    if not deal_groups:
-        return verified
-    claim_to_deal: dict[str, str] = {}
-    for title, grouped in deal_groups:
-        for row in grouped:
-            claim_to_deal[str(row["id"])] = title
+    *,
+    working_day_id: str,
+    pipeline_version: int,
+    claims: list[dict[str, Any]],
+) -> tuple[
+    dict[str, list[str]],
+    list[tuple[str, str, list[str]]],
+    set[str],
+    tuple[dict[str, str], ...],
+]:
+    """Assign each paragraph to one deal. Drop cross-deal and unmatched text."""
     buckets: dict[str, list[str]] = {title: [] for title, _grouped in deal_groups}
-    leftover: list[str] = []
-    for para in verified.paragraphs:
-        cited = CITATION_RE.findall(para)
-        matched = next((claim_to_deal[item] for item in cited if item in claim_to_deal), None)
-        if matched is None:
-            leftover.append(para)
-        else:
-            buckets[matched].append(para)
+    cited_by_title: dict[str, set[str]] = {title: set() for title, _grouped in deal_groups}
+    slot_drafts: list[tuple[str, str, list[str]]] = []
+    if not deal_groups or not claims:
+        return buckets, slot_drafts, set(), ()
+
+    for para in raw_summary.paragraphs:
+        owners: list[str] = []
+        expanded_by_title: dict[str, dict[str, Any]] = {}
+        payload = {"text": para.text, "claim_ids": list(para.claim_ids)}
+        for title, grouped in deal_groups:
+            expanded = expand_index_citations([payload], grouped)[0]
+            grouped_ids = {str(row["id"]) for row in grouped}
+            cited_toks = [
+                tok
+                for tok in CITATION_RE.findall(str(expanded["text"]))
+                if tok in grouped_ids
+            ]
+            mapped = [cid for cid in expanded["claim_ids"] if cid in grouped_ids]
+            if cited_toks or mapped:
+                owners.append(title)
+                expanded_by_title[title] = expanded
+        if len(owners) != 1:
+            continue
+        title = owners[0]
+        grouped = next(rows for name, rows in deal_groups if name == title)
+        cite_claims = grouped
+        verified = verify_narrative(
+            [expanded_by_title[title]],
+            cite_claims,
+            working_day_id=working_day_id,
+            pipeline_version=pipeline_version,
+            fallback=False,
+        )
+        if not verified.paragraphs:
+            continue
+        buckets[title].extend(_strip_leading_headings(body) for body in verified.paragraphs)
+        cited_by_title[title].update(verified.claim_ids)
+        if para.slot:
+            slot_drafts.append((title, para.slot, list(verified.claim_ids)))
+
+    for title, grouped in deal_groups:
+        if buckets[title] or not grouped:
+            continue
+        cite_claims = grouped
+        fallback = _cited_fallback(cite_claims)
+        buckets[title].extend(_strip_leading_headings(body) for body in fallback.paragraphs)
+        cited_by_title[title].update(fallback.claim_ids)
+
+    cited_ids: set[str] = set()
+    unverified: list[dict[str, str]] = []
+    for title, grouped in deal_groups:
+        cited_ids.update(cited_by_title[title])
+        for row in grouped:
+            if str(row["id"]) not in cited_by_title[title]:
+                unverified.append(
+                    {
+                        "id": str(row["id"]),
+                        "kind": str(row["kind"]),
+                        "text": str(row["text"]),
+                    }
+                )
+    return buckets, slot_drafts, cited_ids, tuple(unverified)
+
+
+def _strip_leading_headings(text: str) -> str:
+    """Drop model ``##`` lines so the stored deal title is the only heading."""
+    lines = text.splitlines()
+    while lines and lines[0].lstrip().startswith("##"):
+        lines.pop(0)
+        if lines and not lines[0].strip():
+            lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def _narrative_from_stored_deals(
+    deals: list[dict[str, Any]],
+    buckets: dict[str, list[str]],
+    cited: set[str],
+    unverified: tuple[dict[str, str], ...],
+) -> VerifiedNarrative:
+    """Headings come from the stored deal title, never leftover unmatched text."""
     parts: list[str] = []
-    for title, _grouped in deal_groups:
-        paras = buckets[title]
+    for deal in deals:
+        paras = buckets.get(str(deal["title"]), [])
         if not paras:
             continue
-        parts.append(f"## {title}\n\n" + "\n\n".join(paras))
-    parts.extend(leftover)
-    if not parts:
-        return verified
+        parts.append(f"## {deal['title']}\n\n" + "\n\n".join(paras))
+    body = "\n\n".join(parts)
     return VerifiedNarrative(
-        narrative_md="\n\n".join(parts),
+        narrative_md=body,
         paragraphs=tuple(parts),
-        claim_ids=verified.claim_ids,
-        unverified=verified.unverified,
+        claim_ids=tuple(sorted(cited)),
+        unverified=unverified,
     )
 
 
 def _summary_deal_sections(
-    deals: list[dict[str, Any]], raw_summary: DailySummaryOutput
+    deals: list[dict[str, Any]],
+    slot_drafts: list[tuple[str, str, list[str]]],
 ) -> dict[str, Any]:
+    """Store validated slot citations with deal_id; never raw model index tokens."""
+    title_to_id = {str(row["title"]): str(row["id"]) for row in deals}
+    slots: list[dict[str, Any]] = []
+    for title, slot, claim_ids in slot_drafts:
+        deal_id = title_to_id.get(title)
+        if not deal_id or not slot or not claim_ids:
+            continue
+        if any(not cid or cid.isdigit() for cid in claim_ids):
+            continue
+        slots.append({"slot": slot, "claim_ids": list(claim_ids), "deal_id": deal_id})
     return {
         "deals": [{"id": row["id"], "title": row["title"]} for row in deals],
-        "slots": [
-            {"slot": item.slot, "claim_ids": list(item.claim_ids)}
-            for item in raw_summary.paragraphs
-            if item.slot
-        ],
+        "slots": slots,
     }
 
 

@@ -244,11 +244,22 @@ def collect_predicted(
         )
     ]
     raw_slots = sections.get("slots")
-    slots = (
-        [item for item in raw_slots if isinstance(item, dict)]
-        if isinstance(raw_slots, list)
-        else []
-    )
+    slots: list[dict[str, Any]] = []
+    if isinstance(raw_slots, list):
+        for item in raw_slots:
+            if not isinstance(item, dict):
+                continue
+            deal_id = str(item.get("deal_id") or "")
+            slot_name = str(item.get("slot") or "")
+            slot_claim_ids = item.get("claim_ids")
+            if not deal_id or slot_name not in {"what_happened", "who_involved", "next_step"}:
+                continue
+            if not isinstance(slot_claim_ids, list) or not slot_claim_ids:
+                continue
+            resolved = [str(cid) for cid in slot_claim_ids]
+            if any(not cid or cid.isdigit() for cid in resolved):
+                continue
+            slots.append({"slot": slot_name, "claim_ids": resolved, "deal_id": deal_id})
     return {
         "projects": projects,
         "people": people,
