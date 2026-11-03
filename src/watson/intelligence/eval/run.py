@@ -227,7 +227,7 @@ def run_eval(
         recorder = getattr(runtime, "_inner", runtime)
         if not isinstance(recorder, RecordingRuntime):
             recorder = runtime if isinstance(runtime, RecordingRuntime) else None
-        if recorder is not None and getattr(recorder, "miss_count", 0) and not failure_reason:
+        if recorder is not None and recorder.miss_count and not failure_reason:
             failure_reason = "ReplayMiss"
         worker_plus_model = sampler.stop()
         reset_stats(stats_token)
