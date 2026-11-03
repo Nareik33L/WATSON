@@ -8,12 +8,18 @@ import pytest
 
 from watson.intelligence.eval.deals import (
     CONTENT_TOKEN_CAP,
+    SLOTS,
     baseline_all_none,
     baseline_empty_summary,
     baseline_group_by_app,
     baseline_group_by_company,
+    baseline_keyword_dump_comma_list,
+    baseline_keyword_dump_extra_what,
+    baseline_keyword_dump_need_to,
     baseline_keyword_dump_over_cap,
+    baseline_keyword_dump_packed,
     baseline_keyword_dump_please,
+    baseline_keyword_dump_will_prefix,
     baseline_keyword_dump_within_cap,
     baseline_one_deal_corpus,
     baseline_one_deal_per_day,
@@ -24,7 +30,6 @@ from watson.intelligence.eval.deals import (
     honest_has_roster_name_and_deadline,
     honest_prediction,
     honest_prediction_filled,
-    is_multi_fact_claim,
     load_deal_corpus,
     load_failing_acme_1211,
     load_v1_deal_corpus,
@@ -86,6 +91,21 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-please": score_deals(
             gold, baseline_keyword_dump_please(gold)
         ).summary.accuracy,
+        "keyword-dump-packed": score_deals(
+            gold, baseline_keyword_dump_packed(gold)
+        ).summary.accuracy,
+        "keyword-dump-will-prefix": score_deals(
+            gold, baseline_keyword_dump_will_prefix(gold)
+        ).summary.accuracy,
+        "keyword-dump-extra-what": score_deals(
+            gold, baseline_keyword_dump_extra_what(gold)
+        ).summary.accuracy,
+        "keyword-dump-need-to": score_deals(
+            gold, baseline_keyword_dump_need_to(gold)
+        ).summary.accuracy,
+        "keyword-dump-comma-list": score_deals(
+            gold, baseline_keyword_dump_comma_list(gold)
+        ).summary.accuracy,
     }
     for name, score in rows.items():
         assert score < GATE, f"{name} summary {score:.3f} must be < {GATE}"
@@ -126,7 +146,10 @@ def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
         baseline_empty_summary(gold),
         baseline_keyword_dump_over_cap(gold),
         baseline_keyword_dump_within_cap(gold),
+        baseline_keyword_dump_packed(gold),
         baseline_keyword_dump_please(gold),
+        baseline_keyword_dump_will_prefix(gold),
+        baseline_keyword_dump_extra_what(gold),
         honest_prediction(gold, DEAL_GOLD),
         honest_prediction_filled(gold, DEAL_GOLD),
     ]
@@ -202,8 +225,28 @@ def test_baseline_score_table(gold) -> None:
             score_deals(gold, baseline_keyword_dump_within_cap(gold)).summary,
         ),
         (
+            "keyword-dump-packed",
+            score_deals(gold, baseline_keyword_dump_packed(gold)).summary,
+        ),
+        (
             "keyword-dump-please",
             score_deals(gold, baseline_keyword_dump_please(gold)).summary,
+        ),
+        (
+            "keyword-dump-will-prefix",
+            score_deals(gold, baseline_keyword_dump_will_prefix(gold)).summary,
+        ),
+        (
+            "keyword-dump-extra-what",
+            score_deals(gold, baseline_keyword_dump_extra_what(gold)).summary,
+        ),
+        (
+            "keyword-dump-need-to",
+            score_deals(gold, baseline_keyword_dump_need_to(gold)).summary,
+        ),
+        (
+            "keyword-dump-comma-list",
+            score_deals(gold, baseline_keyword_dump_comma_list(gold)).summary,
         ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
         (
@@ -225,20 +268,18 @@ def test_baseline_score_table(gold) -> None:
     )
 
 
-def test_within_cap_and_please_dumps_are_multi_fact(gold) -> None:
-    gold_by_name = {day.name: day for day in gold.days}
-    dumps = [
-        *baseline_keyword_dump_within_cap(gold).days,
-        *baseline_keyword_dump_please(gold).days,
-    ]
+def test_within_cap_dump_emits_each_window_in_every_slot(gold) -> None:
+    predicted = baseline_keyword_dump_within_cap(gold)
     checked = 0
-    for day in dumps:
-        gold_day = gold_by_name[day.name]
+    for day in predicted.days:
+        by_key: dict[tuple[str, str], set[str]] = {}
         for claim in day.claims:
             assert len(content_tokens(claim.text)) <= CONTENT_TOKEN_CAP, claim.text
-            assert is_multi_fact_claim(claim, gold_day), claim.text
+            by_key.setdefault((claim.deal, claim.text), set()).add(claim.slot)
             checked += 1
-    assert checked >= 6
+        for slots in by_key.values():
+            assert slots == set(SLOTS)
+    assert checked >= 10
 
 
 def test_v1_pipeline_overlays_use_fixture_frame_ids() -> None:

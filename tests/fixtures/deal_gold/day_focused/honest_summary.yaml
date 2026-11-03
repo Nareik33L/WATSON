@@ -4,7 +4,7 @@ claims:
   - id: h-q4-call
     deal: acme-q4
     slot: what_happened
-    text: Priya Natarajan joined the pricing call before 14 Nov about $90k
+    text: Priya Natarajan joined the pricing call before the 14 Nov demo about $90k
     evidence_segments: [s-call-q4]
   - id: h-q4-deck
     deal: acme-q4

@@ -70,13 +70,22 @@ ACTION_VERBS = frozenset(
 )
 _ISO_DATE = re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b")
 _ISO_DATE_SPACED = re.compile(r"\b(\d{4})\s+(\d{1,2})\s+(\d{1,2})\b")
-_MONEY = re.compile(
-    r"(?P<sym>[$£€])\s*"
-    r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
-    r"\s*(?P<suf>[kmb])?\b",
+_AMOUNT_NUM = r"(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d+|\d+)"
+_AMOUNT_RANGE = re.compile(
+    r"(?:(?P<sym1>[$£€])|(?P<ccy1>usd|gbp|eur)\s+)?"
+    rf"(?P<n1>{_AMOUNT_NUM})\s*(?P<s1>[kmb])?"
+    r"\s*[\-–—]\s*"
+    r"(?:(?P<sym2>[$£€]))?"
+    rf"(?P<n2>{_AMOUNT_NUM})\s*(?P<s2>[kmb])?",
+    re.IGNORECASE,
+)
+_AMOUNT_ONE = re.compile(
+    r"(?:(?P<sym>[$£€])|(?P<ccy>usd|gbp|eur)\s+)?"
+    rf"(?P<num>{_AMOUNT_NUM})\s*(?P<suf>[kmb])?",
     re.IGNORECASE,
 )
 _CURRENCY_CODE = {"$": "usd", "£": "gbp", "€": "eur"}
+_CURRENCY_WORD = {"usd": "usd", "gbp": "gbp", "eur": "eur"}
 _MONEY_SUFFIX = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}
 _DAY_MONTH = re.compile(
     r"\b(\d{1,2})\s+"
@@ -739,28 +748,65 @@ def extract_dates(text: str) -> set[str]:
     return out
 
 
-def extract_amounts(text: str) -> set[str]:
-    """Typed amounts, including currency forms.
+def _amount_value(num: str, suffix: str | None) -> int | float:
+    number = float(num.replace(",", ""))
+    if suffix:
+        number *= _MONEY_SUFFIX[suffix.lower()]
+    if abs(number - round(number)) < 1e-6:
+        return int(round(number))
+    return number
 
-    ``$90k`` / ``$1.2M`` / ``$40,000`` / ``£40k`` become ``amt:<int>:<ccy>``.
-    Comma groups are one number. Bare digits and number-words stay ``amt:<int>``.
+
+def _add_amount(out: set[str], value: int | float, currency: str | None) -> None:
+    out.add(f"amt:{value}")
+    if currency:
+        out.add(f"amt:{value}:{currency}")
+
+
+def extract_amounts(text: str) -> set[str]:
+    """Typed amounts, including currency, suffix, comma-group, and range forms.
+
+    ``$90k`` / ``USD 95k`` / ``40k`` / ``$1.2M`` / ``1.2m`` / ``$40,000`` /
+    ``90,000`` / ``£40k`` become ``amt:<int>`` plus ``amt:<int>:<ccy>`` when a
+    currency is present. Ranges (``$9–12k``, ``$9k–12k``, ``90k-120k``) emit
+    both ends. Comma groups are one number. Bare digits and number-words stay
+    ``amt:<int>``.
     """
     out: set[str] = set()
     leftover = text
-    for match in reversed(list(_MONEY.finditer(text))):
-        number = float(match.group("num").replace(",", ""))
-        suffix = (match.group("suf") or "").lower()
-        if suffix:
-            number *= _MONEY_SUFFIX[suffix]
-        value: int | float
-        if abs(number - round(number)) < 1e-6:
-            value = int(round(number))
-        else:
-            value = number
-        currency = _CURRENCY_CODE[match.group("sym")]
-        out.add(f"amt:{value}:{currency}")
+    for match in reversed(list(_AMOUNT_RANGE.finditer(text))):
+        if not (
+            match.group("sym1")
+            or match.group("sym2")
+            or match.group("ccy1")
+            or match.group("s1")
+            or match.group("s2")
+            or "," in (match.group("n1") or "")
+            or "," in (match.group("n2") or "")
+        ):
+            continue
+        suf = (match.group("s1") or match.group("s2") or "").lower() or None
+        currency = _CURRENCY_CODE.get(match.group("sym1") or match.group("sym2") or "")
+        if not currency:
+            word = (match.group("ccy1") or "").lower()
+            currency = _CURRENCY_WORD.get(word)
+        _add_amount(out, _amount_value(match.group("n1"), match.group("s1") or suf), currency)
+        _add_amount(out, _amount_value(match.group("n2"), match.group("s2") or suf), currency)
         leftover = leftover[: match.start()] + " " + leftover[match.end() :]
-    for token in normalize(leftover).split():
+    for match in reversed(list(_AMOUNT_ONE.finditer(leftover))):
+        num = match.group("num")
+        suf = (match.group("suf") or "").lower() or None
+        sym = match.group("sym")
+        ccy_word = (match.group("ccy") or "").lower()
+        currency = _CURRENCY_CODE.get(sym or "") or _CURRENCY_WORD.get(ccy_word)
+        if not currency and not suf and "," not in num:
+            continue
+        _add_amount(out, _amount_value(num, suf), currency)
+        leftover = leftover[: match.start()] + " " + leftover[match.end() :]
+    leftover = _ISO_DATE.sub(" ", leftover)
+    leftover_norm = _DAY_MONTH.sub(" ", normalize(leftover))
+    leftover_norm = _ISO_DATE_SPACED.sub(" ", leftover_norm)
+    for token in leftover_norm.split():
         if token in _MONTHS or token in _WEEKDAYS or token.startswith("q") and len(token) == 2:
             continue
         if _DIGIT.match(token):
@@ -952,8 +998,49 @@ def baseline_keyword_dump_within_cap(gold: DealCorpus) -> PredictedCorpus:
     )
 
 
+def baseline_keyword_dump_will_prefix(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_will_prefix_claims,
+    )
+
+
+def baseline_keyword_dump_extra_what(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_extra_what_claims,
+    )
+
+
+def baseline_keyword_dump_need_to(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_need_to_claims,
+    )
+
+
+def baseline_keyword_dump_comma_list(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_comma_list_claims,
+    )
+
+
+def baseline_keyword_dump_packed(gold: DealCorpus) -> PredictedCorpus:
+    """One or a few claims that each pack terms from several same-slot facts."""
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_packed_dump_claims,
+    )
+
+
 def baseline_keyword_dump_please(gold: DealCorpus) -> PredictedCorpus:
-    """Packed multi-fact dump plus a filler word. Must stay < 0.85 on Rev3 rules."""
+    """Packed dump plus a filler word. Must stay < 0.85 on Rev3 1:1 pairing."""
     return identity_prediction(
         gold,
         lambda _day, segment: segment.deal,
@@ -1507,8 +1594,6 @@ def _claim_covers(
         return False
     if not fact_terms_satisfied(claim.text, fact, day.people):
         return False
-    if is_multi_fact_claim(claim, day):
-        return False
     frames = resolve_claim_frames(claim, pred, day)
     if frames is None:
         return False
@@ -1698,8 +1783,80 @@ def _over_cap_claims(day: DayGold) -> list[PredictedClaim]:
 
 
 def _within_cap_claims(day: DayGold) -> list[PredictedClaim]:
-    """One or a few claims that each pack required terms from several facts."""
-    return _packed_dump_claims(day)
+    """Plan dump: each ≤24-token window of the deal's terms, emitted in every slot."""
+    claims: list[PredictedClaim] = []
+    for deal in day.deals:
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        windows = dump_windows(deal_term_list(day, deal.id))
+        for window_index, window in enumerate(windows):
+            for slot in SLOTS:
+                claims.append(
+                    PredictedClaim(
+                        id=f"dump-in-{day.name}-{deal.id}-{window_index}-{slot}",
+                        deal=deal.id,
+                        slot=slot,
+                        text=window,
+                        evidence=list(evidence),
+                    )
+                )
+    return claims
+
+
+def _will_prefix_claims(day: DayGold) -> list[PredictedClaim]:
+    return [
+        replace(
+            claim,
+            id=claim.id.replace("dump-in-", "dump-will-", 1),
+            text=f"will {claim.text}".strip(),
+        )
+        for claim in _within_cap_claims(day)
+    ]
+
+
+def _need_to_claims(day: DayGold) -> list[PredictedClaim]:
+    return [
+        replace(
+            claim,
+            id=claim.id.replace("dump-in-", "dump-need-", 1),
+            text=f"need to {claim.text}".strip(),
+        )
+        for claim in _within_cap_claims(day)
+    ]
+
+
+def _comma_list_claims(day: DayGold) -> list[PredictedClaim]:
+    return [
+        replace(
+            claim,
+            id=claim.id.replace("dump-in-", "dump-comma-", 1),
+            text=", ".join(claim.text.split()),
+        )
+        for claim in _within_cap_claims(day)
+    ]
+
+
+def _extra_what_claims(day: DayGold) -> list[PredictedClaim]:
+    claims = _within_cap_claims(day)
+    extras: list[PredictedClaim] = []
+    for deal in day.deals:
+        channels = {segment.channel for segment in _deal_segments(day, deal.id)}
+        if not {"email", "call", "doc"} <= channels:
+            continue
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        windows = dump_windows(deal_term_list(day, deal.id))
+        for window_index, window in enumerate(windows):
+            extras.append(
+                PredictedClaim(
+                    id=f"dump-extra-what-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="what_happened",
+                    text=window,
+                    evidence=list(evidence),
+                )
+            )
+    return claims + extras
 
 
 def _packed_dump_claims(day: DayGold, *, suffix: str = "") -> list[PredictedClaim]:
@@ -2102,8 +2259,13 @@ __all__ = [
     "baseline_empty_summary",
     "baseline_group_by_app",
     "baseline_group_by_company",
+    "baseline_keyword_dump_comma_list",
+    "baseline_keyword_dump_extra_what",
+    "baseline_keyword_dump_need_to",
     "baseline_keyword_dump_over_cap",
+    "baseline_keyword_dump_packed",
     "baseline_keyword_dump_please",
+    "baseline_keyword_dump_will_prefix",
     "baseline_keyword_dump_within_cap",
     "baseline_one_deal_corpus",
     "baseline_one_deal_per_day",

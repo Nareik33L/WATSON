@@ -358,6 +358,27 @@ def test_over_length_claim_cannot_cover() -> None:
     assert fact.required_terms[0] in normalize(text)
 
 
+def test_validate_rejects_exclusive_other_fact_alias() -> None:
+    day = _day(
+        deals=[Deal("a", "A")],
+        segments=[_seg("s1", "a", "f1")],
+        frames={"f1": Frame("f1", "pricing call q4 deck")},
+        facts=[
+            GoldFact("f-call", "a", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact(
+                "f-deck",
+                "a",
+                "what_happened",
+                ("q4", "deck"),
+                {"q4": ("pricing",)},
+                ("s1",),
+            ),
+        ],
+    )
+    with pytest.raises(ValueError, match="exclusive"):
+        validate_day(day)
+
+
 def test_validate_rejects_weekday_date_alias() -> None:
     day = _day(
         deals=[Deal("a", "A")],
@@ -411,19 +432,29 @@ def test_one_claim_covers_at_most_one_fact() -> None:
         ]
     )
     score = score_deals(gold, predicted)
-    assert score.summary.slot_tp["what_happened"] == 0
-    assert score.summary.what_happened_recall == 0.0
-    assert score.summary.precision == 0.0
+    assert score.summary.slot_tp["what_happened"] == 1
+    assert score.summary.what_happened_recall == 0.5
+    assert score.summary.precision == 1.0
 
 
 def test_extract_amounts_currency_and_comma_groups() -> None:
-    assert extract_amounts("$90k") == {"amt:90000:usd"}
-    assert extract_amounts("$1m") == {"amt:1000000:usd"}
-    assert extract_amounts("$1.2M") == {"amt:1200000:usd"}
-    assert extract_amounts("$40,000") == {"amt:40000:usd"}
-    assert extract_amounts("£40k") == {"amt:40000:gbp"}
+    assert "amt:90000:usd" in extract_amounts("$90k")
+    assert "amt:1000000:usd" in extract_amounts("$1m")
+    assert "amt:1200000:usd" in extract_amounts("$1.2M")
+    assert extract_amounts("$40,000") == {"amt:40000", "amt:40000:usd"}
+    assert "amt:40000:gbp" in extract_amounts("£40k")
     assert extract_amounts("$90k") != extract_amounts("$9k")
     assert extract_amounts("$1m") != extract_amounts("$10m")
     assert extract_amounts("two year term") == {"amt:2"}
     assert extract_amounts("10") == {"amt:10"}
     assert "amt:4" not in extract_amounts("q4")
+    assert "amt:40000" in extract_amounts("40k")
+    assert "amt:95000:usd" in extract_amounts("USD 95k")
+    assert extract_amounts("90,000") == {"amt:90000"}
+    assert "amt:1200000" in extract_amounts("1.2m")
+    assert "amt:1" not in extract_amounts("1.2m")
+    assert {"amt:9000:usd", "amt:12000:usd"} <= extract_amounts("$9–12k")
+    assert {"amt:90000", "amt:120000"} <= extract_amounts("90k-120k")
+    assert "amt:14" not in extract_amounts("14 Nov")
+    assert "amt:14" not in extract_amounts("before the 14 Nov demo about $90k")
+    assert "amt:90000:usd" in extract_amounts("before the 14 Nov demo about $90k")

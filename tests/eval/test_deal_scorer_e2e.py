@@ -26,9 +26,11 @@ from watson.intelligence.eval.deals import (
     contradicts,
     extract_amounts,
     fact_terms_satisfied,
+    honest_has_roster_name_and_deadline,
     honest_prediction,
     honest_prediction_filled,
     load_deal_corpus,
+    matching_slot_facts,
     required_terms_present,
     resolve_person_id,
     score_deals,
@@ -246,8 +248,8 @@ def test_score_deals_money_swap_90k_vs_9k() -> None:
     gold = DealCorpus(days=[day])
     honest = _pred(day, claims=[_claim("joined the pricing call at $90k")])
     swapped = _pred(day, claims=[_claim("joined the pricing call at $9k")])
-    assert extract_amounts("$90k") == {"amt:90000:usd"}
-    assert extract_amounts("$9k") == {"amt:9000:usd"}
+    assert "amt:90000:usd" in extract_amounts("$90k")
+    assert "amt:9000:usd" in extract_amounts("$9k")
     assert score_deals(gold, honest).summary.correct == 1
     score = score_deals(gold, swapped)
     assert score.summary.correct == 0
@@ -271,8 +273,8 @@ def test_score_deals_money_swap_1m_vs_10m() -> None:
     gold = DealCorpus(days=[day])
     honest = _pred(day, claims=[_claim("joined the pricing call at $1m")])
     swapped = _pred(day, claims=[_claim("joined the pricing call at $10m")])
-    assert extract_amounts("$1m") == {"amt:1000000:usd"}
-    assert extract_amounts("$10m") == {"amt:10000000:usd"}
+    assert "amt:1000000:usd" in extract_amounts("$1m")
+    assert "amt:10000000:usd" in extract_amounts("$10m")
     assert score_deals(gold, honest).summary.correct == 1
     score = score_deals(gold, swapped)
     assert score.summary.correct == 0
@@ -436,7 +438,7 @@ def test_score_deals_content_token_cap() -> None:
     assert score_deals(gold, under).summary.correct == 1
 
 
-def test_score_deals_multi_fact_claim_matches_none() -> None:
+def test_score_deals_one_claim_covers_at_most_one_fact() -> None:
     day = _day(
         segments=[_seg("s1", "acme-q4", "f1")],
         frames={"f1": Frame("f1", "pricing call q4 deck")},
@@ -446,13 +448,71 @@ def test_score_deals_multi_fact_claim_matches_none() -> None:
         ],
     )
     gold = DealCorpus(days=[day])
-    dump = _pred(day, claims=[_claim("pricing call q4 deck")])
+    dump = _pred(day, claims=[_claim("joined the pricing call q4 deck")])
     score = score_deals(gold, dump)
-    assert score.summary.correct == 0
-    assert score.summary.what_happened_recall == 0.0
-    assert score.summary.precision == 0.0
-    one = _pred(day, claims=[_claim("joined the pricing call")])
-    assert score_deals(gold, one).summary.correct == 1
+    assert score.summary.correct == 1
+    assert score.summary.claims == 1
+    assert score.summary.what_happened_recall == 0.5
+    assert score.summary.precision == 1.0
+    natural = _pred(day, claims=[_claim("Edited the Q4 deck after the pricing call")])
+    natural_score = score_deals(gold, natural)
+    assert natural_score.summary.correct == 1
+    assert natural_score.summary.what_happened_recall == 0.5
+    twins = _pred(
+        day,
+        claims=[
+            _claim("joined the pricing call q4 deck", claim_id="c1"),
+            _claim("joined the pricing call q4 deck", claim_id="c2"),
+        ],
+    )
+    twin_score = score_deals(gold, twins)
+    assert twin_score.summary.correct == 2
+    assert twin_score.summary.claims == 2
+    assert twin_score.summary.what_happened_recall == 1.0
+
+
+def test_score_deals_natural_paraphrase_keeps_date_and_extra_term() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call 14 Nov demo $90k")},
+        facts=[
+            GoldFact(
+                "f-call",
+                "acme-q4",
+                "what_happened",
+                ("pricing", "call"),
+                {"date": ("14 nov",), "amount": ("$90k",)},
+                ("s1",),
+            ),
+            GoldFact("f-demo", "acme-q4", "what_happened", ("demo",), {}, ("s1",)),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    natural = _pred(
+        day,
+        claims=[_claim("joined the pricing call before the 14 Nov demo about $90k")],
+    )
+    score = score_deals(gold, natural)
+    assert score.summary.correct == 1
+    assert score.summary.what_happened_recall == 0.5
+    assert "amt:14" not in extract_amounts("before the 14 Nov demo about $90k")
+
+
+def test_score_deals_what_modal_future_phrases_rejected() -> None:
+    fact = GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call")},
+        facts=[fact],
+    )
+    gold = DealCorpus(days=[day])
+    for text in (
+        "will join the pricing call",
+        "going to join the pricing call",
+        "need to join the pricing call",
+        "plan to join the pricing call",
+    ):
+        assert score_deals(gold, _pred(day, claims=[_claim(text)])).summary.correct == 0, text
 
 
 def test_score_deals_what_modal_will_rejected() -> None:
@@ -481,6 +541,10 @@ def test_score_deals_next_step_may_and_sent_rejected() -> None:
     assert score_deals(gold, may).summary.correct == 0
     assert score_deals(gold, sent).summary.correct == 0
     assert score_deals(gold, will).summary.correct == 1
+    might = _pred(day, claims=[_claim("might send pricing", slot="next_step")])
+    could = _pred(day, claims=[_claim("could send pricing", slot="next_step")])
+    assert score_deals(gold, might).summary.correct == 0
+    assert score_deals(gold, could).summary.correct == 0
 
 
 def test_score_deals_privacy_fail_zeros_accuracy() -> None:
@@ -501,6 +565,51 @@ def test_score_deals_privacy_fail_zeros_accuracy() -> None:
     score = score_deals(gold, leaked)
     assert score.privacy_fail is True
     assert score.grouping.accuracy == 0.0
+    assert score.summary.accuracy == 0.0
+
+
+def test_score_deals_missing_required_term_does_not_cover() -> None:
+    fact = GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call")},
+        facts=[fact],
+    )
+    gold = DealCorpus(days=[day])
+    miss = _pred(day, claims=[_claim("joined the call")])
+    hit = _pred(day, claims=[_claim("joined the pricing call")])
+    assert score_deals(gold, miss).summary.correct == 0
+    assert score_deals(gold, hit).summary.correct == 1
+
+
+def test_score_deals_unmatched_cite_off_cluster_is_unsupported() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call"), "f-ghost": Frame("f-ghost", "pricing call")},
+        facts=[GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))],
+    )
+    predicted = PredictedCorpus(
+        days=[
+            PredictedDay(
+                name="day_x",
+                segments=[
+                    PredictedSegment("s1", ("f1",), NONE),
+                    PredictedSegment("ghost", ("f-ghost",), "ghost"),
+                ],
+                claims=[
+                    PredictedClaim(
+                        "c1",
+                        "ghost",
+                        "what_happened",
+                        "joined the pricing call",
+                        [PredictedEvidence(frame_id="f1")],
+                    )
+                ],
+            )
+        ]
+    )
+    score = score_deals(DealCorpus(days=[day]), predicted)
+    assert score.summary.unsupported == 1
     assert score.summary.accuracy == 0.0
 
 
@@ -528,19 +637,41 @@ def test_score_deals_uncovered_gold_is_missing() -> None:
 
 
 def test_extract_amounts_currency_forms() -> None:
-    assert extract_amounts("$90k") == {"amt:90000:usd"}
-    assert extract_amounts("$1m") == {"amt:1000000:usd"}
-    assert extract_amounts("$1.2M") == {"amt:1200000:usd"}
-    assert extract_amounts("$40,000") == {"amt:40000:usd"}
-    assert extract_amounts("£40k") == {"amt:40000:gbp"}
+    assert "amt:90000:usd" in extract_amounts("$90k")
+    assert "amt:1000000:usd" in extract_amounts("$1m")
+    assert "amt:1200000:usd" in extract_amounts("$1.2M")
+    assert extract_amounts("$40,000") == {"amt:40000", "amt:40000:usd"}
+    assert "amt:40000:gbp" in extract_amounts("£40k")
     assert "amt:40" not in extract_amounts("$40,000")
     assert "amt:0" not in extract_amounts("$40,000")
     assert extract_amounts("$90k") != extract_amounts("$9k")
     assert extract_amounts("$1m") != extract_amounts("$10m")
-    assert extract_amounts("Send $90k and £40k") == {"amt:90000:usd", "amt:40000:gbp"}
+    assert {"amt:90000:usd", "amt:40000:gbp"} <= extract_amounts("Send $90k and £40k")
     assert extract_amounts("10") == {"amt:10"}
     assert extract_amounts("40") == {"amt:40"}
     assert "amt:4" not in extract_amounts("q4")
+    assert "amt:40000" in extract_amounts("40k")
+    assert "amt:95000" in extract_amounts("95k")
+    assert "amt:95000:usd" in extract_amounts("USD 95k")
+    assert extract_amounts("90,000") == {"amt:90000"}
+    assert "amt:90" not in extract_amounts("90,000")
+    assert "amt:0" not in extract_amounts("90,000")
+    assert "amt:1200000" in extract_amounts("1.2m")
+    assert "amt:1" not in extract_amounts("1.2m")
+    range_low = extract_amounts("$9–12k")
+    assert "amt:9000:usd" in range_low
+    assert "amt:12000:usd" in range_low
+    range_both = extract_amounts("$9k–12k")
+    assert "amt:9000:usd" in range_both
+    assert "amt:12000:usd" in range_both
+    range_bare = extract_amounts("90k-120k")
+    assert "amt:90000" in range_bare
+    assert "amt:120000" in range_bare
+    dated = extract_amounts("before the 14 Nov demo about $90k")
+    assert "amt:90000:usd" in dated
+    assert "amt:14" not in dated
+    assert "amt:14" not in extract_amounts("14 Nov")
+    assert "amt:14" not in extract_amounts("2026-11-14")
 
 
 def test_score_deals_ocr_missing_terms_zeros_accuracy() -> None:
@@ -603,6 +734,42 @@ def test_score_deals_grouping_accuracy_is_min() -> None:
     assert score.grouping.deal_segment_recall < score.grouping.assignment_accuracy
     assert score.grouping.accuracy == expected
     assert score.grouping.accuracy == score.grouping.deal_segment_recall
+
+
+def test_score_deals_grouping_min_drops_assignment() -> None:
+    day = _day(
+        segments=[
+            _seg("s1", "acme-q4", "f1"),
+            _seg("s2", "acme-q4", "f2"),
+            _seg("s3", NONE, "f3"),
+            _seg("s4", NONE, "f4"),
+            _seg("s5", NONE, "f5"),
+            _seg("s6", NONE, "f6"),
+        ],
+        frames={
+            "f1": Frame("f1", "a"),
+            "f2": Frame("f2", "b"),
+            "f3": Frame("f3", "n"),
+            "f4": Frame("f4", "n"),
+            "f5": Frame("f5", "n"),
+            "f6": Frame("f6", "n"),
+        },
+    )
+    predicted = _pred(
+        day,
+        labels={
+            "s1": "acme-q4",
+            "s2": "acme-q4",
+            "s3": "noise-3",
+            "s4": "noise-4",
+            "s5": "noise-5",
+            "s6": "noise-6",
+        },
+    )
+    score = score_deals(DealCorpus(days=[day]), predicted)
+    assert score.grouping.assignment_accuracy < score.grouping.deal_segment_recall
+    assert score.grouping.assignment_accuracy < score.grouping.pairwise_f1
+    assert score.grouping.accuracy == score.grouping.assignment_accuracy
 
 
 def test_score_deals_summary_accuracy_is_min_of_precision_and_recalls() -> None:
@@ -711,6 +878,55 @@ def test_resolve_person_id_ignores_non_roster_capitals() -> None:
     assert resolve_person_id("Priya Natarajan emailed", people) == "priya-natarajan"
 
 
+def test_score_deals_who_rejects_any_capitalised_word() -> None:
+    fact = GoldFact(
+        "g",
+        "acme-q4",
+        "who_involved",
+        (),
+        {},
+        ("s1",),
+        person_id="priya-natarajan",
+    )
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "Priya Natarajan emailed")},
+        facts=[fact],
+    )
+    gold = DealCorpus(days=[day])
+    for text in ("Hours Grid", "Jordan Published", "Opened Draft"):
+        score = score_deals(gold, _pred(day, claims=[_claim(text, slot="who_involved")]))
+        assert score.summary.correct == 0, text
+    hit = score_deals(gold, _pred(day, claims=[_claim("Priya Natarajan", slot="who_involved")]))
+    assert hit.summary.correct == 1
+
+
+def test_score_deals_invented_bare_amount_is_a_wrong_claim() -> None:
+    fact = GoldFact(
+        "g",
+        "acme-q4",
+        "what_happened",
+        ("pricing", "call"),
+        {"amount": ("$90k",)},
+        ("s1",),
+    )
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call $90k Priya Natarajan")},
+        facts=[fact],
+    )
+    gold = DealCorpus(days=[day])
+    honest = _pred(day, claims=[_claim("joined the pricing call at $90k")])
+    assert score_deals(gold, honest).summary.correct == 1
+    for text in (
+        "joined the pricing call about 95k",
+        "joined the pricing call at USD 95k",
+        "joined the pricing call at 40k",
+    ):
+        score = score_deals(gold, _pred(day, claims=[_claim(text)]))
+        assert score.summary.correct == 0, text
+
+
 def test_score_deals_vacuous_pairwise_without_multi_segment_deal() -> None:
     day = _day(
         segments=[_seg("s1", "acme-q4", "f1"), _seg("s2", NONE, "f2")],
@@ -814,6 +1030,53 @@ def test_fact_terms_satisfied_and_required_terms_edges() -> None:
     assert fact_terms_satisfied("joined the pricing call", fact, people) is True
     assert fact_terms_satisfied("joined the call", fact, people) is False
     assert required_terms_present("Priya Natarajan", who, people) is False
+    tagged = GoldFact(
+        "t",
+        "acme-q4",
+        "what_happened",
+        ("pricing", "call"),
+        {},
+        ("s1",),
+        person_id="priya-natarajan",
+    )
+    assert fact_terms_satisfied("joined the pricing call", tagged, people) is True
+    assert required_terms_present("Priya Natarajan", tagged, people) is False
+    assert required_terms_present("joined the pricing call", tagged, people) is True
+
+
+def test_matching_slot_facts_requires_same_slot_and_terms() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call q4 deck")},
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1",)),
+            GoldFact("f-next", "acme-q4", "next_step", ("pricing", "call"), {}, ("s1",)),
+        ],
+    )
+    claim = _claim("joined the pricing call")
+    hits = matching_slot_facts(claim, day)
+    assert [fact.id for fact in hits] == ["f-call"]
+    empty = matching_slot_facts(_claim("hello world"), day)
+    assert empty == []
+
+
+def test_honest_control_without_roster_and_deadline_is_false() -> None:
+    gold = load_deal_corpus()
+    empty = PredictedCorpus(
+        days=[PredictedDay(name=day.name, segments=[], claims=[]) for day in gold.days]
+    )
+    assert honest_has_roster_name_and_deadline(gold, empty) is False
+    no_date = PredictedCorpus(
+        days=[
+            PredictedDay(
+                name=gold.days[0].name,
+                segments=[],
+                claims=[_claim("Priya Natarajan joined the pricing call")],
+            )
+        ]
+    )
+    assert honest_has_roster_name_and_deadline(gold, no_date) is False
 
 
 def test_slot_modal_unknown_and_negated_will() -> None:
@@ -833,6 +1096,52 @@ def test_slot_modal_unknown_and_negated_will() -> None:
         _pred(day, claims=[_claim("will not send pricing", slot="next_step")]),
     )
     assert score.summary.correct == 0
+
+
+def test_score_deals_matched_deal_cite_off_deal_is_unsupported() -> None:
+    day = _day(
+        deals=[Deal("acme-q4", "Acme Q4", "Acme"), Deal("globex-pilot", "Globex", "Globex")],
+        segments=[_seg("s1", "acme-q4", "f1"), _seg("s2", "globex-pilot", "f2")],
+        frames={"f1": Frame("f1", "pricing call"), "f2": Frame("f2", "pricing call")},
+        facts=[GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))],
+    )
+    predicted = _pred(
+        day,
+        claims=[
+            PredictedClaim(
+                "c1",
+                "acme-q4",
+                "what_happened",
+                "joined the pricing call",
+                [PredictedEvidence(frame_id="f2")],
+            )
+        ],
+    )
+    score = score_deals(DealCorpus(days=[day]), predicted)
+    assert score.summary.correct == 0
+    assert score.summary.unsupported == 1
+    assert score.summary.accuracy == 0.0
+
+
+def test_score_deals_date_form_alias_covers() -> None:
+    fact = GoldFact(
+        "g",
+        "acme-q4",
+        "what_happened",
+        ("pricing", "call"),
+        {"date": ("14 nov",)},
+        ("s1",),
+    )
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call 14 November")},
+        facts=[fact],
+    )
+    gold = DealCorpus(days=[day])
+    november = _pred(day, claims=[_claim("joined the pricing call before 14 November")])
+    iso = _pred(day, claims=[_claim("joined the pricing call before 2026-11-14")])
+    assert score_deals(gold, november).summary.correct == 1
+    assert score_deals(gold, iso).summary.correct == 1
 
 
 def test_claim_covers_and_unsupported_helpers() -> None:

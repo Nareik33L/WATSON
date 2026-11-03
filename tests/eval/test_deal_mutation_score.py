@@ -179,20 +179,24 @@ def _collected_count(proc: subprocess.CompletedProcess[str]) -> int:
 
 
 def _classify(src_root: Path, *, original: str | None = None) -> str:
-    """Return KILLED or SURVIVED. Collection errors and no-ops survive."""
+    """Return KILLED or SURVIVED. Collection errors and no-ops survive.
+
+    Always runs pytest. A no-op (mutant source equals the original) is SURVIVED
+    even if the suite is red; a collection error is SURVIVED, not killed.
+    """
     deals = src_root / "watson" / "intelligence" / "eval" / "deals.py"
-    if original is not None and deals.read_text(encoding="utf-8") == original:
-        return "SURVIVED"
+    is_noop = original is not None and deals.read_text(encoding="utf-8") == original
     run = _run_pytest(src_root)
     blob = f"{run.stdout}\n{run.stderr}"
     ran = bool(_RAN.search(blob))
-    if "ERROR collecting" in blob or run.returncode in {2, 3, 4, 5} or not ran:
+    if is_noop or "ERROR collecting" in blob or run.returncode in {2, 3, 4, 5} or not ran:
         return "SURVIVED"
     if run.returncode == 1:
         return "KILLED"
     return "SURVIVED"
 
 
+@pytest.mark.timeout(300)
 def test_deal_scorer_kills_at_least_80_percent_of_55(tmp_path: Path) -> None:
     assert DEAL_GOLD.is_dir(), f"deal gold fixtures missing at {DEAL_GOLD}"
     sites = _count_sites()
@@ -212,18 +216,20 @@ def test_deal_scorer_kills_at_least_80_percent_of_55(tmp_path: Path) -> None:
             f"{collect.stdout}\n{collect.stderr}"
         )
 
-    noop = _classify(src_root, original=original)
-    assert noop == "SURVIVED", "unmutated copy must survive; harness is broken if it is killed"
+    noop_run = _run_pytest(src_root)
+    noop_blob = f"{noop_run.stdout}\n{noop_run.stderr}"
+    if noop_run.returncode != 0 or not _RAN.search(noop_blob):
+        pytest.fail(
+            "unmutated copy must pass pytest against the fixture-reachable copy "
+            f"(exit {noop_run.returncode}):\n{noop_run.stdout}\n{noop_run.stderr}"
+        )
 
     killed = 0
     for index in indices:
         mutant, changed = _apply_mutant(index)
         deals = src_root / "watson" / "intelligence" / "eval" / "deals.py"
-        if not changed:
-            deals.write_text(original, encoding="utf-8")
-            continue
-        deals.write_text(mutant, encoding="utf-8")
-        if _classify(src_root) == "KILLED":
+        deals.write_text(mutant if changed else original, encoding="utf-8")
+        if _classify(src_root, original=original) == "KILLED":
             killed += 1
         deals.write_text(original, encoding="utf-8")
 
