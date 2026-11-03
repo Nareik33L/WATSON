@@ -10,6 +10,7 @@ from watson.intelligence.eval.deals import (
     CONTENT_TOKEN_CAP,
     MISSING,
     NONE,
+    OUTSIDE_EVIDENCE_MAX,
     DayGold,
     Deal,
     DealCorpus,
@@ -24,6 +25,7 @@ from watson.intelligence.eval.deals import (
     PredictedSegment,
     _claim_covered_facts,
     _claim_covers,
+    _evidence_overlap,
     _fact_signature,
     _last_fact_greedy_matching,
     _maximum_claim_fact_matching,
@@ -375,25 +377,74 @@ def test_score_deals_corpus_date_amount_person_swaps() -> None:
     assert person_score.summary.correct < base.summary.correct
 
 
+def test_evidence_overlap_empty_exact_one_outside_two_outside() -> None:
+    assert OUTSIDE_EVIDENCE_MAX == 1
+    assert _evidence_overlap([], ["s1"]) is False
+    assert _evidence_overlap((), ("s1",)) is False
+    assert _evidence_overlap(["s1"], ["s1"]) is True
+    assert _evidence_overlap(["s1", "s2"], ["s1", "s2"]) is True
+    assert _evidence_overlap(["s1", "s2"], ["s1"]) is True
+    assert _evidence_overlap(["s1", "s2", "s3"], ["s1"]) is False
+    assert _evidence_overlap(["s2", "s3"], ["s1"]) is False
+
+
 def test_score_deals_evidence_overlap_required() -> None:
     fact = GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))
     day = _day(
-        segments=[_seg("s1", "acme-q4", "f1"), _seg("s2", "acme-q4", "f2")],
+        segments=[
+            _seg("s1", "acme-q4", "f1"),
+            _seg("s2", "acme-q4", "f2"),
+            _seg("s3", "acme-q4", "f3"),
+        ],
         frames={
             "f1": Frame("f1", "pricing call"),
             "f2": Frame("f2", "pricing call"),
+            "f3": Frame("f3", "pricing call"),
         },
         facts=[fact],
     )
     gold = DealCorpus(days=[day])
     miss = _pred(day, claims=[_claim("joined the pricing call", evidence="s2")])
     hit = _pred(day, claims=[_claim("joined the pricing call", evidence="s1")])
+    one_out = _pred(
+        day,
+        claims=[
+            PredictedClaim(
+                "c-one",
+                "acme-q4",
+                "what_happened",
+                "joined the pricing call",
+                [PredictedEvidence(segment_id="s1"), PredictedEvidence(segment_id="s2")],
+            )
+        ],
+    )
+    two_out = _pred(
+        day,
+        claims=[
+            PredictedClaim(
+                "c-two",
+                "acme-q4",
+                "what_happened",
+                "joined the pricing call",
+                [
+                    PredictedEvidence(segment_id="s1"),
+                    PredictedEvidence(segment_id="s2"),
+                    PredictedEvidence(segment_id="s3"),
+                ],
+            )
+        ],
+    )
     assert score_deals(gold, miss).summary.correct == 0
     assert score_deals(gold, miss).summary.unsupported == 0
     assert score_deals(gold, hit).summary.correct == 1
     assert score_deals(gold, hit).summary.unsupported == 0
+    assert score_deals(gold, one_out).summary.correct == 1
+    assert score_deals(gold, one_out).summary.unsupported == 0
+    assert score_deals(gold, two_out).summary.correct == 0
     miss_day = miss.days[0]
     assert _unsupported(day, miss_day, {"acme-q4": "acme-q4"}, miss_day.claims[0], fact) is True
+    two_day = two_out.days[0]
+    assert _unsupported(day, two_day, {"acme-q4": "acme-q4"}, two_day.claims[0], fact) is True
 
 
 def test_score_deals_citation_only_unsupported() -> None:

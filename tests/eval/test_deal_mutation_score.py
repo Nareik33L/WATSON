@@ -1,4 +1,4 @@
-"""Named-mutation score for the deal scorer. Target ≥ 80% of 80 mutants."""
+"""Named-mutation score for the deal scorer. Target ≥ 80% of 83 mutants."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 DEALS = "src/watson/intelligence/eval/deals.py"
 DEAL_GOLD = REPO / "tests" / "fixtures" / "deal_gold"
-TARGET_MUTANTS = 80
-KILL_FLOOR = 64  # 80% of 80
+TARGET_MUTANTS = 83
+KILL_FLOOR = 67  # 80% of 83
 TEST_PATHS = (
     "tests/eval/test_deal_scorer_e2e.py",
     "tests/unit/test_deal_metrics.py",
@@ -370,8 +370,23 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "covers-overlap-only",
-        "    return bool(cited_set) and cited_set <= evidence_set\n",
+        "    return bool(cited_set & evidence_set) and extra <= OUTSIDE_EVIDENCE_MAX\n",
         "    return bool(cited_set & evidence_set)\n",
+    ),
+    (
+        "overlap-containment",
+        "    return bool(cited_set & evidence_set) and extra <= OUTSIDE_EVIDENCE_MAX\n",
+        "    return bool(cited_set) and cited_set <= evidence_set\n",
+    ),
+    (
+        "outside-zero",
+        "OUTSIDE_EVIDENCE_MAX = 1\n",
+        "OUTSIDE_EVIDENCE_MAX = 0\n",
+    ),
+    (
+        "outside-two",
+        "OUTSIDE_EVIDENCE_MAX = 1\n",
+        "OUTSIDE_EVIDENCE_MAX = 2\n",
     ),
     (
         "covers-terms",
@@ -616,7 +631,7 @@ def _classify(src_root: Path, *, original: str | None = None) -> str:
 
 
 @pytest.mark.timeout(420)
-def test_deal_scorer_kills_at_least_80_percent_of_80(tmp_path: Path) -> None:
+def test_deal_scorer_kills_at_least_80_percent_of_83(tmp_path: Path) -> None:
     assert DEAL_GOLD.is_dir(), f"deal gold fixtures missing at {DEAL_GOLD}"
     assert len(MUTANTS) == TARGET_MUTANTS, f"expected {TARGET_MUTANTS} mutants, have {len(MUTANTS)}"
     names = [row[0] for row in MUTANTS]

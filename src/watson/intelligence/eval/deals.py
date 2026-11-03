@@ -36,6 +36,7 @@ SLOTS: tuple[str, ...] = ("what_happened", "who_involved", "next_step")
 NONE = "none"
 MISSING = "missing"
 CONTENT_TOKEN_CAP = 24
+OUTSIDE_EVIDENCE_MAX = 1
 V1_DEAL_DAYS: tuple[str, ...] = (
     "day_focused",
     "day_fragmented",
@@ -1902,15 +1903,16 @@ def _matching_representatives(
 
 
 def _evidence_overlap(cited: Sequence[str], evidence: Sequence[str]) -> bool:
-    """Cited gold segments must overlap a fact by staying inside its evidence.
+    """Cited gold segments must intersect a fact's evidence, with at most one extra.
 
     Intersection-only overlap lets a dump that cites every deal segment cover
-    every fact. Containment is still overlap: the cited set meets the fact's
-    evidence and does not extend outside it.
+    every fact. One adjacent context segment is allowed; two or more outside
+    is not. Empty citations do not overlap.
     """
     cited_set = {item for item in cited if item}
     evidence_set = {item for item in evidence if item}
-    return bool(cited_set) and cited_set <= evidence_set
+    extra = len(cited_set - evidence_set)
+    return bool(cited_set & evidence_set) and extra <= OUTSIDE_EVIDENCE_MAX
 
 
 def _claim_covers(
@@ -2798,6 +2800,7 @@ def _string_list(raw: Any, label: str) -> list[str]:
 
 __all__ = [
     "CONTENT_TOKEN_CAP",
+    "OUTSIDE_EVIDENCE_MAX",
     "FAILING_ACME_1211",
     "MISSING",
     "NONE",
