@@ -1429,6 +1429,250 @@ def test_s18b_unrelated_mid_correction_does_not_orphan(tmp_path: Path) -> None:
         conn.close()
 
 
+def _add_alias(conn: object, entity_id: str, alias: str) -> None:
+    stamp = "2026-10-31T09:00:00Z"
+    conn.execute(
+        """
+        INSERT INTO entity_aliases (id, created_at, updated_at, entity_id, alias, source)
+        VALUES (?, ?, ?, ?, ?, 'user')
+        """,
+        (new_id(), stamp, stamp, entity_id, alias),
+    )
+    conn.commit()
+
+
+def test_s22_l1_different_lineages_orphan_both(tmp_path: Path) -> None:
+    mid = PIPELINE_VERSION + 1
+    newest = PIPELINE_VERSION + 2
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        intro_fix = record_claim_correction(
+            conn, intro["claim_id"], "correct", new_text="Published intro"
+        )
+        typo = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Fixed typo",
+            pipeline_version=mid,
+            snippet="Typo OCR line",
+        )
+        typo_reject = record_claim_correction(conn, typo, "reject", pipeline_version=mid)
+        later = _later_claim(
+            conn,
+            intro,
+            text="Wrote intro",
+            snippet="Typo OCR line",
+            pipeline_version=newest,
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newest),
+            working_day_id=intro["day_id"],
+            pipeline_version=newest,
+        )
+        assert [str(row["id"]) for row in overlayed] == [later]
+        assert overlayed[0]["text"] == "Wrote intro"
+        assert overlayed[0]["assertion"] == "observed"
+        histories, orphans = match_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newest),
+            working_day_id=intro["day_id"],
+            pipeline_version=newest,
+        )
+        assert histories[later] == ()
+        assert {item.id for item in orphans} == {intro_fix.id, typo_reject.id}
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 2
+    finally:
+        conn.close()
+
+
+def test_s23_l3_second_lineage_pair_orphans_the_stack(tmp_path: Path) -> None:
+    v1 = PIPELINE_VERSION + 1
+    v2 = PIPELINE_VERSION + 2
+    current = PIPELINE_VERSION + 3
+    snippet = "Still editing: Acme proposal appendix"
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        first = record_claim_correction(
+            conn, intro["claim_id"], "correct", new_text="Published intro"
+        )
+        mid = _later_claim(conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=v1)
+        second = record_claim_correction(conn, mid, "confirm", pipeline_version=v1)
+        typo = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Fixed typo",
+            pipeline_version=v2,
+            snippet="Typo OCR line",
+        )
+        third = record_claim_correction(conn, typo, "reject", pipeline_version=v2)
+        later = _later_claim(
+            conn, intro, text="Wrote intro", snippet="Typo OCR line", pipeline_version=current
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], current),
+            working_day_id=intro["day_id"],
+            pipeline_version=current,
+        )
+        assert [str(row["id"]) for row in overlayed] == [later]
+        assert overlayed[0]["text"] == "Wrote intro"
+        assert overlayed[0]["assertion"] == "observed"
+        histories, orphans = match_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], current),
+            working_day_id=intro["day_id"],
+            pipeline_version=current,
+        )
+        assert histories[later] == ()
+        assert {item.id for item in orphans} == {first.id, second.id, third.id}
+        assert later not in rejected_claim_ids(
+            conn, working_day_id=intro["day_id"], pipeline_version=current
+        )
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 3
+    finally:
+        conn.close()
+
+
+def test_s26_o1_reject_then_edit_keeps_the_edit(tmp_path: Path) -> None:
+    mid = PIPELINE_VERSION + 1
+    newest = PIPELINE_VERSION + 2
+    snippet = "Still editing: Acme proposal appendix"
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        rejected = record_claim_correction(conn, intro["claim_id"], "reject")
+        mid_intro = _later_claim(
+            conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=mid
+        )
+        edited = record_claim_correction(
+            conn, mid_intro, "correct", new_text="Published intro", pipeline_version=mid
+        )
+        conn.execute(
+            "UPDATE corrections SET id = 'zzz-o1-reject', created_at = '2026-10-31T10:00:00Z' "
+            "WHERE id = ?",
+            (rejected.id,),
+        )
+        conn.execute(
+            "UPDATE corrections SET id = 'aaa-o1-correct', created_at = '2026-10-31T11:00:00Z' "
+            "WHERE id = ?",
+            (edited.id,),
+        )
+        conn.commit()
+        later = _later_claim(
+            conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=newest
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newest),
+            working_day_id=intro["day_id"],
+            pipeline_version=newest,
+        )
+        assert [str(row["id"]) for row in overlayed] == [later]
+        assert overlayed[0]["text"] == "Published intro"
+        assert overlayed[0]["assertion"] == "user_corrected"
+        histories, orphans = match_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newest),
+            working_day_id=intro["day_id"],
+            pipeline_version=newest,
+        )
+        assert orphans == ()
+        assert [item.action for item in histories[later]] == ["reject", "correct"]
+        assert histories[later][-1].action == "correct"
+        assert later not in rejected_claim_ids(
+            conn, working_day_id=intro["day_id"], pipeline_version=newest
+        )
+    finally:
+        conn.close()
+
+
+def test_s27_h1_merge_chain_rematches_under_root(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        first = _insert_entity(conn, name="Acme A")
+        middle = _insert_entity(conn, name="Acme B")
+        root = _insert_entity(conn, name="Acme C")
+        old = _seed_scoped_claim(
+            conn, text="Wrote intro", snippet="Acme intro OCR", project="Acme A"
+        )
+        record_claim_correction(conn, old["claim_id"], "correct", new_text="Shipped intro")
+        merge_entities(conn, first, middle)
+        merge_entities(conn, middle, root)
+        later = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Acme intro OCR",
+            day_id=old["day_id"],
+            pipeline_version=newer,
+            project="Acme C",
+            captured_at="2026-10-31T11:00:00Z",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[later["claim_id"]]["text"] == "Shipped intro"
+        assert by_id[later["claim_id"]]["assertion"] == "user_corrected"
+        assert (
+            orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer) == ()
+        )
+    finally:
+        conn.close()
+
+
+def test_s28_h3_ambiguous_alias_orphans(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        alpha = _insert_entity(conn, name="Alpha")
+        beta = _insert_entity(conn, name="Beta")
+        _add_alias(conn, alpha, "Acme")
+        _add_alias(conn, beta, "Acme")
+        old = _seed_scoped_claim(
+            conn, text="Wrote intro", snippet="Shared OCR line", project="Acme"
+        )
+        recorded = record_claim_correction(
+            conn, old["claim_id"], "correct", new_text="Shipped intro"
+        )
+        new_alpha = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=old["day_id"],
+            pipeline_version=newer,
+            project="Alpha",
+            captured_at="2026-10-31T11:00:00Z",
+        )
+        new_beta = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=old["day_id"],
+            pipeline_version=newer,
+            project="Beta",
+            captured_at="2026-10-31T12:00:00Z",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[new_alpha["claim_id"]]["text"] == "Wrote intro"
+        assert by_id[new_beta["claim_id"]]["text"] == "Wrote intro"
+        orphans = orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer)
+        assert [item.id for item in orphans] == [recorded.id]
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
 def test_upgrade_creates_corrections_table(tmp_path: Path) -> None:
     path = tmp_path / "watson.db"
     assert upgrade_head(path, TEST_KEY) == "0010_m4b_corrections"
