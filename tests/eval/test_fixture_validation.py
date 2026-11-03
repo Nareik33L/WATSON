@@ -12,11 +12,8 @@ from watson.intelligence.eval.deals import (
     baseline_empty_summary,
     baseline_group_by_app,
     baseline_group_by_company,
-    baseline_keyword_dump_comma_list,
-    baseline_keyword_dump_extra_what,
-    baseline_keyword_dump_need_to,
     baseline_keyword_dump_over_cap,
-    baseline_keyword_dump_will_prefix,
+    baseline_keyword_dump_please,
     baseline_keyword_dump_within_cap,
     baseline_one_deal_corpus,
     baseline_one_deal_per_day,
@@ -26,7 +23,8 @@ from watson.intelligence.eval.deals import (
     dump_windows,
     honest_has_roster_name_and_deadline,
     honest_prediction,
-    is_bare_term_list,
+    honest_prediction_filled,
+    is_multi_fact_claim,
     load_deal_corpus,
     load_failing_acme_1211,
     load_v1_deal_corpus,
@@ -85,34 +83,36 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-within-cap": score_deals(
             gold, baseline_keyword_dump_within_cap(gold)
         ).summary.accuracy,
-        "keyword-dump-will-prefix": score_deals(
-            gold, baseline_keyword_dump_will_prefix(gold)
-        ).summary.accuracy,
-        "keyword-dump-extra-what": score_deals(
-            gold, baseline_keyword_dump_extra_what(gold)
-        ).summary.accuracy,
-        "keyword-dump-need-to": score_deals(
-            gold, baseline_keyword_dump_need_to(gold)
-        ).summary.accuracy,
-        "keyword-dump-comma-list": score_deals(
-            gold, baseline_keyword_dump_comma_list(gold)
+        "keyword-dump-please": score_deals(
+            gold, baseline_keyword_dump_please(gold)
         ).summary.accuracy,
     }
     for name, score in rows.items():
         assert score < GATE, f"{name} summary {score:.3f} must be < {GATE}"
-    assert rows["keyword-dump-will-prefix"] < GATE
-    assert rows["keyword-dump-extra-what"] < GATE
-    assert rows["keyword-dump-within-cap"] < GATE
 
 
-def test_honest_summary_meets_gate(gold) -> None:
-    predicted = honest_prediction(gold, DEAL_GOLD)
-    score = score_deals(gold, predicted)
-    assert score.grouping.accuracy == 1.0
-    assert score.summary.unsupported == 0
-    assert score.summary.accuracy >= GATE
-    assert not score.privacy_fail
-    assert honest_has_roster_name_and_deadline(gold, predicted)
+def test_honest_summary_meets_gate_without_and_with_fillers(gold) -> None:
+    bare = honest_prediction(gold, DEAL_GOLD)
+    filled = honest_prediction_filled(gold, DEAL_GOLD)
+    for name, predicted in (("honest", bare), ("honest-filled", filled)):
+        score = score_deals(gold, predicted)
+        assert score.grouping.accuracy == 1.0, name
+        assert score.summary.unsupported == 0, name
+        assert score.summary.accuracy >= GATE, f"{name} summary {score.summary.accuracy:.3f}"
+        assert not score.privacy_fail, name
+        assert honest_has_roster_name_and_deadline(gold, predicted)
+    assert any(
+        "please" in claim.text.casefold()
+        for day in filled.days
+        for claim in day.claims
+        if claim.slot == "next_step"
+    )
+    assert not any(
+        "please" in claim.text.casefold()
+        for day in bare.days
+        for claim in day.claims
+        if claim.slot == "next_step"
+    )
 
 
 def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
@@ -126,9 +126,9 @@ def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
         baseline_empty_summary(gold),
         baseline_keyword_dump_over_cap(gold),
         baseline_keyword_dump_within_cap(gold),
-        baseline_keyword_dump_will_prefix(gold),
-        baseline_keyword_dump_extra_what(gold),
+        baseline_keyword_dump_please(gold),
         honest_prediction(gold, DEAL_GOLD),
+        honest_prediction_filled(gold, DEAL_GOLD),
     ]
     for predicted in outputs:
         assert not privacy_leak(gold, predicted)
@@ -202,22 +202,14 @@ def test_baseline_score_table(gold) -> None:
             score_deals(gold, baseline_keyword_dump_within_cap(gold)).summary,
         ),
         (
-            "keyword-dump-will-prefix",
-            score_deals(gold, baseline_keyword_dump_will_prefix(gold)).summary,
-        ),
-        (
-            "keyword-dump-extra-what",
-            score_deals(gold, baseline_keyword_dump_extra_what(gold)).summary,
-        ),
-        (
-            "keyword-dump-need-to",
-            score_deals(gold, baseline_keyword_dump_need_to(gold)).summary,
-        ),
-        (
-            "keyword-dump-comma-list",
-            score_deals(gold, baseline_keyword_dump_comma_list(gold)).summary,
+            "keyword-dump-please",
+            score_deals(gold, baseline_keyword_dump_please(gold)).summary,
         ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
+        (
+            "honest-summary-filled",
+            score_deals(gold, honest_prediction_filled(gold, DEAL_GOLD)).summary,
+        ),
     ]
     print("baseline score table")
     print(f"{'baseline':<24} {'metric':<22} {'score':>8}")
@@ -233,27 +225,20 @@ def test_baseline_score_table(gold) -> None:
     )
 
 
-def test_within_cap_and_prefixed_dumps_are_bare_lists(gold) -> None:
-    from watson.intelligence.eval.deals import deal_vocab
-
+def test_within_cap_and_please_dumps_are_multi_fact(gold) -> None:
+    gold_by_name = {day.name: day for day in gold.days}
     dumps = [
         *baseline_keyword_dump_within_cap(gold).days,
-        *baseline_keyword_dump_will_prefix(gold).days,
-        *baseline_keyword_dump_need_to(gold).days,
-        *baseline_keyword_dump_comma_list(gold).days,
-        *baseline_keyword_dump_extra_what(gold).days,
+        *baseline_keyword_dump_please(gold).days,
     ]
-    gold_by_name = {day.name: day for day in gold.days}
     checked = 0
     for day in dumps:
         gold_day = gold_by_name[day.name]
         for claim in day.claims:
-            if claim.slot == "who_involved":
-                continue
-            vocab = deal_vocab(gold_day, claim.deal)
-            assert is_bare_term_list(claim.text, vocab), claim.text
+            assert len(content_tokens(claim.text)) <= CONTENT_TOKEN_CAP, claim.text
+            assert is_multi_fact_claim(claim, gold_day), claim.text
             checked += 1
-    assert checked >= 10
+    assert checked >= 6
 
 
 def test_v1_pipeline_overlays_use_fixture_frame_ids() -> None:

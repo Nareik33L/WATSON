@@ -12,7 +12,7 @@ claims:
   - id: h-pier-next
     deal: north-pier-invoice
     slot: next_step
-    text: send the hours grid please
+    text: send the hours grid
     evidence_segments: [s-mail-pier]
   - id: h-cedar-page
     deal: cedar-onboarding

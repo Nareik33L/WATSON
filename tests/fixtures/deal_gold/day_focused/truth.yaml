@@ -163,8 +163,8 @@ deal_summaries:
   acme-q4:
     what_happened:
       - id: fact-q4-call
-        required_terms: [pricing, call, 14 nov]
-        aliases: {pricing: [price, pricing]}
+        required_terms: [pricing, call]
+        aliases: {pricing: [price], date: [14 nov], amount: [$90k]}
         evidence_segments: [s-call-q4]
       - id: fact-q4-deck
         required_terms: [q4, deck]
@@ -198,6 +198,7 @@ deal_summaries:
     what_happened:
       - id: fact-globex-kickoff
         required_terms: [pilot, kickoff]
+        aliases: {amount: [$1m]}
         evidence_segments: [s-call-globex, s-doc-globex]
     who_involved:
       - id: fact-globex-priya

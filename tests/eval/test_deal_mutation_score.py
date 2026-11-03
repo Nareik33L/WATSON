@@ -4,19 +4,26 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[2]
 DEALS = REPO / "src" / "watson" / "intelligence" / "eval" / "deals.py"
+DEAL_GOLD = REPO / "tests" / "fixtures" / "deal_gold"
 TARGET_MUTANTS = 55
 KILL_FLOOR = 44  # 80% of 55
 TEST_PATHS = (
     "tests/eval/test_deal_scorer_e2e.py",
     "tests/unit/test_deal_metrics.py",
+    "tests/eval/test_fixture_validation.py",
 )
+_COLLECTED = re.compile(r"(\d+) tests? collected")
+_RAN = re.compile(r"(\d+) (passed|failed)")
 
 _BINOPS: dict[type[ast.AST], type[ast.AST]] = {
     ast.Eq: ast.NotEq,
@@ -36,10 +43,11 @@ _SCORED_FUNCS = frozenset(
         "align_segments",
         "match_clusters",
         "contradicts",
-        "asserts_relation",
-        "is_bare_term_list",
         "required_terms_present",
         "slot_modal_ok",
+        "is_multi_fact_claim",
+        "matching_slot_facts",
+        "fact_terms_satisfied",
         "_claim_covers",
         "_unsupported",
         "_assignment_correct",
@@ -106,8 +114,9 @@ def _count_sites() -> int:
     return counter.seen
 
 
-def _apply_mutant(index: int) -> str:
-    tree = ast.parse(DEALS.read_text(encoding="utf-8"), filename=str(DEALS))
+def _apply_mutant(index: int) -> tuple[str, bool]:
+    original = DEALS.read_text(encoding="utf-8")
+    tree = ast.parse(original, filename=str(DEALS))
     mutator = _Mutator(target=index)
 
     class _Scoped(ast.NodeTransformer):
@@ -118,42 +127,107 @@ def _apply_mutant(index: int) -> str:
 
     mutated = _Scoped().visit(tree)
     ast.fix_missing_locations(mutated)
-    return ast.unparse(mutated)
+    source = ast.unparse(mutated)
+    return source, mutator.applied and source != ast.unparse(ast.parse(original))
 
 
-def _mutant_killed(index: int, src_root: Path) -> bool:
-    deals = src_root / "watson" / "intelligence" / "eval" / "deals.py"
-    deals.write_text(_apply_mutant(index), encoding="utf-8")
+def _sample_indices(site_count: int, n: int) -> list[int]:
+    if site_count < n:
+        raise AssertionError(f"expected ≥ {n} operator sites, found {site_count}")
+    indices: list[int] = []
+    for i in range(n):
+        idx = 1 + (i * site_count) // n
+        if indices and idx <= indices[-1]:
+            idx = indices[-1] + 1
+        if idx > site_count:
+            idx = site_count
+        indices.append(idx)
+    return indices
+
+
+def _run_pytest(src_root: Path, extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("WATSON_MUTATION", None)
-    proc = subprocess.run(
+    env["WATSON_DEAL_GOLD"] = str(DEAL_GOLD)
+    env["PYTHONPATH"] = str(src_root)
+    return subprocess.run(
         [
             sys.executable,
             "-m",
             "pytest",
             "-q",
-            "--tb=no",
+            "--tb=line",
             "-o",
             f"pythonpath={src_root}",
             *TEST_PATHS,
+            *(extra or []),
         ],
         cwd=REPO,
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
         check=False,
     )
-    return proc.returncode != 0
+
+
+def _collected_count(proc: subprocess.CompletedProcess[str]) -> int:
+    blob = f"{proc.stdout}\n{proc.stderr}"
+    match = _COLLECTED.search(blob)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
+def _classify(src_root: Path, *, original: str | None = None) -> str:
+    """Return KILLED or SURVIVED. Collection errors and no-ops survive."""
+    deals = src_root / "watson" / "intelligence" / "eval" / "deals.py"
+    if original is not None and deals.read_text(encoding="utf-8") == original:
+        return "SURVIVED"
+    run = _run_pytest(src_root)
+    blob = f"{run.stdout}\n{run.stderr}"
+    ran = bool(_RAN.search(blob))
+    if "ERROR collecting" in blob or run.returncode in {2, 3, 4, 5} or not ran:
+        return "SURVIVED"
+    if run.returncode == 1:
+        return "KILLED"
+    return "SURVIVED"
 
 
 def test_deal_scorer_kills_at_least_80_percent_of_55(tmp_path: Path) -> None:
+    assert DEAL_GOLD.is_dir(), f"deal gold fixtures missing at {DEAL_GOLD}"
     sites = _count_sites()
-    assert sites >= TARGET_MUTANTS, f"expected ≥ {TARGET_MUTANTS} operator sites, found {sites}"
+    indices = _sample_indices(sites, TARGET_MUTANTS)
     src_root = tmp_path / "src"
     shutil.copytree(REPO / "src" / "watson", src_root / "watson")
+    original = (src_root / "watson" / "intelligence" / "eval" / "deals.py").read_text(
+        encoding="utf-8"
+    )
+
+    collect = _run_pytest(src_root, ["--collect-only"])
+    n_collect = _collected_count(collect)
+    if collect.returncode != 0 or n_collect == 0:
+        pytest.fail(
+            "mutation harness could not collect tests against the fixture-reachable "
+            f"copy (exit {collect.returncode}, collected {n_collect}):\n"
+            f"{collect.stdout}\n{collect.stderr}"
+        )
+
+    noop = _classify(src_root, original=original)
+    assert noop == "SURVIVED", "unmutated copy must survive; harness is broken if it is killed"
+
     killed = 0
-    for index in range(1, TARGET_MUTANTS + 1):
-        if _mutant_killed(index, src_root):
+    for index in indices:
+        mutant, changed = _apply_mutant(index)
+        deals = src_root / "watson" / "intelligence" / "eval" / "deals.py"
+        if not changed:
+            deals.write_text(original, encoding="utf-8")
+            continue
+        deals.write_text(mutant, encoding="utf-8")
+        if _classify(src_root) == "KILLED":
             killed += 1
+        deals.write_text(original, encoding="utf-8")
+
     assert killed >= KILL_FLOOR, f"killed {killed}/{TARGET_MUTANTS}; need ≥ {KILL_FLOOR}"
-    print(f"deal scorer mutants killed {killed}/{TARGET_MUTANTS}")
+    print(
+        f"deal scorer mutants killed {killed}/{TARGET_MUTANTS} (sampled {len(indices)} of {sites})"
+    )

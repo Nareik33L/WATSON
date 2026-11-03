@@ -4,7 +4,7 @@ claims:
   - id: h-q4-call
     deal: acme-q4
     slot: what_happened
-    text: Priya Natarajan joined the pricing call before the 14 Nov demo
+    text: Priya Natarajan joined the pricing call before 14 Nov about $90k
     evidence_segments: [s-call-q4]
   - id: h-q4-deck
     deal: acme-q4
@@ -24,7 +24,7 @@ claims:
   - id: h-q4-next
     deal: acme-q4
     slot: next_step
-    text: will send revised pricing by Friday
+    text: will send pricing by Friday
     evidence_segments: [s-mail-q4]
   - id: h-renewal-term
     deal: acme-renewal
@@ -39,12 +39,12 @@ claims:
   - id: h-renewal-next
     deal: acme-renewal
     slot: next_step
-    text: draft the revised renewal letter
+    text: draft the renewal letter
     evidence_segments: [s-mail-renewal]
   - id: h-globex-kickoff
     deal: globex-pilot
     slot: what_happened
-    text: Confirmed the pilot kickoff
+    text: Confirmed the pilot kickoff at $1m
     evidence_segments: [s-call-globex]
   - id: h-globex-who
     deal: globex-pilot
@@ -54,5 +54,5 @@ claims:
   - id: h-globex-next
     deal: globex-pilot
     slot: next_step
-    text: will share the revised timeline Monday
+    text: will share the timeline Monday
     evidence_segments: [s-mail-globex]

@@ -7,6 +7,7 @@ contradictions, and citation-failure-only unsupported. See ``docs/eval.md``.
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from collections.abc import Callable, Iterator, Sequence
@@ -47,7 +48,6 @@ WHAT_FUTURE = frozenset({"will", "should"})
 WHAT_FUTURE_PHRASES = ("need to", "going to", "plan to")
 NEXT_HEDGES = frozenset({"might", "may", "could"})
 NEXT_NEGATION = frozenset({"not", "never", "wont"})
-LIST_PREFIXES = frozenset({"will", "should", "need", "going", "plan", "to"})
 ACTION_VERBS = frozenset(
     {
         "send",
@@ -70,6 +70,14 @@ ACTION_VERBS = frozenset(
 )
 _ISO_DATE = re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b")
 _ISO_DATE_SPACED = re.compile(r"\b(\d{4})\s+(\d{1,2})\s+(\d{1,2})\b")
+_MONEY = re.compile(
+    r"(?P<sym>[$£€])\s*"
+    r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+    r"\s*(?P<suf>[kmb])?\b",
+    re.IGNORECASE,
+)
+_CURRENCY_CODE = {"$": "usd", "£": "gbp", "€": "eur"}
+_MONEY_SUFFIX = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}
 _DAY_MONTH = re.compile(
     r"\b(\d{1,2})\s+"
     r"(jan|january|feb|february|mar|march|apr|april|may|jun|june|"
@@ -286,7 +294,19 @@ class DealScore:
 
 
 def deal_gold_root() -> Path:
-    return Path(__file__).resolve().parents[4] / "tests" / "fixtures" / "deal_gold"
+    env = os.environ.get("WATSON_DEAL_GOLD")
+    if env:
+        path = Path(env)
+        if path.is_dir():
+            return path
+    cwd = Path.cwd() / "tests" / "fixtures" / "deal_gold"
+    if cwd.is_dir():
+        return cwd
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "tests" / "fixtures" / "deal_gold"
+        if candidate.is_dir():
+            return candidate
+    raise FileNotFoundError("deal gold fixtures were not found")
 
 
 def load_deal_corpus(root: Path | None = None) -> DealCorpus:
@@ -694,7 +714,8 @@ def extract_slot_values(text: str, people: Sequence[Person]) -> dict[str, set[st
 
     * **person** — roster ``person_id`` whose full name is a contiguous phrase.
     * **date** — ``weekday:<day>`` or ``cal:MM-DD`` (weekday is never a calendar date).
-    * **amount** — ``amt:<int>`` from digits or number-words. Quarters are not amounts.
+    * **amount** — ``amt:<int>`` or ``amt:<int>:<ccy>`` (``$90k``, ``£40k``).
+      Quarters are not amounts.
     """
     return {
         "person": {person.id for person in people if has_phrase(text, person.name)},
@@ -719,8 +740,27 @@ def extract_dates(text: str) -> set[str]:
 
 
 def extract_amounts(text: str) -> set[str]:
+    """Typed amounts, including currency forms.
+
+    ``$90k`` / ``$1.2M`` / ``$40,000`` / ``£40k`` become ``amt:<int>:<ccy>``.
+    Comma groups are one number. Bare digits and number-words stay ``amt:<int>``.
+    """
     out: set[str] = set()
-    for token in normalize(text).split():
+    leftover = text
+    for match in reversed(list(_MONEY.finditer(text))):
+        number = float(match.group("num").replace(",", ""))
+        suffix = (match.group("suf") or "").lower()
+        if suffix:
+            number *= _MONEY_SUFFIX[suffix]
+        value: int | float
+        if abs(number - round(number)) < 1e-6:
+            value = int(round(number))
+        else:
+            value = number
+        currency = _CURRENCY_CODE[match.group("sym")]
+        out.add(f"amt:{value}:{currency}")
+        leftover = leftover[: match.start()] + " " + leftover[match.end() :]
+    for token in normalize(leftover).split():
         if token in _MONTHS or token in _WEEKDAYS or token.startswith("q") and len(token) == 2:
             continue
         if _DIGIT.match(token):
@@ -778,54 +818,39 @@ def contradicts(
     return False
 
 
-def deal_vocab(day: DayGold, deal_id: str) -> set[str]:
-    """Content tokens of one deal's terms, aliases, roster names, and title."""
-    tokens: set[str] = set()
-    for fact in day.facts:
-        if fact.deal_id != deal_id:
-            continue
-        for term in fact.required_terms:
-            tokens.update(content_tokens(term))
-        for phrase in fact_alias_phrases(fact):
-            tokens.update(content_tokens(phrase))
-        if fact.person_id:
-            person = _person(day.people, fact.person_id)
-            if person is not None:
-                tokens.update(content_tokens(person.name))
-                if person.company:
-                    tokens.update(content_tokens(person.company))
-    for deal in day.deals:
-        if deal.id != deal_id:
-            continue
-        tokens.update(content_tokens(deal.name))
-        tokens.update(content_tokens(deal.company))
-    return tokens
+def fact_terms_satisfied(text: str, fact: GoldFact, people: Sequence[Person]) -> bool:
+    if not required_terms_present(text, fact, people):
+        return False
+    if fact.slot == "who_involved" and fact.person_id:
+        return person_entities_match(text, fact.person_id, people)
+    return True
 
 
-def leftover_claim_tokens(text: str) -> list[str]:
-    """Content tokens after stripping will/should/need/going/plan/to prefixes."""
-    return [token for token in content_tokens(text) if token not in LIST_PREFIXES]
+def matching_slot_facts(claim: PredictedClaim, day: DayGold) -> list[GoldFact]:
+    """Same-slot gold facts whose required terms (or roster name) are in ``claim``."""
+    return [
+        fact
+        for fact in day.facts
+        if fact.slot == claim.slot and required_terms_present(claim.text, fact, day.people)
+    ]
 
 
-def is_bare_term_list(text: str, vocab: set[str]) -> bool:
-    """True when leftover tokens are only deal terms / aliases / roster names."""
-    leftover = leftover_claim_tokens(text)
-    if not leftover:
-        return True
-    return all(token in vocab for token in leftover)
+def _fact_signature(fact: GoldFact) -> tuple[str, ...]:
+    """Identity of a gold fact for the one-claim-one-fact rule.
 
-
-def asserts_relation(claim: PredictedClaim, fact: GoldFact, day: DayGold) -> bool:
-    """A claim must assert a relation, not a bare list of deal terms.
-
-    ``who_involved`` may be a roster slot value tied to the deal. Every other
-    slot needs leftover words beyond the deal vocabulary, whatever the modal
-    or prefix. A bare list never matches a fact.
+    Two who-facts that name the same roster person share a signature so an
+    honest ``Priya Natarajan`` claim can still cover one of them. Distinct
+    required-term sets, or two different people, do not share a signature.
     """
-    if claim.slot == "who_involved" and fact.person_id:
-        if person_entities_match(claim.text, fact.person_id, day.people):
-            return True
-    return not is_bare_term_list(claim.text, deal_vocab(day, fact.deal_id))
+    if fact.person_id:
+        return ("person", fact.person_id)
+    return ("terms", *sorted(normalize(term) for term in fact.required_terms))
+
+
+def is_multi_fact_claim(claim: PredictedClaim, day: DayGold) -> bool:
+    """A claim that packs two or more distinct facts (or deals) matches none."""
+    hits = matching_slot_facts(claim, day)
+    return len({_fact_signature(fact) for fact in hits}) >= 2
 
 
 def slot_modal_ok(claim: PredictedClaim, fact: GoldFact) -> bool:
@@ -927,38 +952,26 @@ def baseline_keyword_dump_within_cap(gold: DealCorpus) -> PredictedCorpus:
     )
 
 
-def baseline_keyword_dump_will_prefix(gold: DealCorpus) -> PredictedCorpus:
-    """QA dump: 'will' + required-term list. Scored 0.833 before the relation rule."""
+def baseline_keyword_dump_please(gold: DealCorpus) -> PredictedCorpus:
+    """Packed multi-fact dump plus a filler word. Must stay < 0.85 on Rev3 rules."""
     return identity_prediction(
         gold,
         lambda _day, segment: segment.deal,
-        claims_of=_will_prefix_claims,
+        claims_of=lambda day: _packed_dump_claims(day, suffix=" please"),
     )
 
 
-def baseline_keyword_dump_extra_what(gold: DealCorpus) -> PredictedCorpus:
-    """QA dump: extra what-happened copies. Scored 0.914 before the relation rule."""
-    return identity_prediction(
-        gold,
-        lambda _day, segment: segment.deal,
-        claims_of=_extra_what_claims,
-    )
-
-
-def baseline_keyword_dump_need_to(gold: DealCorpus) -> PredictedCorpus:
-    return identity_prediction(
-        gold,
-        lambda _day, segment: segment.deal,
-        claims_of=_need_to_claims,
-    )
-
-
-def baseline_keyword_dump_comma_list(gold: DealCorpus) -> PredictedCorpus:
-    return identity_prediction(
-        gold,
-        lambda _day, segment: segment.deal,
-        claims_of=_comma_list_claims,
-    )
+def honest_prediction_filled(gold: DealCorpus, root: Path | None = None) -> PredictedCorpus:
+    """Honest control with filler words on next_step claims."""
+    predicted = honest_prediction(gold, root)
+    for day in predicted.days:
+        day.claims = [
+            replace(claim, text=f"{claim.text} please")
+            if claim.slot == "next_step" and "please" not in claim.text.casefold()
+            else claim
+            for claim in day.claims
+        ]
+    return predicted
 
 
 def honest_prediction(gold: DealCorpus, root: Path | None = None) -> PredictedCorpus:
@@ -1228,7 +1241,11 @@ V1_PIPELINE_DAYS: tuple[str, ...] = (
 
 
 def load_v1_deal_corpus(root: Path | None = None) -> DealCorpus:
-    base = root if root is not None else Path(__file__).resolve().parents[4] / "tests" / "fixtures"
+    if root is not None:
+        base = root
+    else:
+        gold = deal_gold_root()
+        base = gold.parent
     days = []
     for name in V1_PIPELINE_DAYS:
         overlay = base / name / "deals.yaml"
@@ -1488,13 +1505,10 @@ def _claim_covers(
         return False
     if len(content_tokens(claim.text)) > CONTENT_TOKEN_CAP:
         return False
-    if not required_terms_present(claim.text, fact, day.people):
+    if not fact_terms_satisfied(claim.text, fact, day.people):
         return False
-    if not asserts_relation(claim, fact, day):
+    if is_multi_fact_claim(claim, day):
         return False
-    if fact.slot == "who_involved" and fact.person_id:
-        if not person_entities_match(claim.text, fact.person_id, day.people):
-            return False
     frames = resolve_claim_frames(claim, pred, day)
     if frames is None:
         return False
@@ -1684,85 +1698,50 @@ def _over_cap_claims(day: DayGold) -> list[PredictedClaim]:
 
 
 def _within_cap_claims(day: DayGold) -> list[PredictedClaim]:
+    """One or a few claims that each pack required terms from several facts."""
+    return _packed_dump_claims(day)
+
+
+def _packed_dump_claims(day: DayGold, *, suffix: str = "") -> list[PredictedClaim]:
+    """One claim per slot that packs required terms from several same-slot facts."""
     claims: list[PredictedClaim] = []
-    for deal in day.deals:
-        segs = _deal_segments(day, deal.id)
-        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
-        windows = dump_windows(deal_term_list(day, deal.id))
-        for window_index, window in enumerate(windows):
-            for slot in SLOTS:
-                claims.append(
-                    PredictedClaim(
-                        id=f"dump-in-{day.name}-{deal.id}-{window_index}-{slot}",
-                        deal=deal.id,
-                        slot=slot,
-                        text=window,
-                        evidence=list(evidence),
-                    )
-                )
-    return claims
-
-
-def _will_prefix_claims(day: DayGold) -> list[PredictedClaim]:
-    claims: list[PredictedClaim] = []
-    for claim in _within_cap_claims(day):
-        claims.append(
-            replace(
-                claim,
-                id=claim.id.replace("dump-in-", "dump-will-", 1),
-                text=f"will {claim.text}".strip(),
-            )
-        )
-    return claims
-
-
-def _need_to_claims(day: DayGold) -> list[PredictedClaim]:
-    claims: list[PredictedClaim] = []
-    for claim in _within_cap_claims(day):
-        claims.append(
-            replace(
-                claim,
-                id=claim.id.replace("dump-in-", "dump-need-", 1),
-                text=f"need to {claim.text}".strip(),
-            )
-        )
-    return claims
-
-
-def _comma_list_claims(day: DayGold) -> list[PredictedClaim]:
-    claims: list[PredictedClaim] = []
-    for claim in _within_cap_claims(day):
-        claims.append(
-            replace(
-                claim,
-                id=claim.id.replace("dump-in-", "dump-comma-", 1),
-                text=", ".join(claim.text.split()),
-            )
-        )
-    return claims
-
-
-def _extra_what_claims(day: DayGold) -> list[PredictedClaim]:
-    claims = _within_cap_claims(day)
-    extras: list[PredictedClaim] = []
-    for deal in day.deals:
-        channels = {segment.channel for segment in _deal_segments(day, deal.id)}
-        if not {"email", "call", "doc"} <= channels:
+    for slot in SLOTS:
+        facts = [fact for fact in day.facts if fact.slot == slot]
+        if len({_fact_signature(fact) for fact in facts}) < 2:
             continue
-        segs = _deal_segments(day, deal.id)
-        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
-        windows = dump_windows(deal_term_list(day, deal.id))
-        for window_index, window in enumerate(windows):
-            extras.append(
-                PredictedClaim(
-                    id=f"dump-extra-what-{day.name}-{deal.id}-{window_index}",
-                    deal=deal.id,
-                    slot="what_happened",
-                    text=window,
-                    evidence=list(evidence),
-                )
-            )
-    return claims + extras
+        terms: list[str] = []
+        for fact in facts:
+            if fact.person_id:
+                person = _person(day.people, fact.person_id)
+                if person is not None:
+                    terms.append(person.name)
+            terms.extend(fact.required_terms)
+        text = ""
+        for window in dump_windows(terms):
+            candidate = f"{text} {window}".strip()
+            if len(content_tokens(candidate)) > CONTENT_TOKEN_CAP:
+                break
+            text = candidate
+        if not text:
+            continue
+        if suffix:
+            text = f"{text}{suffix}".strip()
+        deal_id = facts[0].deal_id
+        segs = _deal_segments(day, deal_id)
+        if not segs:
+            segs = [segment for segment in day.segments if not segment.privacy_bait]
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs[:3]]
+        claim = PredictedClaim(
+            id=f"dump-pack-{day.name}-{slot}",
+            deal=deal_id,
+            slot=slot,
+            text=text,
+            evidence=list(evidence),
+        )
+        if not is_multi_fact_claim(claim, day):
+            continue
+        claims.append(claim)
+    return claims
 
 
 def _company_values(day: DayGold, corpus: DealCorpus | None = None) -> list[str]:
@@ -2005,10 +1984,7 @@ def _stored_pipeline_texts(conn: Any) -> list[str]:
         "SELECT detail_json FROM audit_events",
     )
     for sql in queries:
-        try:
-            rows = conn.execute(sql).fetchall()
-        except Exception:
-            continue
+        rows = conn.execute(sql).fetchall()
         blobs.extend(str(row[0] or "") for row in rows)
     return blobs
 
@@ -2122,16 +2098,12 @@ __all__ = [
     "PredictedSegment",
     "SummaryScore",
     "align_segments",
-    "asserts_relation",
     "baseline_all_none",
     "baseline_empty_summary",
     "baseline_group_by_app",
     "baseline_group_by_company",
-    "baseline_keyword_dump_comma_list",
-    "baseline_keyword_dump_extra_what",
-    "baseline_keyword_dump_need_to",
     "baseline_keyword_dump_over_cap",
-    "baseline_keyword_dump_will_prefix",
+    "baseline_keyword_dump_please",
     "baseline_keyword_dump_within_cap",
     "baseline_one_deal_corpus",
     "baseline_one_deal_per_day",
@@ -2143,16 +2115,17 @@ __all__ = [
     "corpus_guidance",
     "deal_gold_root",
     "deal_term_list",
-    "deal_vocab",
     "dump_windows",
     "extract_amounts",
     "extract_dates",
     "extract_slot_values",
+    "fact_terms_satisfied",
     "has_phrase",
     "honest_has_roster_name_and_deadline",
     "honest_prediction",
+    "honest_prediction_filled",
     "identity_prediction",
-    "is_bare_term_list",
+    "is_multi_fact_claim",
     "load_deal_corpus",
     "load_deal_day",
     "load_failing_acme_1211",
@@ -2160,6 +2133,7 @@ __all__ = [
     "load_v1_deal_corpus",
     "load_v1_deal_day",
     "match_clusters",
+    "matching_slot_facts",
     "person_entities_match",
     "privacy_bait_legal",
     "privacy_leak",
