@@ -688,6 +688,43 @@ def dump_windows(terms: Sequence[str], cap: int = CONTENT_TOKEN_CAP) -> list[str
     return windows
 
 
+def _term_units(terms: Sequence[str]) -> list[str]:
+    """Unique normalized terms, atomic multi-word phrases, file order."""
+    units: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        phrase = normalize(term)
+        if not phrase or phrase in seen:
+            continue
+        if not content_tokens(phrase):
+            continue
+        seen.add(phrase)
+        units.append(phrase)
+    return units
+
+
+def sliding_term_windows(
+    terms: Sequence[str],
+    *,
+    width: int = 6,
+    stride: int = 2,
+) -> list[str]:
+    """Sliding ``width``-term windows of a deal's unique terms, step ``stride``."""
+    units = _term_units(terms)
+    if not units:
+        return []
+    width = max(1, width)
+    stride = max(1, stride)
+    windows: list[str] = []
+    start = 0
+    while start < len(units):
+        windows.append(" ".join(units[start : start + width]))
+        if start + width >= len(units):
+            break
+        start += stride
+    return windows
+
+
 def person_entities_match(text: str, person_id: str, people: Sequence[Person]) -> bool:
     return resolve_person_id(text, people) == person_id
 
@@ -1067,6 +1104,20 @@ def baseline_keyword_dump_duplicate_what(gold: DealCorpus) -> PredictedCorpus:
         gold,
         lambda _day, segment: segment.deal,
         claims_of=_duplicate_what_claims,
+    )
+
+
+def baseline_keyword_dump_sliding(
+    gold: DealCorpus,
+    *,
+    width: int = 6,
+    stride: int = 2,
+) -> PredictedCorpus:
+    """Sliding term windows in what_happened, ``will <window>`` in next_step, window in who."""
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _sliding_dump_claims(day, width=width, stride=stride),
     )
 
 
@@ -1684,17 +1735,14 @@ def _claim_cited_segments(
     return frozenset(_gold_segments_for_frames(day, frames))
 
 
-def _claim_best_fact(
+def _claim_covered_facts(
     day: DayGold,
     pred: PredictedDay,
     mapping: dict[str, str],
     claim: PredictedClaim,
-) -> GoldFact | None:
-    """First gold fact this claim covers (file order). That is the only fact it may credit."""
-    for fact in day.facts:
-        if _claim_covers(day, pred, mapping, claim, fact):
-            return fact
-    return None
+) -> tuple[GoldFact, ...]:
+    """Every gold fact this claim covers. File order is not a preference."""
+    return tuple(fact for fact in day.facts if _claim_covers(day, pred, mapping, claim, fact))
 
 
 def _collapse_duplicate_claims(
@@ -1702,36 +1750,113 @@ def _collapse_duplicate_claims(
     day: DayGold,
     pred: PredictedDay,
     mapping: dict[str, str],
+    *,
+    matched: Sequence[PredictedClaim] = (),
+    cover_of: dict[str, frozenset[str]] | None = None,
+    cited_of: dict[str, frozenset[str]] | None = None,
 ) -> list[PredictedClaim]:
-    """Keep one covering claim per deal+slot+best-fact with overlapping citations.
+    """Drop unmatched leftovers that copy a matched claim's covered facts.
 
-    Text is ignored. Two dumps that cover the same best fact and share a cited
-    segment count once for pairing. Claims that cover nothing stay as separate
-    precision misses so repeats cannot inflate the numerator by collapsing FPs.
+    A leftover is a duplicate when it shares deal and slot with a matched
+    claim, its covered-fact set is a subset of that claim's set, and their
+    cited segments overlap. Text and file order are ignored. Claims that
+    cover nothing stay as separate precision misses.
     """
-    kept: list[tuple[str, str, str, frozenset[str]]] = []
+    cover_of = cover_of or {}
+    cited_of = cited_of or {}
+    matched_rows: list[tuple[str, str, frozenset[str], frozenset[str]]] = []
+    for claim in matched:
+        covered = cover_of.get(claim.id)
+        cited = cited_of.get(claim.id)
+        if covered is None:
+            covered = frozenset(fact.id for fact in _claim_covered_facts(day, pred, mapping, claim))
+        if cited is None:
+            cited = _claim_cited_segments(day, pred, claim)
+        if not covered or not cited:
+            continue
+        matched_rows.append((claim.deal, claim.slot, covered, cited))
+    matched_ids = {claim.id for claim in matched}
     out: list[PredictedClaim] = []
     for claim in claims:
-        best = _claim_best_fact(day, pred, mapping, claim)
-        cited = _claim_cited_segments(day, pred, claim)
-        if best is None or not cited:
+        if claim.id in matched_ids:
+            out.append(claim)
+            continue
+        covered = cover_of.get(claim.id)
+        cited = cited_of.get(claim.id)
+        if covered is None:
+            covered = frozenset(fact.id for fact in _claim_covered_facts(day, pred, mapping, claim))
+        if cited is None:
+            cited = _claim_cited_segments(day, pred, claim)
+        if not covered or not cited:
             out.append(claim)
             continue
         duplicate = False
-        for deal, slot, best_id, kept_cited in kept:
+        for deal, slot, kept_cover, kept_cited in matched_rows:
             if (
                 deal == claim.deal
                 and slot == claim.slot
-                and best_id == best.id
+                and covered <= kept_cover
                 and kept_cited & cited
             ):
                 duplicate = True
                 break
         if duplicate:
             continue
-        kept.append((claim.deal, claim.slot, best.id, cited))
         out.append(claim)
     return out
+
+
+def _maximum_claim_fact_matching(
+    claims: Sequence[PredictedClaim],
+    cover_of: dict[str, tuple[GoldFact, ...]],
+) -> list[tuple[PredictedClaim, GoldFact]]:
+    """Maximum 1:1 matching by augmenting paths. No file-order fact preference."""
+    claim_by_id = {claim.id: claim for claim in claims}
+    adj: dict[str, list[GoldFact]] = {
+        claim.id: list(cover_of.get(claim.id) or ()) for claim in claims
+    }
+    fact_owner: dict[str, str] = {}
+
+    def _augment(claim_id: str, seen: set[str]) -> bool:
+        for fact in adj[claim_id]:
+            if fact.id in seen:
+                continue
+            seen.add(fact.id)
+            occupant = fact_owner.get(fact.id)
+            if occupant is None or _augment(occupant, seen):
+                fact_owner[fact.id] = claim_id
+                return True
+        return False
+
+    for claim in claims:
+        if adj[claim.id]:
+            _augment(claim.id, set())
+    fact_by_id = {fact.id: fact for facts in adj.values() for fact in facts}
+    paired: list[tuple[PredictedClaim, GoldFact]] = []
+    used_claims: set[str] = set()
+    for fact_id, claim_id in fact_owner.items():
+        if claim_id in used_claims:
+            continue
+        used_claims.add(claim_id)
+        paired.append((claim_by_id[claim_id], fact_by_id[fact_id]))
+    return paired
+
+
+def _last_fact_greedy_matching(
+    claims: Sequence[PredictedClaim],
+    cover_of: dict[str, tuple[GoldFact, ...]],
+) -> list[tuple[PredictedClaim, GoldFact]]:
+    """Greedy last-covered-fact pairing. Maximum matching must beat this."""
+    used_facts: set[str] = set()
+    paired: list[tuple[PredictedClaim, GoldFact]] = []
+    for claim in claims:
+        for fact in reversed(cover_of.get(claim.id) or ()):
+            if fact.id in used_facts:
+                continue
+            used_facts.add(fact.id)
+            paired.append((claim, fact))
+            break
+    return paired
 
 
 def _pair_claims(
@@ -1739,29 +1864,87 @@ def _pair_claims(
     pred: PredictedDay,
     mapping: dict[str, str],
 ) -> list[tuple[PredictedClaim, GoldFact]]:
-    """1:1 inside (day, matched deal, slot).
+    """1:1 inside (day, matched deal, slot) by maximum matching.
 
-    Collapse claims that do the same work (same deal, slot, best fact, overlapping
-    cited segments), then walk gold facts in file order and assign the first unused
-    covering claim. Each remaining claim credits at most one fact. Extra copies of
-    a credited claim are not true positives; they stay in the precision denominator.
+    Pair claims to facts first so a paraphrase that also names an earlier fact
+    can still take its own fact. Then drop unmatched leftovers that copy a
+    matched claim (same deal and slot, covered-fact set is a subset, overlapping
+    cited segments). Extra copies are not true positives; they stay in the
+    precision denominator. File order never chooses the credited fact.
     """
-    used: set[str] = set()
-    paired: list[tuple[PredictedClaim, GoldFact]] = []
     inverse = {gold_id: pred_id for pred_id, gold_id in mapping.items()}
-    claims = _collapse_duplicate_claims(pred.claims, day, pred, mapping)
-    for fact in day.facts:
-        pred_id = inverse.get(fact.deal_id)
-        if pred_id is None:
+    cover_of: dict[str, tuple[GoldFact, ...]] = {}
+    cover_ids: dict[str, frozenset[str]] = {}
+    cited_of: dict[str, frozenset[str]] = {}
+    for claim in pred.claims:
+        covered = tuple(
+            fact
+            for fact in _claim_covered_facts(day, pred, mapping, claim)
+            if inverse.get(fact.deal_id) == claim.deal
+        )
+        cover_of[claim.id] = covered
+        cover_ids[claim.id] = frozenset(fact.id for fact in covered)
+        cited_of[claim.id] = _claim_cited_segments(day, pred, claim)
+    candidates = _matching_representatives(pred.claims, cover_ids, cited_of)
+    paired = _maximum_claim_fact_matching(candidates, cover_of)
+    matched_claims = [claim for claim, _fact in paired]
+    collapsed = _collapse_duplicate_claims(
+        pred.claims,
+        day,
+        pred,
+        mapping,
+        matched=matched_claims,
+        cover_of=cover_ids,
+        cited_of=cited_of,
+    )
+    keep = {claim.id for claim in collapsed}
+    return [(claim, fact) for claim, fact in paired if claim.id in keep]
+
+
+def _token_jaccard(left: str, right: str) -> float:
+    a = set(content_tokens(left))
+    b = set(content_tokens(right))
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _matching_representatives(
+    claims: Sequence[PredictedClaim],
+    cover_ids: dict[str, frozenset[str]],
+    cited_of: dict[str, frozenset[str]],
+) -> list[PredictedClaim]:
+    """Same covered-fact set with overlapping citations counts once when packed.
+
+    Near-duplicate dumps (high token overlap, or three or more facts) count
+    once. Atomic paraphrases that mention another fact stay so maximum
+    matching can assign each its own fact. File order is not used.
+    """
+    kept: list[PredictedClaim] = []
+    rows: list[tuple[str, str, frozenset[str], frozenset[str], str]] = []
+    for claim in claims:
+        covered = cover_ids.get(claim.id, frozenset())
+        cited = cited_of.get(claim.id, frozenset())
+        if not covered or not cited:
+            kept.append(claim)
             continue
-        for claim in claims:
-            if claim.id in used or claim.deal != pred_id or claim.slot != fact.slot:
+        duplicate = False
+        for deal, slot, kept_cover, kept_cited, kept_text in rows:
+            if deal != claim.deal or slot != claim.slot:
                 continue
-            if _claim_covers(day, pred, mapping, claim, fact):
-                used.add(claim.id)
-                paired.append((claim, fact))
+            if covered != kept_cover:
+                continue
+            if not (kept_cited & cited):
+                continue
+            packed = len(covered) >= 3 or _token_jaccard(kept_text, claim.text) >= 0.7
+            if packed:
+                duplicate = True
                 break
-    return paired
+        if duplicate:
+            continue
+        rows.append((claim.deal, claim.slot, covered, cited, claim.text))
+        kept.append(claim)
+    return kept
 
 
 def _claim_covers(
@@ -2174,6 +2357,49 @@ def _duplicate_what_claims(
             claims.append(
                 PredictedClaim(
                     id=f"dump-dup-who-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="who_involved",
+                    text=window,
+                    evidence=list(evidence),
+                )
+            )
+    return claims
+
+
+def _sliding_dump_claims(
+    day: DayGold,
+    *,
+    width: int = 6,
+    stride: int = 2,
+) -> list[PredictedClaim]:
+    """Gold-free sliding windows: what holds the window, next is will-window, who the window."""
+    claims: list[PredictedClaim] = []
+    for deal in day.deals:
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        windows = sliding_term_windows(deal_term_list(day, deal.id), width=width, stride=stride)
+        for window_index, window in enumerate(windows):
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-slide-what-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="what_happened",
+                    text=window,
+                    evidence=list(evidence),
+                )
+            )
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-slide-next-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="next_step",
+                    text=f"will {window}".strip(),
+                    evidence=list(evidence),
+                )
+            )
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-slide-who-{day.name}-{deal.id}-{window_index}",
                     deal=deal.id,
                     slot="who_involved",
                     text=window,
@@ -2599,6 +2825,7 @@ __all__ = [
     "baseline_keyword_dump_over_cap",
     "baseline_keyword_dump_packed",
     "baseline_keyword_dump_please",
+    "baseline_keyword_dump_sliding",
     "baseline_keyword_dump_will_prefix",
     "baseline_keyword_dump_within_cap",
     "baseline_keyword_dump_within_cap_will_next",
@@ -2638,6 +2865,7 @@ __all__ = [
     "score_deals",
     "score_grouping",
     "score_summary",
+    "sliding_term_windows",
     "stable_id",
     "validate_corpus",
     "validate_day",

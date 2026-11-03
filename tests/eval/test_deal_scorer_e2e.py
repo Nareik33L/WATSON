@@ -22,8 +22,12 @@ from watson.intelligence.eval.deals import (
     PredictedDay,
     PredictedEvidence,
     PredictedSegment,
+    _claim_covered_facts,
     _claim_covers,
+    _collapse_duplicate_claims,
     _fact_signature,
+    _last_fact_greedy_matching,
+    _maximum_claim_fact_matching,
     _pair_claims,
     _stored_pipeline_texts,
     _unsupported,
@@ -717,9 +721,170 @@ def test_score_deals_honest_control_on_gold() -> None:
     filled = score_deals(gold, honest_prediction_filled(gold))
     for score in (bare, filled):
         assert score.grouping.accuracy == 1.0
-        assert score.summary.accuracy >= 0.85
+        assert score.summary.accuracy == pytest.approx(1.0)
         assert score.summary.unsupported == 0
         assert not score.privacy_fail
+
+
+def test_honest_paraphrases_that_name_an_earlier_fact_score_1() -> None:
+    gold = load_deal_corpus()
+    predicted = honest_prediction(gold)
+    rewritten = 0
+    for day in predicted.days:
+        for claim in day.claims:
+            if claim.text == "Noted the 14 Nov demo":
+                claim.text = "Noted the 14 Nov demo after the pricing call"
+                rewritten += 1
+            if claim.text == "Opened the onboarding draft":
+                claim.text = "Opened the onboarding draft after editing the onboarding page"
+                rewritten += 1
+    assert rewritten == 2
+    score = score_deals(gold, predicted)
+    assert score.summary.accuracy == pytest.approx(1.0)
+    assert score.summary.what_happened_recall == pytest.approx(1.0)
+    assert score.summary.unsupported == 0
+
+
+def test_max_matching_kills_last_covered_fact_greedy() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call 14 Nov demo")},
+        facts=[
+            GoldFact(
+                "f-call",
+                "acme-q4",
+                "what_happened",
+                ("pricing", "call"),
+                {"date": ("14 nov",)},
+                ("s1",),
+            ),
+            GoldFact(
+                "f-demo", "acme-q4", "what_happened", ("demo",), {"date": ("14 nov",)}, ("s1",)
+            ),
+        ],
+    )
+    both = _claim("Noted the 14 Nov demo after the pricing call", claim_id="c-both")
+    late = _claim("Noted the 14 Nov demo", claim_id="c-late")
+    early = _claim("joined the pricing call", claim_id="c-early")
+    gold = DealCorpus(days=[day])
+    pred = _pred(day, claims=[both, late, early]).days[0]
+    mapping = {"acme-q4": "acme-q4"}
+    cover_of = {claim.id: _claim_covered_facts(day, pred, mapping, claim) for claim in pred.claims}
+    assert {fact.id for fact in cover_of["c-both"]} == {"f-call", "f-demo"}
+    assert {fact.id for fact in cover_of["c-late"]} == {"f-demo"}
+    assert {fact.id for fact in cover_of["c-early"]} == {"f-call"}
+    assert len(_maximum_claim_fact_matching([both, late], cover_of)) == 2
+    assert len(_last_fact_greedy_matching([both, late], cover_of)) == 1
+    assert len(_maximum_claim_fact_matching([both, early], cover_of)) == 2
+    assert len(_last_fact_greedy_matching([both, early], cover_of)) == 2
+    late_score = score_deals(gold, _pred(day, claims=[both, late]))
+    assert late_score.summary.correct == 2
+    assert late_score.summary.what_happened_recall == pytest.approx(1.0)
+    early_score = score_deals(gold, _pred(day, claims=[both, early]))
+    assert early_score.summary.correct == 2
+    assert early_score.summary.what_happened_recall == pytest.approx(1.0)
+
+
+def test_leftover_collapse_requires_slot_deal_and_citation_overlap() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1"), _seg("s2", "acme-q4", "f2")],
+        frames={
+            "f1": Frame("f1", "pricing call demo"),
+            "f2": Frame("f2", "pricing call demo"),
+        },
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact("f-demo", "acme-q4", "what_happened", ("demo",), {}, ("s1",)),
+        ],
+    )
+    matched = _claim("Noted the 14 Nov demo after the pricing call", claim_id="kept")
+    copy = _claim("Noted the 14 Nov demo after the pricing call", claim_id="copy")
+    other_slot = _claim(
+        "Noted the 14 Nov demo after the pricing call",
+        slot="next_step",
+        claim_id="next",
+    )
+    other_deal = _claim(
+        "Noted the 14 Nov demo after the pricing call",
+        deal="other",
+        claim_id="deal",
+    )
+    disjoint = PredictedClaim(
+        "disjoint",
+        "acme-q4",
+        "what_happened",
+        "Noted the 14 Nov demo after the pricing call",
+        [PredictedEvidence(segment_id="s2")],
+    )
+    pred = _pred(day, claims=[matched, copy, other_slot, other_deal, disjoint]).days[0]
+    cover = frozenset({"f-call", "f-demo"})
+    subset = frozenset({"f-demo"})
+    collapsed = _collapse_duplicate_claims(
+        pred.claims,
+        day,
+        pred,
+        {"acme-q4": "acme-q4", "other": "acme-q4"},
+        matched=[matched],
+        cover_of={
+            "kept": cover,
+            "copy": subset,
+            "next": subset,
+            "deal": subset,
+            "disjoint": subset,
+        },
+        cited_of={
+            "kept": frozenset({"s1"}),
+            "copy": frozenset({"s1"}),
+            "next": frozenset({"s1"}),
+            "deal": frozenset({"s1"}),
+            "disjoint": frozenset({"s2"}),
+        },
+    )
+    ids = {claim.id for claim in collapsed}
+    assert ids == {"kept", "next", "deal", "disjoint"}
+
+
+def test_collapse_requires_citation_overlap() -> None:
+    day = _day(
+        segments=[
+            _seg("s1", "acme-q4", "f1"),
+            _seg("s2", "acme-q4", "f2"),
+            _seg("s3", "acme-q4", "f3"),
+        ],
+        frames={
+            "f1": Frame("f1", "pricing call"),
+            "f2": Frame("f2", "q4 deck"),
+            "f3": Frame("f3", "pricing call q4 deck"),
+        },
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1", "s3")),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s2", "s3")),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    split = _pred(
+        day,
+        claims=[
+            PredictedClaim(
+                "c-ab",
+                "acme-q4",
+                "what_happened",
+                "joined the pricing call q4 deck",
+                [PredictedEvidence(segment_id="s1"), PredictedEvidence(segment_id="s2")],
+            ),
+            PredictedClaim(
+                "c-c",
+                "acme-q4",
+                "what_happened",
+                "joined the pricing call q4 deck",
+                [PredictedEvidence(segment_id="s3")],
+            ),
+        ],
+    )
+    score = score_deals(gold, split)
+    assert score.summary.correct == 2
+    assert score.summary.claims == 2
+    assert score.summary.what_happened_recall == pytest.approx(1.0)
 
 
 def test_score_deals_uncovered_gold_is_missing() -> None:
@@ -1302,7 +1467,6 @@ def test_pair_claims_one_claim_one_fact_keeps_the_break() -> None:
     mapping = {"acme-q4": "acme-q4"}
     packed_pairs = _pair_claims(day, packed, mapping)
     assert len(packed_pairs) == 1
-    assert packed_pairs[0][1].id == "f-call"
     two_cover = _pred(
         day,
         claims=[

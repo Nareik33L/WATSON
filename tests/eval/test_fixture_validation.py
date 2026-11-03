@@ -32,6 +32,7 @@ from watson.intelligence.eval.deals import (
     baseline_keyword_dump_over_cap,
     baseline_keyword_dump_packed,
     baseline_keyword_dump_please,
+    baseline_keyword_dump_sliding,
     baseline_keyword_dump_will_prefix,
     baseline_keyword_dump_within_cap,
     baseline_keyword_dump_within_cap_will_next,
@@ -51,6 +52,7 @@ from watson.intelligence.eval.deals import (
     privacy_bait_legal,
     privacy_leak,
     score_deals,
+    sliding_term_windows,
     validate_corpus,
 )
 
@@ -154,6 +156,9 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-extra-what-will-next": score_deals(
             gold, baseline_keyword_dump_extra_what_will_next(gold)
         ).summary.accuracy,
+        "keyword-dump-sliding-6-2": score_deals(
+            gold, baseline_keyword_dump_sliding(gold, width=6, stride=2)
+        ).summary.accuracy,
     }
     for filler in ("please", "still", "revised", "discussed"):
         rows[f"keyword-dump-duplicate-{filler}"] = score_deals(
@@ -209,6 +214,7 @@ def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
         baseline_keyword_dump_will_prefix(gold),
         baseline_keyword_dump_extra_what(gold),
         baseline_keyword_dump_duplicate_what(gold),
+        baseline_keyword_dump_sliding(gold),
         baseline_keyword_dump_within_cap_will_next(gold),
         honest_prediction(gold, DEAL_GOLD),
         honest_prediction_filled(gold, DEAL_GOLD),
@@ -324,6 +330,10 @@ def test_baseline_score_table(gold) -> None:
             "keyword-dump-extra-what-will-next",
             score_deals(gold, baseline_keyword_dump_extra_what_will_next(gold)).summary,
         ),
+        (
+            "keyword-dump-sliding-6-2",
+            score_deals(gold, baseline_keyword_dump_sliding(gold, width=6, stride=2)).summary,
+        ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
         (
             "honest-summary-filled",
@@ -423,3 +433,42 @@ def test_v1_pipeline_overlays_use_fixture_frame_ids() -> None:
             for frame_id in segment.frame_ids:
                 parsed = uuid.UUID(frame_id)
                 assert parsed.version == 5
+
+
+def test_sliding_6_2_dump_stays_below_gate(gold) -> None:
+    predicted = baseline_keyword_dump_sliding(gold, width=6, stride=2)
+    saw = False
+    for day in predicted.days:
+        what = [claim for claim in day.claims if claim.slot == "what_happened"]
+        nxt = [claim for claim in day.claims if claim.slot == "next_step"]
+        who = [claim for claim in day.claims if claim.slot == "who_involved"]
+        if not what:
+            continue
+        saw = True
+        assert len(what) == len(nxt) == len(who)
+        for claim in nxt:
+            assert claim.text.startswith("will ")
+        for left, right in zip(what, who, strict=True):
+            assert left.text == right.text
+    assert saw
+    score = score_deals(gold, predicted).summary
+    assert score.accuracy < GATE, f"sliding 6/2 summary {score.accuracy:.3f} must be < {GATE}"
+
+
+def test_sliding_window_nearby_settings_stay_below_gate(gold) -> None:
+    scores: list[float] = []
+    for width in (5, 6, 7):
+        for stride in (1, 2, 3):
+            accuracy = score_deals(
+                gold, baseline_keyword_dump_sliding(gold, width=width, stride=stride)
+            ).summary.accuracy
+            scores.append(accuracy)
+            assert accuracy < GATE, (
+                f"sliding width={width} stride={stride} summary {accuracy:.3f} must be < {GATE}"
+            )
+    assert max(scores) < GATE
+    assert sliding_term_windows(
+        ["pricing", "call", "q4", "deck", "demo", "priya", "send"],
+        width=6,
+        stride=2,
+    ) == ["pricing call q4 deck demo priya", "q4 deck demo priya send"]

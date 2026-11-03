@@ -84,8 +84,8 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-ignore-best",
-        "                and best_id == best.id\n",
-        "                and True\n",
+        "            if covered != kept_cover:\n                continue\n",
+        "            if False and covered != kept_cover:\n                continue\n",
     ),
     (
         "stored-empty",
@@ -123,21 +123,19 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     (
         "pair-no-break",
         (
-            "            if _claim_covers(day, pred, mapping, claim, fact):\n"
-            "                used.add(claim.id)\n"
-            "                paired.append((claim, fact))\n"
-            "                break\n"
+            "            if occupant is None or _augment(occupant, seen):\n"
+            "                fact_owner[fact.id] = claim_id\n"
+            "                return True\n"
         ),
         (
-            "            if _claim_covers(day, pred, mapping, claim, fact):\n"
-            "                paired.append((claim, fact))\n"
-            "                break\n"
+            "            if occupant is None or _augment(occupant, seen):\n"
+            "                fact_owner[fact.id] = claim_id\n"
         ),
     ),
     (
-        "pair-ignore-deal",
-        "            if claim.id in used or claim.deal != pred_id or claim.slot != fact.slot:\n",
-        "            if claim.id in used or claim.slot != fact.slot:\n",
+        "last-cover",
+        "    paired = _maximum_claim_fact_matching(candidates, cover_of)\n",
+        "    paired = _last_fact_greedy_matching(candidates, cover_of)\n",
     ),
     (
         "contradict-slot",
@@ -186,13 +184,35 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-skip",
-        "        if duplicate:\n            continue\n",
-        "        if False and duplicate:\n            continue\n",
+        (
+            "        if duplicate:\n"
+            "            continue\n"
+            "        rows.append((claim.deal, claim.slot, covered, cited, claim.text))\n"
+        ),
+        (
+            "        if False and duplicate:\n"
+            "            continue\n"
+            "        rows.append((claim.deal, claim.slot, covered, cited, claim.text))\n"
+        ),
     ),
     (
         "collapse-best-none",
-        "        best = _claim_best_fact(day, pred, mapping, claim)\n",
-        "        best = None\n",
+        (
+            "        covered = tuple(\n"
+            "            fact\n"
+            "            for fact in _claim_covered_facts(day, pred, mapping, claim)\n"
+            "            if inverse.get(fact.deal_id) == claim.deal\n"
+            "        )\n"
+            "        cover_of[claim.id] = covered\n"
+        ),
+        (
+            "        covered = tuple(\n"
+            "            fact\n"
+            "            for fact in ()\n"
+            "            if inverse.get(fact.deal_id) == claim.deal\n"
+            "        )\n"
+            "        cover_of[claim.id] = covered\n"
+        ),
     ),
     (
         "amount-false-unit",
@@ -327,9 +347,9 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         ),
     ),
     (
-        "pair-skip-used",
-        "            if claim.id in used or claim.deal != pred_id or claim.slot != fact.slot:\n",
-        "            if claim.deal != pred_id or claim.slot != fact.slot:\n",
+        "collapse-ignore-overlap",
+        "            if not (kept_cited & cited):\n                continue\n",
+        "            if False and not (kept_cited & cited):\n                continue\n",
     ),
     (
         "covers-terms",
@@ -484,13 +504,13 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-identity",
-        "    claims = _collapse_duplicate_claims(pred.claims, day, pred, mapping)\n",
-        "    claims = list(pred.claims)\n",
+        "    candidates = _matching_representatives(pred.claims, cover_ids, cited_of)\n",
+        "    candidates = list(pred.claims)\n",
     ),
     (
         "pair-pred-none",
-        "        cited = _claim_cited_segments(day, pred, claim)\n",
-        "        cited = frozenset()\n",
+        "        cited_of[claim.id] = _claim_cited_segments(day, pred, claim)\n",
+        "        cited_of[claim.id] = frozenset()\n",
     ),
     (
         "covers-slot",
