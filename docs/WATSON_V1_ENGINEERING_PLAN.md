@@ -5,6 +5,8 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-03, QA on #45 @de6f062):** Claim length and one-claim-one-fact caps; keyword-dump baseline. Per-slot modals (done vs planned, will vs may). Aliases bounded; weekday ≠ date. Correct claims must overlap gold `evidence_segments`. Unmatched-deal citation test (2) is cluster membership only. Same-company "guarantee" replaced by a computed fixture-validation test (the 12/1/1/1 corpus must fail it). `privacy_bait` only on frames already `skipped` as excluded. §14 / D8 / D10 / D11 unchanged.
+
 **Changelog (2026-11-03, QA on #45 @9b43417):** Excluded-app bait is correct when `missing`/`none` and a hard privacy FAIL if it appears in a deal or summary. Gold summaries are atomic facts with required terms (not exact strings); unsupported is citation failure only. Deal matching is per fixture day, then counts pool. Look-alike floor raised so group-by-company scores < 0.85. §14 / D8 / D10 / D11 unchanged.
 
 **Changelog (2026-11-03, QA on #45):** §8 restores "Nothing else leaves the app"; deal-summary export is copy-as-Markdown or `.md` only. §11.2 metrics restated so they are computable and not gameable (segment alignment by fixture id / `frame_ids`; one greedy max-overlap deal match; pooled pairwise F1 + assignment + deal-segment recall; summary precision and recall; fixture minimums; trivial-output check). Parked `thresholds.json` rows become report-only at M3f; until then the committed file still selects the bake-off model. §3.5 understanding retrieval stays in V1. §14 / D8 / D10 / D11 unchanged.
@@ -586,26 +588,26 @@ deal_summaries:
     next_step:
       - id: fact-q4-send
         required_terms: [send, pricing, friday]
-        aliases: {friday: [friday, "14 nov", "14 november"]}
+        aliases: {pricing: [pricing, price]}
         evidence_segments: [s-mail-priya-am]
 noise: [news site 10:42–10:49, personal calendar glance]
 ```
 
 Gold summaries are **atomic facts** (one fact per gold row), not a paragraph. Each fact has `required_terms` and optional `aliases`. Every fact has non-empty `evidence_segments` whose ids exist on that day.
 
-**Corpus minimums** (chosen numbers; M3f fixtures must meet all of them):
+**Corpus guidance** (authoring targets, **not** a guarantee that trivial baselines fail):
 
-| Floor | Value |
+| Guidance | Value |
 |---|---|
 | Days | **5** (the existing five, all relabelled with deals: focused, fragmented, meeting-heavy, sensitive-trap, near-empty) |
 | Distinct gold deals | **≥ 8** across the corpus |
 | Multi-touch deals | **≥ 3**, each with email **and** call **and** doc/CRM segments on the same day |
-| Same-company / different-deal pairs | **≥ 4** unordered pairs of gold deals that share a company token and must stay distinct; those deals cover **≥ 30 %** of gold deal-segments (pooled). This is the floor that keeps group-by-company < 0.85 |
+| Same-company / different-deal pairs | **≥ 4** unordered pairs; as a writing hint, segments of all-but-the-largest deal in each same-company group ≥ 20 % of deal-segments (that would cap company-merge recall at 0.80). **The computed fixture-validation test in §11.2 is authoritative.** |
 | Look-alike name pairs | **≥ 2** (shared name token, not only the company token; must stay distinct gold deals) |
 | Non-deal noise | **≥ 20 %** of gold segments, pooled |
 | Interleaved deals | **≥ 2** gold deals on every non-empty day (the near-empty day may have 0–1) |
 | Confusable people | **≥ 1** pair of roster people who share a first name or a full name (disambiguated by `person_id` + company) |
-| Excluded-app bait | **≥ 1** `privacy_bait: true` segment whose OCR looks like a deal but lives in an excluded app |
+| Excluded-app bait | **≥ 1** `privacy_bait: true` segment; every frame of it must already be `skipped` (`excluded_app` or `excluded_title`) |
 | Evidence | every gold fact has `evidence_segments`; every listed segment id exists |
 
 Existing fixtures that still carry `projects` / `decisions` / `commitments` / `completed` fields keep those keys for parked work (§16). They are not the V1 quality gate.
@@ -647,7 +649,13 @@ After the pipeline runs, each predicted segment still carries those fixture fram
 
 No other joining key is used. Pipeline-internal UUIDs are ignored.
 
-**Privacy-bait segments** (`privacy_bait: true`; frames belong only to excluded apps/titles). Replay correctly skips them, so they are usually `missing`. They are **excluded from grouping accuracy** (they are not in the assignment / deal-segment-recall / pairwise denominators). `missing` or `none` is the expected label and is not a miss. If any bait frame, its OCR, or a snippet from it appears in a predicted deal cluster or in any summary claim / evidence row, that is a **hard privacy FAIL** of the eval (in addition to §11.3). Bait in a deal or summary can never be a grouping or summary credit.
+**Privacy-bait segments** (`privacy_bait: true`). Replay correctly skips them, so they are usually `missing`. They are **excluded from grouping accuracy** (they are not in the assignment / deal-segment-recall / pairwise denominators). `missing` or `none` is the expected label and is not a miss. If any bait frame, its OCR, or a snippet from it appears in a predicted deal cluster or in any summary claim / evidence row, that is a **hard privacy FAIL** of the eval (in addition to §11.3). Bait in a deal or summary can never be a grouping or summary credit.
+
+**`privacy_bait` fixture check** (required at M3f; fails the build):
+
+1. `privacy_bait: true` is legal **only** when every `frame_id` of that gold segment is present in the fixture **and** is `skipped` with reason `excluded_app` or `excluded_title`. A captured / extracted / hard segment cannot be flagged bait to pull it out of scoring.
+2. Every excluded-app or excluded-title bait segment in the fixtures is listed with `privacy_bait: true` (none are omitted).
+3. After replay, those frames and their OCR are **asserted absent** from all stored output: no `frame_text`, no observation, no claim, no evidence snippet.
 
 #### Deal-cluster matching (one algorithm, per day)
 
@@ -691,7 +699,7 @@ Treat `none` as its own class. Form counts **per day**, then **pool**. Privacy-b
 
 `pairwise_precision = TP / (TP + FP)` after pooling. If `TP + FP = 0` (no predicted pairs), **pairwise_precision = 0**. If `TP + FN = 0`, pairwise_recall = 0. The single vacuous exception: no gold deal in the corpus has two or more non-bait segments **and** there are no predicted pairs — then P = 1 and R = 1. `pairwise_F1 = 2PR / (P + R)` when P+R > 0, else 0.
 
-All-`none` on this corpus (which has multi-touch deals) has TP = 0, FN > 0, P = 0, F1 = 0. One giant predicted deal has high recall and low precision, so F1 is far below 0.85. Group-by-company is forced below 0.85 by the ≥ 4 same-company/different-deal pairs covering ≥ 30 % of deal-segments.
+All-`none` on a multi-touch corpus has TP = 0, FN > 0, P = 0, F1 = 0. One giant predicted deal has high recall and low precision on a balanced day. **Do not treat the guidance counts as a guarantee.** A 60-segment corpus with 12 noise, Acme deals sized 12/1/1/1 (6 same-company pairs, 31 % of deal-segments) and other deals 8/8/8/9 scores group-by-company recall 0.938, assignment 0.95, pairwise F1 **0.905** — it meets every old count floor and still passes 0.85. The computed fixture-validation test below **must reject that shape**.
 
 **Deal grouping accuracy** = `min(assignment_accuracy, deal_segment_recall, pairwise_F1)`. Gate: ≥ 0.85.
 
@@ -709,11 +717,40 @@ OCR checked for required terms is the redacted `frame_text` of those cited frame
 
 **Slots.** Every predicted summary claim must carry `slot` ∈ {`what_happened`, `who_involved`, `next_step`}. A claim with a missing or unknown slot is a precision miss (false). Gold facts use the same three slots.
 
-**Atomic gold facts.** Each gold row is one fact with `required_terms` (and optional `aliases`). Terms are matched after `normalize()` (casefold, strip parentheticals, punctuation to space, collapse whitespace) **and** after number/date form folding (`14 Nov` = `14 november` = `2026-11-14`; `2` = `two` only when both are the same gold term's aliases) **and** after expanding entity aliases from the day's roster (`Priya Natarajan (Acme)` and `Priya Natarajan` both satisfy `person_id: priya-natarajan` when that name is unique). A predicted claim **covers** a gold fact iff every required term appears as a token in the normalized predicted text (aliases count as the term).
+**Length cap (keyword stuffing).** After `normalize()` and dropping `ITEM_STOPWORDS`, a predicted claim may have at most **24 content tokens**. Over-length claims cannot cover any gold fact; they are precision misses (not unsupported) if their citations resolve.
 
-This is **not** exact-string equality. Paraphrase is allowed when the required terms are present. Pairing is 1:1 inside `(day, matched deal, slot)`: walk gold facts in file order; take the first unused predicted claim in emission order that covers it. A gold fact is consumed once.
+**One claim, one fact.** A predicted claim satisfies **at most one** gold fact. Pairing is 1:1 inside `(day, matched deal, slot)`: walk gold facts in file order; take the first unused predicted claim in emission order that covers it. A gold fact is consumed once. A claim that also contains a required term belonging **exclusively** to a different gold fact on that day (after alias expansion) does **not** cover — that is a keyword dump.
 
-**#41-style mutant tests** (required at M3f, same guards as parked item matching): a gold fact must **not** match a prediction that flips polarity/negation, a number or date, a weekday, or a resolved `person_id`. Those mutants live next to the scorer.
+**Atomic gold facts.** Each gold row is one fact with `required_terms` (or a `person_id`) and optional `aliases`. A predicted claim **covers** a gold fact iff all of these hold:
+
+1. Same fixture day, same slot, predicted cluster matched to that gold deal.
+2. Every required term of **that one fact** appears as a **contiguous-word phrase** in the normalized predicted text (aliases count as the term).
+3. The claim is within the 24-token cap and does not contain an exclusive required term of another gold fact that day.
+4. Slot modal rules pass (below).
+5. Cited gold segments **overlap** that fact's `evidence_segments` (see evidence link).
+
+This is **not** exact-string equality. Paraphrase is allowed when the required terms of that one fact are present and the caps hold.
+
+**Per-slot modal rules.** Token sets after normalize:
+
+| Slot | Accepts | Rejects (no cover) |
+|---|---|---|
+| `what_happened` | Observed / past (`sent`, `agreed`, `happened`) | Intent / future / commitment: `will`, `should`, `need to`, `going to`, `plan to` |
+| `next_step` | Commitment: `will`, `should`, `need to` (or a bare imperative that names the action) | **Done** forms of the same verb (`sent` vs `send`); hedges `might`, `may`, `could`; negation `not`, `never`, `won't` |
+| `who_involved` | Resolved `person_id` | n/a (modals ignored) |
+
+So a next step stated as done vs planned does not match, and `will` vs `may` does not match. `#41` polarity/date/name guards still apply, **except** `should` / `need to` / `will` are **not** reject-modals on `next_step` (they would have rejected "Kieran should send revised pricing by Friday").
+
+**Modal / stuffing mutants** (required at M3f): `what_happened` + `will`/`should`; `next_step` + `may`/`might`/`could`/`won't`/`sent`; a weekday swapped for a calendar date; a keyword dump of all deal OCR. None of these cover.
+
+**Aliases (closed list, fixture-checked).** The only allowed aliases are:
+
+1. **Roster person forms** for that `person_id` only: `name`, `name (company)`, `name company`.
+2. **Number forms of the same value:** `2` / `two`. Not a different number.
+3. **Date forms of the same calendar date:** `14 nov` / `14 november` / `2026-11-14`. **A weekday never matches a date** (`friday` ≠ `14 nov`; 14 Nov 2026 is a Saturday).
+4. **Per-fact `aliases` map:** each required term → at most **3** contiguous phrases; each phrase has ≥ 1 content token; no phrase that is only `ITEM_STOPWORDS`; no phrase that is a required term or alias of a **different deal**; no phrase that is **exclusive** to a different fact on the same deal (shared terms such as `pricing` on two facts of one deal are allowed).
+
+A fixture-validation test rejects weekday↔date aliases, stopword aliases, cross-fact aliases, and more than 3 aliases per term.
 
 **Who (`person_entities_match`).** Do **not** use `names_match` (substring). Resolve the predicted string to a roster `person_id`:
 
@@ -722,40 +759,47 @@ This is **not** exact-string equality. Paraphrase is allowed when the required t
 3. If two or more roster people share that full name, the prediction must also include a company (or other roster qualifier) that uniquely selects one `person_id`. Otherwise it is unresolved.
 4. First name only, company only, or any proper substring is **not** a resolution.
 
-Two who-facts match iff they resolve to the same `person_id`. The gold who-fact's `person_id` is the required term.
+Two who-facts match iff they resolve to the same `person_id`. The gold who-fact's `person_id` is the required term. **Evidence link for who:** the claim's cited gold segments must **intersect** that who-fact's `evidence_segments` (the segments where that person is on screen). A correct who-claim that cites only some other segment of the same deal does not cover.
 
-**Correct predicted claim.** On a predicted cluster that **matches** a gold deal that day: the claim covers a still-unpaired gold fact in the same slot on that gold deal (1:1). That is a true positive for precision and for that slot's recall.
+**Gold evidence link (all slots).** A claim is correct only if the gold segments of its cited frames **intersect** the paired fact's `evidence_segments`. Screen-text required-term checks on those cited frames still apply. A citation that is merely "somewhere on the same deal" is not enough.
 
-**Unsupported** is **citation failure only**. A predicted claim is unsupported iff any of:
+**Correct predicted claim.** On a predicted cluster that **matches** a gold deal that day: the claim covers a still-unpaired gold fact in the same slot on that gold deal (1:1), with evidence-segment overlap. That is a true positive for precision and for that slot's recall.
 
-1. It has no resolvable citation (no evidence row, or the cite does not map to a fixture frame id).
-2. No cited frame belongs to the predicted cluster / matched gold deal for that day.
-3. The cited frames' OCR does not contain the required terms of the gold fact it is paired with. Unpaired (extra) claims skip this clause — they are not unsupported merely for lacking a gold match.
+**Unsupported** is **citation failure only**. Tests:
 
-Well-cited extra claims (citations resolve to that deal, required-term check does not apply) are **precision misses, not unsupported**. Claims on a predicted cluster that matches **no** gold deal that day are **precision misses** (denominator); they are unsupported only if their citations also fail (1) or (2) with no matched deal to attach to. They are never skipped. Gold facts on unmatched gold deals are recall misses.
+1. **Resolve.** The claim has no resolvable citation (no evidence row, or the cite does not map to a fixture frame id) → unsupported.
+2. **Cluster / deal membership** — two cases, do not mix them:
+   - **Matched predicted deal:** at least one cited frame must belong to the matched gold deal that day. If none do → unsupported.
+   - **Unmatched predicted deal:** test (2) checks **predicted-cluster membership only**. At least one cited frame must belong to that predicted cluster. If yes, and (1) passed, the claim is a **precision miss, not unsupported**. If no cited frame is on that cluster → unsupported. This is the only reading: an unmatched-deal claim is never both a precision miss and unsupported, and it never zeroes the summary score by itself.
+3. **Paired evidence text.** If the claim is paired with a gold fact, the cited frames' OCR must contain that fact's required terms **and** the cited gold segments must intersect `evidence_segments`. Failure → unsupported. Unpaired (extra) claims **skip** this clause.
+
+Well-cited extra claims are **precision misses, not unsupported**. Gold facts on unmatched gold deals are recall misses. Claims are never skipped from the precision denominator.
 
 **Strict claim precision** = (correct predicted claims) / (all predicted summary claims, including unmatched-deal claims). If there are no predicted claims and the corpus has at least one gold fact, precision is **0.0**. If both sides are empty, precision is **1.0**.
 
 **Slot recall** for `what_happened`, `next_step`, and `who_involved` = (gold facts in that slot paired with a correct prediction) / (gold facts in that slot). If a slot has zero gold facts in the corpus, omit it from the min below.
 
-**Unsupported count** = predicted claims that fail the citation tests above. Gate: **0**. A paraphrase that is well cited and covers the required terms is not unsupported.
+**Unsupported count** = predicted claims that fail the citation tests above. Gate: **0**.
 
-**Deal summary accuracy** = `min(claim_precision, what_happened_recall, next_step_recall, who_involved_recall)` when unsupported count is 0, else **0.0**. Gate: ≥ 0.85. An empty-summary baseline therefore scores 0 when gold key facts exist.
+**Deal summary accuracy** = `min(claim_precision, what_happened_recall, next_step_recall, who_involved_recall)` when unsupported count is 0, else **0.0**. Gate: ≥ 0.85.
 
-#### Trivial-output check (required at M3f)
+#### Fixture-validation test (authoritative; required at M3f)
 
-Once M3f lands, a unit/eval test must run these baselines on the §11.1 fixtures and assert **each** scores deal grouping accuracy < 0.85 and/or deal summary accuracy < 0.85 as applicable:
+A build-time test **computes every trivial baseline on the actual gold corpus** (no model). The build **fails** if any baseline's deal grouping accuracy or deal summary accuracy is **≥ 0.85**. Guidance counts in §11.1 do not substitute for this test.
 
-| Baseline | Grouping | Summary |
+| Baseline | How it is produced | Must score |
 |---|---|---|
-| All-`none` (every segment `none`) | < 0.85 | — |
-| One deal for the whole day (and, separately, one deal for the whole corpus) | < 0.85 | — |
-| One deal per gold segment | < 0.85 | — |
-| Group by `bundle_id` / app | < 0.85 | — |
-| **Group by company token** (window title / deal name) | **< 0.85** | — |
-| Empty summary (no claims) | — | < 0.85 |
+| All-`none` | every non-bait segment → `none` | grouping < 0.85 |
+| All-one-deal | one predicted cluster for the whole day; and separately one cluster for the whole corpus | grouping < 0.85 |
+| One deal per gold segment | each segment its own cluster | grouping < 0.85 |
+| Group by app | cluster = `bundle_id` | grouping < 0.85 |
+| Group by company | cluster = company token in window title / deal name | grouping < 0.85 |
+| Empty summary | no claims | summary < 0.85 |
+| **Keyword dump** | for each gold fact, one claim whose text is the unique OCR tokens of **all** segments of that deal that day, cited to all those segments | summary < 0.85 |
 
-Group-by-company is in this list because a plausible corpus scored 0.864 without the raised same-company floor. If a baseline ever scores ≥ 0.85, the fixtures are too weak and must be thickened before the model gate is trusted. Privacy-bait leaking into a baseline deal is a privacy FAIL, not a grouping credit.
+The 12/1/1/1 Acme shape (60 segments, 12 noise, Acme 12/1/1/1, others 8/8/8/9, group-by-company F1 **0.905**) is a **required failing fixture** of this test: the checker must load that synthetic gold (or an equivalent packed into `tests/fixtures`) and assert group-by-company ≥ 0.85 so the validator is proven to catch it. The committed V1 corpus must then be a different shape that the same checker accepts (every listed baseline < 0.85).
+
+Privacy-bait leaking into a baseline deal is a privacy FAIL, not a grouping credit.
 
 ### 11.3 Privacy tests
 
@@ -846,7 +890,7 @@ Runtime adapters, understanding prompt and schema, claims/evidence, entity resol
 
 Retarget consolidation so the day's segments cluster by **sales opportunity / deal**, then emit one daily summary per deal (what happened, who was involved, next step; every claim cited). Add gold fixtures for multi-touch deals (email + call + doc/CRM in one day), look-alike deal names, and non-deal noise. Score the §11.2 gate as defined above. Markdown export of that day's deal summaries is enough; weekly/project/achievement reports stay parked.
 
-*Acceptance:* deal grouping accuracy ≥ 0.85 and deal summary accuracy ≥ 0.85 on the fixture corpus with the bake-off model (the 0.85 gate is the allowance; there is no extra zero-tolerance merge rule); unsupported summary claims = 0 (citation failures only); re-running consolidation twice yields identical deal clusters and row counts; each matched gold deal has a visible cited summary; the §11.2 trivial-output baselines each score below 0.85, including group-by-company; fixtures meet the §11.1 minimums; excluded-app bait is absent or `none` and never appears in a deal or summary; parked `thresholds.json` rows are report-only; §11.3 privacy tests still pass. Parked extractors (§16) are not required. §3.5 retrieval stays.
+*Acceptance:* deal grouping accuracy ≥ 0.85 and deal summary accuracy ≥ 0.85 on the fixture corpus with the bake-off model (the 0.85 gate is the allowance; there is no extra zero-tolerance merge rule); unsupported summary claims = 0 (citation failures only); re-running consolidation twice yields identical deal clusters and row counts; each matched gold deal has a visible cited summary; the §11.2 **fixture-validation test** is green (every trivial baseline < 0.85 on the committed gold, including group-by-company and keyword dump; the 12/1/1/1 corpus is asserted to fail that check); `privacy_bait` frames are `skipped` excluded_app/title and absent from stored output; parked `thresholds.json` rows are report-only; §11.3 privacy tests still pass. Parked extractors (§16) are not required. §3.5 retrieval stays.
 
 *Tagged build:* `v0.3.1-m3f`.
 
