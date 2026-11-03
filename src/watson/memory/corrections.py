@@ -6,9 +6,10 @@ sets ``merged_into_id`` and copies aliases; rename keeps the old name as
 an alias. Rows are never rewritten.
 
 Within the same ``pipeline_version``, overlay is by ``target_id`` only.
-Across versions, rematch only when exactly one old-generation claim and
-exactly one current claim share the item key or evidence key (keys include
-project/person context). Anything ambiguous is orphaned and kept.
+Across versions, compute every old→new edge via the item key and the
+evidence key first (keys include project/person context), then keep only a
+strict bijection. Many-to-one, one-to-many, or text-vs-evidence disagreement
+orphans every involved correction. Existing rows are not updated.
 """
 
 from __future__ import annotations
@@ -282,9 +283,9 @@ def match_claim_corrections(
 ) -> tuple[dict[str, tuple[Correction, ...]], tuple[Correction, ...]]:
     """Map current claims to correction histories; leftover rows are orphans.
 
-    Same-version rows match ``target_id`` only. Older rows rematch only on a
-    1:1 item or evidence key, counted across every recoverable claim in that
-    old generation and every current claim. Existing rows are not updated.
+    Same-version rows match ``target_id`` only. Older rows rematch only after
+    the whole cross-version mapping is reduced to a strict bijection. Existing
+    rows are not updated.
     """
     stored = _claim_corrections(conn, working_day_id=working_day_id, pipeline_version=None)
     empty: dict[str, tuple[Correction, ...]] = {str(row["id"]): () for row in claims}
@@ -304,18 +305,22 @@ def match_claim_corrections(
     evidence_index = {
         version: _key_index(idents, "evidence_key") for version, idents in generations.items()
     }
+    rematch = _cross_version_bijection(
+        current_version=pipeline_version,
+        generations=generations,
+        item_index=item_index,
+        evidence_index=evidence_index,
+    )
     attached: dict[str, dict[str, Correction]] = {claim_id: {} for claim_id in current_ids}
     used: set[str] = set()
     for item in stored:
-        target = _attach_correction(
-            item,
-            current_ids=current_ids,
-            current_version=pipeline_version,
-            generations=generations,
-            item_index=item_index,
-            evidence_index=evidence_index,
-        )
-        if target is None or target not in attached:
+        if item.pipeline_version >= pipeline_version:
+            target = item.target_id if item.target_id in current_ids else None
+        else:
+            target = rematch.get((item.pipeline_version, item.target_id))
+            if target not in current_ids:
+                target = None
+        if target is None:
             continue
         attached[target][item.id] = item
         used.add(item.id)
@@ -388,42 +393,44 @@ def _key_index(idents: dict[str, _ClaimIdentity], field: str) -> dict[str, list[
     return grouped
 
 
-def _unique_claim(index: dict[str, list[str]], key: str | None) -> str | None:
-    if key is None:
-        return None
-    hits = index.get(key, ())
-    if len(hits) != 1:
-        return None
-    return hits[0]
-
-
-def _attach_correction(
-    item: Correction,
+def _cross_version_bijection(
     *,
-    current_ids: set[str],
     current_version: int,
     generations: dict[int, dict[str, _ClaimIdentity]],
     item_index: dict[int, dict[str, list[str]]],
     evidence_index: dict[int, dict[str, list[str]]],
-) -> str | None:
-    if item.pipeline_version >= current_version:
-        return item.target_id if item.target_id in current_ids else None
-    old = generations.get(item.pipeline_version, {})
-    ident = old.get(item.target_id)
-    if ident is None:
-        return None
-    candidates: set[str] = set()
-    item_hit = _unique_claim(item_index[item.pipeline_version], ident.item_key)
-    current_item = _unique_claim(item_index[current_version], ident.item_key)
-    if item_hit == item.target_id and current_item is not None:
-        candidates.add(current_item)
-    evidence_hit = _unique_claim(evidence_index[item.pipeline_version], ident.evidence_key)
-    current_evidence = _unique_claim(evidence_index[current_version], ident.evidence_key)
-    if evidence_hit == item.target_id and current_evidence is not None:
-        candidates.add(current_evidence)
-    if len(candidates) != 1:
-        return None
-    return next(iter(candidates))
+) -> dict[tuple[int, str], str]:
+    """Map ``(old_version, old_claim_id)`` to a current claim id.
+
+    Every old claim is considered, not only corrected ones. Text and evidence
+    paths are unioned first. If they disagree, or if more than one old claim
+    reaches the same new claim by either path, every involved old claim is
+    dropped. The remainder is a 1:1 mapping.
+    """
+    current_items = item_index.get(current_version, {})
+    current_evidence = evidence_index.get(current_version, {})
+    provisional: dict[tuple[int, str], set[str]] = {}
+    incoming: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for version, idents in generations.items():
+        if version >= current_version:
+            continue
+        for old_id, ident in idents.items():
+            news = set(current_items.get(ident.item_key, ()))
+            if ident.evidence_key:
+                news.update(current_evidence.get(ident.evidence_key, ()))
+            old_key = (version, old_id)
+            provisional[old_key] = news
+            for claim_id in news:
+                incoming[claim_id].append(old_key)
+    mapping: dict[tuple[int, str], str] = {}
+    for old_key, news in provisional.items():
+        if len(news) != 1:
+            continue
+        claim_id = next(iter(news))
+        if len(incoming[claim_id]) != 1:
+            continue
+        mapping[old_key] = claim_id
+    return mapping
 
 
 def _claim_corrections(

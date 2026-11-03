@@ -35,8 +35,10 @@ from watson.memory.corrections import (
     rejected_claim_ids,
     rename_entity,
 )
+from watson.memory.ids import new_id
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.consolidation import (
+    ConsolidateSettings,
     _insert_achievements,
     _load_claims,
     consolidate_working_day,
@@ -786,6 +788,499 @@ def test_two_to_one_cross_version_is_orphaned(tmp_path: Path) -> None:
         orphans = orphaned_corrections(conn, working_day_id=first["day_id"], pipeline_version=newer)
         assert [item.id for item in orphans] == [recorded.id]
         assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def _seed_scoped_claim(
+    conn: object,
+    *,
+    text: str,
+    snippet: str,
+    day_id: str | None = None,
+    pipeline_version: int = PIPELINE_VERSION,
+    project: str | None = None,
+    person: str | None = None,
+    captured_at: str = "2026-10-31T09:00:00Z",
+    kind: str = "outcome",
+) -> dict[str, str]:
+    if day_id is None:
+        day_id = _insert_day(conn)
+    frame_id = _insert_frame(conn, day_id, captured_at=captured_at)
+    segment_id = _insert_segment(conn, day_id, frame_id, started_at=captured_at)
+    observation_id = _insert_observation(
+        conn,
+        segment_id,
+        project_candidates=None if project is None else [project],
+        people_candidates=None if person is None else [person],
+    )
+    claim_id = _insert_claim(
+        conn,
+        observation_id,
+        day_id,
+        segment_id,
+        frame_id,
+        kind=kind,
+        assertion="observed",
+        text=text,
+        pipeline_version=pipeline_version,
+        snippet=snippet,
+        created_at=captured_at,
+    )
+    return {
+        "day_id": day_id,
+        "frame_id": frame_id,
+        "segment_id": segment_id,
+        "observation_id": observation_id,
+        "claim_id": claim_id,
+    }
+
+
+def _overlay_by_id(
+    conn: object, day_id: str, pipeline_version: int
+) -> dict[str, dict[str, object]]:
+    rows = apply_claim_corrections(
+        conn,
+        _load_claims(conn, day_id, pipeline_version),
+        working_day_id=day_id,
+        pipeline_version=pipeline_version,
+    )
+    return {str(row["id"]): row for row in rows}
+
+
+def test_project_and_person_scope_keep_same_text_and_snippet_apart(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        _insert_entity(conn, name="Acme")
+        _insert_entity(conn, name="Beta")
+        _insert_entity(conn, name="Priya", typ="person")
+        _insert_entity(conn, name="Jordan", typ="person")
+        old_acme = _seed_scoped_claim(
+            conn, text="Wrote intro", snippet="Shared OCR line", project="Acme"
+        )
+        day_id = old_acme["day_id"]
+        old_priya = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=day_id,
+            person="Priya",
+            captured_at="2026-10-31T10:00:00Z",
+        )
+        record_claim_correction(conn, old_acme["claim_id"], "correct", new_text="Shipped intro")
+        record_claim_correction(conn, old_priya["claim_id"], "correct", new_text="Priya shipped")
+        new_acme = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=day_id,
+            pipeline_version=newer,
+            project="Acme",
+            captured_at="2026-10-31T11:00:00Z",
+        )
+        new_beta = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=day_id,
+            pipeline_version=newer,
+            project="Beta",
+            captured_at="2026-10-31T12:00:00Z",
+        )
+        new_priya = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=day_id,
+            pipeline_version=newer,
+            person="Priya",
+            captured_at="2026-10-31T13:00:00Z",
+        )
+        new_jordan = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=day_id,
+            pipeline_version=newer,
+            person="Jordan",
+            captured_at="2026-10-31T14:00:00Z",
+        )
+        by_id = _overlay_by_id(conn, day_id, newer)
+        assert by_id[new_acme["claim_id"]]["text"] == "Shipped intro"
+        assert by_id[new_beta["claim_id"]]["text"] == "Wrote intro"
+        assert by_id[new_priya["claim_id"]]["text"] == "Priya shipped"
+        assert by_id[new_jordan["claim_id"]]["text"] == "Wrote intro"
+        assert orphaned_corrections(conn, working_day_id=day_id, pipeline_version=newer) == ()
+    finally:
+        conn.close()
+
+
+def test_merged_entity_scope_still_rematches(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        dest = _insert_entity(conn, name="Acme")
+        source = _insert_entity(conn, name="Old Acme")
+        old = _seed_scoped_claim(
+            conn, text="Wrote intro", snippet="Acme intro OCR", project="Old Acme"
+        )
+        record_claim_correction(conn, old["claim_id"], "correct", new_text="Shipped intro")
+        merge_entities(conn, source, dest)
+        later = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Acme intro OCR",
+            day_id=old["day_id"],
+            pipeline_version=newer,
+            project="Acme",
+            captured_at="2026-10-31T11:00:00Z",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[later["claim_id"]]["text"] == "Shipped intro"
+        assert (
+            orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer) == ()
+        )
+    finally:
+        conn.close()
+
+
+def test_unresolved_scope_names_do_not_collapse(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        old = _seed_scoped_claim(
+            conn, text="Wrote intro", snippet="Shared OCR line", project="Acme"
+        )
+        record_claim_correction(conn, old["claim_id"], "correct", new_text="Shipped intro")
+        new_acme = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=old["day_id"],
+            pipeline_version=newer,
+            project="Acme",
+            captured_at="2026-10-31T11:00:00Z",
+        )
+        new_beta = _seed_scoped_claim(
+            conn,
+            text="Wrote intro",
+            snippet="Shared OCR line",
+            day_id=old["day_id"],
+            pipeline_version=newer,
+            project="Beta",
+            captured_at="2026-10-31T12:00:00Z",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[new_acme["claim_id"]]["text"] == "Shipped intro"
+        assert by_id[new_beta["claim_id"]]["text"] == "Wrote intro"
+        assert by_id[new_beta["claim_id"]]["assertion"] == "observed"
+        assert (
+            orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer) == ()
+        )
+    finally:
+        conn.close()
+
+
+def test_s8_text_path_rematch_alone(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        old = _seed_claim(conn, text="Wrote intro")
+        record_claim_correction(conn, old["claim_id"], "correct", new_text="Published intro")
+        later = _insert_claim(
+            conn,
+            old["observation_id"],
+            old["day_id"],
+            old["segment_id"],
+            old["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Different OCR line after re-understand",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[later]["text"] == "Published intro"
+        assert by_id[later]["assertion"] == "user_corrected"
+        assert (
+            orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer) == ()
+        )
+    finally:
+        conn.close()
+
+
+def test_s9_evidence_path_rematch_alone(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        old = _seed_claim(conn, text="Wrote intro")
+        record_claim_correction(conn, old["claim_id"], "correct", new_text="Published intro")
+        later = _insert_claim(
+            conn,
+            old["observation_id"],
+            old["day_id"],
+            old["segment_id"],
+            old["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Drafted the introduction",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[later]["text"] == "Published intro"
+        assert by_id[later]["assertion"] == "user_corrected"
+        assert (
+            orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer) == ()
+        )
+    finally:
+        conn.close()
+
+
+def test_s10_new_side_uniqueness_orphans(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        old = _seed_claim(conn, text="Wrote intro")
+        recorded = record_claim_correction(
+            conn, old["claim_id"], "correct", new_text="Published intro"
+        )
+        first = _insert_claim(
+            conn,
+            old["observation_id"],
+            old["day_id"],
+            old["segment_id"],
+            old["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        second = _insert_claim(
+            conn,
+            old["observation_id"],
+            old["day_id"],
+            old["segment_id"],
+            old["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[first]["text"] == "Wrote intro"
+        assert by_id[second]["text"] == "Wrote intro"
+        orphans = orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer)
+        assert [item.id for item in orphans] == [recorded.id]
+    finally:
+        conn.close()
+
+
+def test_s11_text_vs_evidence_disagreement_orphans(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        old = _seed_claim(conn, text="Wrote intro")
+        recorded = record_claim_correction(
+            conn, old["claim_id"], "correct", new_text="Published intro"
+        )
+        text_hit = _insert_claim(
+            conn,
+            old["observation_id"],
+            old["day_id"],
+            old["segment_id"],
+            old["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Different OCR line",
+        )
+        evidence_hit = _insert_claim(
+            conn,
+            old["observation_id"],
+            old["day_id"],
+            old["segment_id"],
+            old["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Fixed typo",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[text_hit]["text"] == "Wrote intro"
+        assert by_id[evidence_hit]["text"] == "Fixed typo"
+        orphans = orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer)
+        assert [item.id for item in orphans] == [recorded.id]
+    finally:
+        conn.close()
+
+
+def test_s12_many_to_one_orphans_all_corrections(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        typo = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Fixed typo",
+            snippet="Typo OCR line",
+        )
+        intro_fix = record_claim_correction(
+            conn, intro["claim_id"], "correct", new_text="Published intro"
+        )
+        typo_reject = record_claim_correction(conn, typo, "reject")
+        later = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Typo OCR line",
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newer),
+            working_day_id=intro["day_id"],
+            pipeline_version=newer,
+        )
+        assert [str(row["id"]) for row in overlayed] == [later]
+        assert overlayed[0]["text"] == "Wrote intro"
+        assert overlayed[0]["assertion"] == "observed"
+        orphans = orphaned_corrections(conn, working_day_id=intro["day_id"], pipeline_version=newer)
+        assert {item.id for item in orphans} == {intro_fix.id, typo_reject.id}
+        stored = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT target_id, action, pipeline_version FROM corrections ORDER BY rowid"
+            )
+        ]
+        assert stored == [
+            (intro["claim_id"], "correct", PIPELINE_VERSION),
+            (typo, "reject", PIPELINE_VERSION),
+        ]
+    finally:
+        conn.close()
+
+
+def test_rejected_claim_skip_survives_version_bump(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_claim(conn, text="Appendix drafted")
+        runtime = _echo()
+        record_claim_correction(conn, seeded["claim_id"], "reject")
+        later = _insert_claim(
+            conn,
+            seeded["observation_id"],
+            seeded["day_id"],
+            seeded["segment_id"],
+            seeded["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Appendix drafted",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        settings = ConsolidateSettings(pipeline_version=newer)
+        consolidate_working_day(
+            conn,
+            seeded["day_id"],
+            runtime=runtime,
+            embedding=runtime,
+            now=NOW,
+            settings=settings,
+        )
+        after = str(conn.execute("SELECT narrative_md FROM daily_summaries").fetchone()[0])
+        assert "Appendix drafted" not in after
+        assert later not in after
+        assert seeded["claim_id"] not in after
+        _insert_achievements(
+            conn, seeded["day_id"], pipeline_version=newer, stamp="2026-10-31T18:30:00Z"
+        )
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM achievement_candidates").fetchone()[0] == 0
+        assert later in rejected_claim_ids(
+            conn, working_day_id=seeded["day_id"], pipeline_version=newer
+        )
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
+        assert _claim_row(conn, seeded["claim_id"])[0] == "Appendix drafted"
+    finally:
+        conn.close()
+
+
+def test_entity_correction_orphan_is_flagged_not_deleted(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_claim(conn)
+        live = _insert_entity(conn, name="Acme Deal")
+        rename_entity(conn, live, "Acme Live")
+        stamp = "2026-10-31T12:00:00Z"
+        ghost_id = new_id()
+        conn.execute(
+            """
+            INSERT INTO corrections (
+                id, created_at, updated_at, target_type, target_id, action, new_text,
+                previous_assertion, working_day_id, pipeline_version
+            ) VALUES (?, ?, ?, 'entity', 'missing-entity', 'correct', 'Ghost', NULL, NULL, ?)
+            """,
+            (ghost_id, stamp, stamp, PIPELINE_VERSION),
+        )
+        conn.commit()
+        orphans = orphaned_corrections(conn, working_day_id=seeded["day_id"])
+        assert [item.id for item in orphans] == [ghost_id]
+        assert orphans[0].target_type == "entity"
+        assert orphans[0].target_id == "missing-entity"
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 2
+        assert (
+            str(
+                conn.execute(
+                    "SELECT canonical_name FROM entities WHERE id = ?", (live,)
+                ).fetchone()[0]
+            )
+            == "Acme Live"
+        )
+    finally:
+        conn.close()
+
+
+def test_case_folding_rematches_across_versions(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        old = _seed_scoped_claim(conn, text="Wrote Intro", snippet="OCR Line")
+        record_claim_correction(conn, old["claim_id"], "correct", new_text="Published intro")
+        later = _insert_claim(
+            conn,
+            old["observation_id"],
+            old["day_id"],
+            old["segment_id"],
+            old["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="wrote intro",
+            pipeline_version=newer,
+            snippet="ocr line",
+        )
+        by_id = _overlay_by_id(conn, old["day_id"], newer)
+        assert by_id[later]["text"] == "Published intro"
+        assert (
+            orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer) == ()
+        )
     finally:
         conn.close()
 
