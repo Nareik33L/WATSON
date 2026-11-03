@@ -691,6 +691,34 @@ def test_score_day_item_match_accepts_wording_paraphrases(tmp_path: Path) -> Non
         conn.close()
 
 
+def test_score_day_nameless_completed_is_unsupported_against_named_gold(
+    tmp_path: Path,
+) -> None:
+    """score_day gate: name-less achievement vs named gold is unsupported."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        conn.execute(
+            """
+            UPDATE claims
+            SET text = 'Sent the revised Q4 pricing deck'
+            WHERE working_day_id = ? AND kind = 'achievement'
+            """,
+            (day_id,),
+        )
+        conn.commit()
+        gold = {
+            **TRUTH,
+            "completed": ["Mina sent the revised Q4 pricing deck"],
+            "not_completed": [],
+        }
+        metrics = score_day(conn, day_id, gold)
+        assert metrics["unsupported_achievements"] == 1.0
+        assert metrics["completed_accuracy"] == 0.0
+    finally:
+        conn.close()
+
+
 def test_score_day_item_match_rejects_near_miss_commitment(tmp_path: Path) -> None:
     """A different person / day / object in the derived row is still a miss."""
     conn = _open(tmp_path)

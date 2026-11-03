@@ -924,8 +924,8 @@ def test_not_completed_uses_item_match_not_names_match() -> None:
 def test_polarity_and_relation_near_misses() -> None:
     gold = "Send revised pricing to Priya by Friday"
     assert not items_match("Won't send revised pricing to Priya by Friday", gold)
-    assert not items_match("Should send revised pricing to Priya by Friday", gold)
-    assert not items_match("Might send revised pricing to Priya by Friday", gold)
+    assert not items_match("I should send revised pricing to Priya by Friday", gold)
+    assert not items_match("I might send revised pricing to Priya by Friday", gold)
     assert not items_match("Send revised pricing from Priya by Friday", gold)
     assert not items_match("Send revised pricing to Priya or Friday", gold)
     assert not items_match(
@@ -938,17 +938,48 @@ def test_polarity_and_relation_near_misses() -> None:
     )
 
 
-def test_completed_rejects_unknown_name_on_either_side() -> None:
-    """Completed names are either-side: Jordan published … is unsupported."""
-    gold = "Onboarding Guide section 3 published"
-    jordan = "Jordan published Onboarding Guide section 3"
-    assert not items_match(jordan, gold, strict_names=True)
-    assert unsupported_count([jordan], [gold]) == 1
-    assert completed_accuracy([jordan], [gold], []) == 0.0
+def test_modal_and_date_guards_with_i_should_opener() -> None:
+    """'Should…' used to fail on the name rule; 'I should' isolates modal and date."""
+    gold = "Send Priya the slide outline tomorrow"
+    assert not items_match("I should send the slide outline tomorrow", gold)
+    assert not items_match("I should send the slide outline Friday", gold)
+    assert not items_match(
+        "I should send the slide outline Friday",
+        "I should send the slide outline tomorrow",
+    )
 
 
-def test_unknown_name_in_first_position_is_a_name() -> None:
-    """Title-case fallback includes first position, not only mid-string tokens."""
+def test_completed_nameless_pred_is_unsupported_against_named_gold() -> None:
+    """Gate path: deleting strict_names would score this pair as supported (0)."""
+    pred = "Sent the revised Q4 pricing deck"
+    gold = "Mina sent the revised Q4 pricing deck"
+    assert item_jaccard(pred, gold) >= ITEM_MATCH_JACCARD_MIN
+    assert items_match(pred, gold)
+    assert not items_match(pred, gold, strict_names=True)
+    assert unsupported_count([pred], [gold]) == 1
+    assert completed_accuracy([pred], [gold], []) == 0.0
+
+
+def test_sentence_initial_openers_are_not_names() -> None:
+    """Please / Finalised / Successfully must not trip the unsupported gate."""
+    cases = (
+        (
+            "Please published Onboarding Guide section 3",
+            "Onboarding Guide section 3 published",
+        ),
+        ("Finalised the Acme proposal appendix", "Acme proposal appendix finalised"),
+        (
+            "Successfully published Cedar Onboarding page 1",
+            "Cedar Onboarding page 1 published",
+        ),
+    )
+    for predicted, gold in cases:
+        assert items_match(predicted, gold, strict_names=True), predicted
+        assert unsupported_count([predicted], [gold]) == 0, predicted
+
+
+def test_unknown_name_in_subject_or_object_cue() -> None:
+    """Unknown title-case is a name only after/before to, will, send, sent."""
     gold = "Send Priya the slide outline tomorrow"
     first = "Jordan to send the slide outline tomorrow"
     mid = "Send Jordan the slide outline tomorrow"

@@ -203,33 +203,10 @@ _NAME_SKIP = frozenset(
         "revised",
     }
 )
-# Sentence-initial verbs so "Send Priya…" does not treat Send as a name, while
-# an unknown title-case first token ("Jordan published…") still counts.
-_LEADING_VERBS = frozenset(
-    {
-        "adopt",
-        "adopted",
-        "agree",
-        "agreed",
-        "did",
-        "does",
-        "drop",
-        "flag",
-        "keep",
-        "kept",
-        "move",
-        "moved",
-        "not",
-        "publish",
-        "published",
-        "reject",
-        "rejected",
-        "send",
-        "sent",
-        "use",
-        "used",
-    }
-)
+# Unknown title-case is a name only in subject/object cues, never as a
+# sentence-initial capital alone ("Please send…", "Successfully published…").
+_NAME_SUBJECT_CUES = frozenset({"to", "will", "sent"})
+_NAME_OBJECT_CUES = frozenset({"to", "send", "sent"})
 
 
 def normalize(text: str) -> str:
@@ -306,11 +283,12 @@ def _temporals(text: str) -> set[str]:
 
 
 def _proper_names(text: str) -> set[str]:
-    """Known fixture names plus title-case tokens (skip list and leading verbs)."""
+    """Known fixture names, plus unknown title-case tokens in subject/object cues."""
     names: set[str] = set()
     surface = [part for part in _SURFACE_SPLIT.split(_PARENS.sub(" ", text)) if part]
+    folded_all = [part.casefold() for part in surface]
     for index, token in enumerate(surface):
-        folded = token.casefold()
+        folded = folded_all[index]
         if folded in _KNOWN_NAMES:
             names.add(folded)
             continue
@@ -321,55 +299,34 @@ def _proper_names(text: str) -> set[str]:
             or folded in _MONTHS
         ):
             continue
-        if index == 0 and folded in _LEADING_VERBS:
+        if not (token[0].isupper() and folded.isalpha() and folded != "i"):
             continue
-        if token[0].isupper() and folded.isalpha() and folded != "i":
+        prev = folded_all[index - 1] if index else ""
+        nxt = folded_all[index + 1] if index + 1 < len(folded_all) else ""
+        if prev in _NAME_OBJECT_CUES or nxt in _NAME_SUBJECT_CUES:
             names.add(folded)
     return names
 
 
-def _sets_conflict(left: set[str], right: set[str], *, require_both: bool) -> bool:
-    if left == right:
-        return False
-    if require_both and (not left or not right):
-        return False
-    return bool(left or right)
+def _sets_conflict(left: set[str], right: set[str]) -> bool:
+    return left != right and bool(left or right)
 
 
-def item_guards_ok(predicted: str, truth: str, *, names: str = "off") -> bool:
-    """Polarity, relation, date/number, and optional name guards."""
+def item_guards_ok(predicted: str, truth: str) -> bool:
+    """Polarity, relation, and date/number guards. Names are handled separately."""
     pred_tokens, gold_tokens = item_tokens(predicted), item_tokens(truth)
-    if _sets_conflict(
-        _marker_set(pred_tokens, _NEGATIONS),
-        _marker_set(gold_tokens, _NEGATIONS),
-        require_both=False,
-    ):
+    if _sets_conflict(_marker_set(pred_tokens, _NEGATIONS), _marker_set(gold_tokens, _NEGATIONS)):
         return False
-    if _sets_conflict(
-        _marker_set(pred_tokens, _MODALS),
-        _marker_set(gold_tokens, _MODALS),
-        require_both=False,
-    ):
+    if _sets_conflict(_marker_set(pred_tokens, _MODALS), _marker_set(gold_tokens, _MODALS)):
         return False
-    if _sets_conflict(_status_set(pred_tokens), _status_set(gold_tokens), require_both=False):
+    if _sets_conflict(_status_set(pred_tokens), _status_set(gold_tokens)):
         return False
     body_pred = set(_item_body(predicted).split())
     body_gold = set(_item_body(truth).split())
-    if _sets_conflict(
-        _marker_set(body_pred, _RELATIONS),
-        _marker_set(body_gold, _RELATIONS),
-        require_both=False,
-    ):
+    if _sets_conflict(_marker_set(body_pred, _RELATIONS), _marker_set(body_gold, _RELATIONS)):
         return False
-    if _sets_conflict(_temporals(predicted), _temporals(truth), require_both=False):
+    if _sets_conflict(_temporals(predicted), _temporals(truth)):
         return False
-    if names != "off":
-        if _sets_conflict(
-            _proper_names(predicted),
-            _proper_names(truth),
-            require_both=(names == "both"),
-        ):
-            return False
     return True
 
 
@@ -380,7 +337,7 @@ def _content_match(predicted: str, truth: str) -> bool:
         return False
     if left == right:
         return True
-    if not item_guards_ok(predicted, truth, names="off"):
+    if not item_guards_ok(predicted, truth):
         return False
     return item_jaccard(predicted, truth) >= ITEM_MATCH_JACCARD_MIN
 
