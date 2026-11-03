@@ -231,6 +231,7 @@ def test_corrections_are_scoped_by_day_and_pipeline_version(tmp_path: Path) -> N
             assertion="observed",
             text="today-other claim",
             pipeline_version=other_version,
+            snippet="Other-day OCR line",
         )
         record_claim_correction(conn, first["claim_id"], "correct", new_text="day-one corrected")
         record_claim_correction(conn, current, "reject")
@@ -583,9 +584,208 @@ def test_corrections_are_idempotent_across_reprocessing(tmp_path: Path) -> None:
             conn,
             _load_claims(conn, seeded["day_id"], newer),
             working_day_id=seeded["day_id"],
+            pipeline_version=newer,
         )
         assert orphans == ()
         assert len(histories[bumped]) == 1
+    finally:
+        conn.close()
+
+
+def test_same_version_twin_claims_do_not_share_a_correction(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        first = _seed_claim(conn, text="Wrote intro")
+        twin = _insert_claim(
+            conn,
+            first["observation_id"],
+            first["day_id"],
+            first["segment_id"],
+            first["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            snippet="Still editing: Acme proposal appendix",
+        )
+        record_claim_correction(conn, first["claim_id"], "correct", new_text="Published intro")
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, first["day_id"], PIPELINE_VERSION),
+            working_day_id=first["day_id"],
+        )
+        by_id = {str(row["id"]): row for row in overlayed}
+        assert by_id[first["claim_id"]]["text"] == "Published intro"
+        assert by_id[twin]["text"] == "Wrote intro"
+        assert by_id[twin]["assertion"] == "observed"
+        record_claim_correction(conn, first["claim_id"], "reject")
+        after_reject = apply_claim_corrections(
+            conn,
+            _load_claims(conn, first["day_id"], PIPELINE_VERSION),
+            working_day_id=first["day_id"],
+        )
+        ids = {str(row["id"]) for row in after_reject}
+        assert first["claim_id"] not in ids
+        assert twin in ids
+        assert {str(row["id"]) for row in after_reject} == {twin}
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 2
+    finally:
+        conn.close()
+
+
+def test_same_text_does_not_cross_projects(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        acme_frame = _insert_frame(conn, day_id)
+        beta_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T11:00:00Z")
+        acme_segment = _insert_segment(conn, day_id, acme_frame)
+        beta_segment = _insert_segment(conn, day_id, beta_frame, started_at="2026-10-31T11:00:00Z")
+        _insert_entity(conn, name="Acme")
+        _insert_entity(conn, name="Beta")
+        acme_obs = _insert_observation(conn, acme_segment, project_candidates=["Acme"])
+        beta_obs = _insert_observation(conn, beta_segment, project_candidates=["Beta"])
+        old_acme = _insert_claim(
+            conn,
+            acme_obs,
+            day_id,
+            acme_segment,
+            acme_frame,
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            snippet="Acme intro OCR",
+        )
+        record_claim_correction(conn, old_acme, "correct", new_text="Shipped intro")
+        new_acme = _insert_claim(
+            conn,
+            acme_obs,
+            day_id,
+            acme_segment,
+            acme_frame,
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Acme intro OCR",
+        )
+        new_beta = _insert_claim(
+            conn,
+            beta_obs,
+            day_id,
+            beta_segment,
+            beta_frame,
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Beta intro OCR",
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, day_id, newer),
+            working_day_id=day_id,
+            pipeline_version=newer,
+        )
+        by_id = {str(row["id"]): row for row in overlayed}
+        assert by_id[new_acme]["text"] == "Shipped intro"
+        assert by_id[new_beta]["text"] == "Wrote intro"
+        assert by_id[new_beta]["assertion"] == "observed"
+        assert orphaned_corrections(conn, working_day_id=day_id, pipeline_version=newer) == ()
+    finally:
+        conn.close()
+
+
+def test_shared_snippet_on_uncorrected_claim_does_not_rematch(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        typo = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Fixed typo",
+            snippet="Still editing: Acme proposal appendix",
+        )
+        record_claim_correction(conn, intro["claim_id"], "reject")
+        later_typo = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Fixed typo",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newer),
+            working_day_id=intro["day_id"],
+            pipeline_version=newer,
+        )
+        assert [str(row["id"]) for row in overlayed] == [later_typo]
+        assert overlayed[0]["text"] == "Fixed typo"
+        assert overlayed[0]["assertion"] == "observed"
+        orphans = orphaned_corrections(conn, working_day_id=intro["day_id"], pipeline_version=newer)
+        assert len(orphans) == 1
+        assert orphans[0].target_id == intro["claim_id"]
+        assert orphans[0].action == "reject"
+        assert typo not in {str(row["id"]) for row in overlayed}
+    finally:
+        conn.close()
+
+
+def test_two_to_one_cross_version_is_orphaned(tmp_path: Path) -> None:
+    newer = PIPELINE_VERSION + 1
+    conn = _open(tmp_path)
+    try:
+        first = _seed_claim(conn, text="Wrote intro")
+        _insert_claim(
+            conn,
+            first["observation_id"],
+            first["day_id"],
+            first["segment_id"],
+            first["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            snippet="Still editing: Acme proposal appendix",
+        )
+        recorded = record_claim_correction(
+            conn, first["claim_id"], "correct", new_text="Published intro"
+        )
+        later = _insert_claim(
+            conn,
+            first["observation_id"],
+            first["day_id"],
+            first["segment_id"],
+            first["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Wrote intro",
+            pipeline_version=newer,
+            snippet="Still editing: Acme proposal appendix",
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, first["day_id"], newer),
+            working_day_id=first["day_id"],
+            pipeline_version=newer,
+        )
+        assert overlayed[0]["id"] == later
+        assert overlayed[0]["text"] == "Wrote intro"
+        assert overlayed[0]["assertion"] == "observed"
+        orphans = orphaned_corrections(conn, working_day_id=first["day_id"], pipeline_version=newer)
+        assert [item.id for item in orphans] == [recorded.id]
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 1
     finally:
         conn.close()
 

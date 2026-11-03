@@ -137,7 +137,12 @@ def _claims(
     claim_dicts = [
         {"id": str(row["id"]), "kind": str(row["kind"]), "text": str(row["text"])} for row in rows
     ]
-    histories = match_claim_corrections(conn, claim_dicts, working_day_id=working_day_id)[0]
+    histories = match_claim_corrections(
+        conn,
+        claim_dicts,
+        working_day_id=working_day_id,
+        pipeline_version=pipeline_version,
+    )[0]
     out: list[MemoryClaim] = []
     for row in rows:
         ident = str(row["id"])

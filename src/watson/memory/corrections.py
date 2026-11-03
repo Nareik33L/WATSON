@@ -3,14 +3,17 @@
 Corrections are new rows linked to the claim or entity they address.
 Claim text and evidence are never overwritten or deleted. Entity merge
 sets ``merged_into_id`` and copies aliases; rename keeps the old name as
-an alias. Rows are never rewritten. After a ``pipeline_version`` bump,
-a correction still applies when the same canonical entity, item key
-(kind + folded original text) or unique evidence key still exists.
-Otherwise it is orphaned and kept.
+an alias. Rows are never rewritten.
+
+Within the same ``pipeline_version``, overlay is by ``target_id`` only.
+Across versions, rematch only when exactly one old-generation claim and
+exactly one current claim share the item key or evidence key (keys include
+project/person context). Anything ambiguous is orphaned and kept.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -235,8 +238,9 @@ def apply_claim_corrections(
     exclude_rejected: bool = True,
 ) -> list[dict[str, Any]]:
     """Overlay corrected text/assertion. Optionally drop reject/not_work."""
-    _ = pipeline_version
-    histories = match_claim_corrections(conn, claims, working_day_id=working_day_id)[0]
+    histories = match_claim_corrections(
+        conn, claims, working_day_id=working_day_id, pipeline_version=pipeline_version
+    )[0]
     out: list[dict[str, Any]] = []
     for row in claims:
         history = histories.get(str(row["id"]), ())
@@ -259,7 +263,9 @@ def rejected_claim_ids(
     pipeline_version: int = PIPELINE_VERSION,
 ) -> frozenset[str]:
     claims = _claim_rows(conn, working_day_id, pipeline_version)
-    histories = match_claim_corrections(conn, claims, working_day_id=working_day_id)[0]
+    histories = match_claim_corrections(
+        conn, claims, working_day_id=working_day_id, pipeline_version=pipeline_version
+    )[0]
     skipped: set[str] = set()
     for claim_id, history in histories.items():
         if history and history[-1].action in EXCLUDED_ACTIONS:
@@ -272,60 +278,51 @@ def match_claim_corrections(
     claims: list[dict[str, Any]],
     *,
     working_day_id: str,
+    pipeline_version: int = PIPELINE_VERSION,
 ) -> tuple[dict[str, tuple[Correction, ...]], tuple[Correction, ...]]:
     """Map current claims to correction histories; leftover rows are orphans.
 
-    Matching prefers the recorded claim id, then the same item key (kind +
-    folded original text), then a unique evidence key on this day. Existing
-    correction rows are not updated.
+    Same-version rows match ``target_id`` only. Older rows rematch only on a
+    1:1 item or evidence key, counted across every recoverable claim in that
+    old generation and every current claim. Existing rows are not updated.
     """
     stored = _claim_corrections(conn, working_day_id=working_day_id, pipeline_version=None)
+    empty: dict[str, tuple[Correction, ...]] = {str(row["id"]): () for row in claims}
     if not stored:
-        return {str(row["id"]): () for row in claims}, ()
+        return empty, ()
     order = {item.id: index for index, item in enumerate(stored)}
-    originals = _claim_identities(conn, {item.target_id for item in stored})
-    current = _claim_identities(conn, {str(row["id"]) for row in claims})
-    by_target: dict[str, list[Correction]] = defaultdict(list)
-    by_item: dict[str, list[Correction]] = defaultdict(list)
-    by_evidence: dict[str, list[Correction]] = defaultdict(list)
-    for item in stored:
-        by_target[item.target_id].append(item)
-        ident = originals.get(item.target_id)
-        if ident is None:
-            continue
-        by_item[ident.item_key].append(item)
-        if ident.evidence_key is not None:
-            by_evidence[ident.evidence_key].append(item)
-    current_evidence_counts: dict[str, int] = defaultdict(int)
-    for ident in current.values():
-        if ident.evidence_key is not None:
-            current_evidence_counts[ident.evidence_key] += 1
-    original_evidence_counts: dict[str, int] = defaultdict(int)
-    for ident in originals.values():
-        if ident.evidence_key is not None:
-            original_evidence_counts[ident.evidence_key] += 1
-    matched: dict[str, tuple[Correction, ...]] = {}
+    current_ids = {str(row["id"]) for row in claims}
+    versions = {pipeline_version} | {
+        item.pipeline_version for item in stored if item.pipeline_version < pipeline_version
+    }
+    generations = {
+        version: _generation_identities(conn, working_day_id, version) for version in versions
+    }
+    item_index = {
+        version: _key_index(idents, "item_key") for version, idents in generations.items()
+    }
+    evidence_index = {
+        version: _key_index(idents, "evidence_key") for version, idents in generations.items()
+    }
+    attached: dict[str, dict[str, Correction]] = {claim_id: {} for claim_id in current_ids}
     used: set[str] = set()
-    for row in claims:
-        claim_id = str(row["id"])
-        ident = current.get(claim_id)
-        found: dict[str, Correction] = {}
-        for item in by_target.get(claim_id, ()):
-            found[item.id] = item
-        if ident is not None:
-            for item in by_item.get(ident.item_key, ()):
-                found[item.id] = item
-            evidence_key = ident.evidence_key
-            if (
-                evidence_key is not None
-                and current_evidence_counts[evidence_key] == 1
-                and original_evidence_counts[evidence_key] == 1
-            ):
-                for item in by_evidence.get(evidence_key, ()):
-                    found[item.id] = item
-        history = tuple(sorted(found.values(), key=lambda item: order[item.id]))
-        matched[claim_id] = history
-        used.update(item.id for item in history)
+    for item in stored:
+        target = _attach_correction(
+            item,
+            current_ids=current_ids,
+            current_version=pipeline_version,
+            generations=generations,
+            item_index=item_index,
+            evidence_index=evidence_index,
+        )
+        if target is None or target not in attached:
+            continue
+        attached[target][item.id] = item
+        used.add(item.id)
+    matched = {
+        claim_id: tuple(sorted(found.values(), key=lambda row: order[row.id]))
+        for claim_id, found in attached.items()
+    }
     orphans = tuple(item for item in stored if item.id not in used)
     return matched, orphans
 
@@ -342,7 +339,9 @@ def orphaned_corrections(
     when the canonical entity id is missing. Nothing is deleted.
     """
     claims = _claim_rows(conn, working_day_id, pipeline_version)
-    claim_orphans = match_claim_corrections(conn, claims, working_day_id=working_day_id)[1]
+    claim_orphans = match_claim_corrections(
+        conn, claims, working_day_id=working_day_id, pipeline_version=pipeline_version
+    )[1]
     return claim_orphans + _orphaned_entity_corrections(conn)
 
 
@@ -356,15 +355,75 @@ def _fold(value: str) -> str:
     return " ".join(_FOLD.sub(" ", value.casefold()).split())
 
 
-def _item_key(kind: str, text: str) -> str:
-    return f"item:{kind}:{_fold(text)}"
+def _item_key(context: str, kind: str, text: str) -> str:
+    return f"item:{context}:{kind}:{_fold(text)}"
 
 
-def _evidence_key(kind: str, snippets: tuple[str, ...]) -> str | None:
+def _evidence_key(context: str, kind: str, snippets: tuple[str, ...]) -> str | None:
     folded = tuple(sorted({_fold(snippet) for snippet in snippets if _fold(snippet)}))
     if not folded:
         return None
-    return f"evidence:{kind}:" + "|".join(folded)
+    return f"evidence:{context}:{kind}:" + "|".join(folded)
+
+
+def _generation_identities(
+    conn: sqlcipher.Connection, working_day_id: str, pipeline_version: int
+) -> dict[str, _ClaimIdentity]:
+    rows = conn.execute(
+        """
+        SELECT id FROM claims
+        WHERE working_day_id = ? AND pipeline_version = ?
+        """,
+        (working_day_id, pipeline_version),
+    ).fetchall()
+    return _claim_identities(conn, {str(row["id"]) for row in rows})
+
+
+def _key_index(idents: dict[str, _ClaimIdentity], field: str) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = defaultdict(list)
+    for claim_id, ident in idents.items():
+        key = ident.item_key if field == "item_key" else ident.evidence_key
+        if key:
+            grouped[key].append(claim_id)
+    return grouped
+
+
+def _unique_claim(index: dict[str, list[str]], key: str | None) -> str | None:
+    if key is None:
+        return None
+    hits = index.get(key, ())
+    if len(hits) != 1:
+        return None
+    return hits[0]
+
+
+def _attach_correction(
+    item: Correction,
+    *,
+    current_ids: set[str],
+    current_version: int,
+    generations: dict[int, dict[str, _ClaimIdentity]],
+    item_index: dict[int, dict[str, list[str]]],
+    evidence_index: dict[int, dict[str, list[str]]],
+) -> str | None:
+    if item.pipeline_version >= current_version:
+        return item.target_id if item.target_id in current_ids else None
+    old = generations.get(item.pipeline_version, {})
+    ident = old.get(item.target_id)
+    if ident is None:
+        return None
+    candidates: set[str] = set()
+    item_hit = _unique_claim(item_index[item.pipeline_version], ident.item_key)
+    current_item = _unique_claim(item_index[current_version], ident.item_key)
+    if item_hit == item.target_id and current_item is not None:
+        candidates.add(current_item)
+    evidence_hit = _unique_claim(evidence_index[item.pipeline_version], ident.evidence_key)
+    current_evidence = _unique_claim(evidence_index[current_version], ident.evidence_key)
+    if evidence_hit == item.target_id and current_evidence is not None:
+        candidates.add(current_evidence)
+    if len(candidates) != 1:
+        return None
+    return next(iter(candidates))
 
 
 def _claim_corrections(
@@ -418,7 +477,12 @@ def _claim_identities(conn: sqlcipher.Connection, claim_ids: set[str]) -> dict[s
         return {}
     placeholders = ",".join("?" for _ in claim_ids)
     claims = conn.execute(
-        f"SELECT id, kind, text FROM claims WHERE id IN ({placeholders})",
+        f"""
+        SELECT c.id AS id, c.kind AS kind, c.text AS text, o.raw_json AS raw_json
+        FROM claims c
+        JOIN observations o ON o.id = c.observation_id
+        WHERE c.id IN ({placeholders})
+        """,
         tuple(claim_ids),
     ).fetchall()
     snippets: dict[str, list[str]] = {str(row["id"]): [] for row in claims}
@@ -432,11 +496,52 @@ def _claim_identities(conn: sqlcipher.Connection, claim_ids: set[str]) -> dict[s
     for row in claims:
         claim_id = str(row["id"])
         kind = str(row["kind"])
+        context = _context_key(conn, str(row["raw_json"] or ""))
         out[claim_id] = _ClaimIdentity(
-            item_key=_item_key(kind, str(row["text"])),
-            evidence_key=_evidence_key(kind, tuple(snippets.get(claim_id, ()))),
+            item_key=_item_key(context, kind, str(row["text"])),
+            evidence_key=_evidence_key(context, kind, tuple(snippets.get(claim_id, ()))),
         )
     return out
+
+
+def _context_key(conn: sqlcipher.Connection, raw_json: str) -> str:
+    try:
+        payload = json.loads(raw_json or "{}")
+    except json.JSONDecodeError:
+        return "none"
+    if not isinstance(payload, dict):
+        return "none"
+    parts: list[str] = []
+    for typ, field in (("project", "project_candidates"), ("person", "people_candidates")):
+        names = payload.get(field) or []
+        if not isinstance(names, list):
+            continue
+        for name in names:
+            if not isinstance(name, str) or not name.strip():
+                continue
+            resolved = _resolve_entity(conn, name, typ)
+            parts.append(resolved or f"{typ}:{normalize_alias(name)}")
+    return ",".join(sorted(parts)) if parts else "none"
+
+
+def _resolve_entity(conn: sqlcipher.Connection, name: str, typ: str) -> str | None:
+    needle = normalize_alias(name)
+    if not needle:
+        return None
+    row = conn.execute(
+        """
+        SELECT e.id
+        FROM entities e
+        LEFT JOIN entity_aliases a ON a.entity_id = e.id
+        WHERE e.type = ?
+          AND e.merged_into_id IS NULL
+          AND (lower(e.canonical_name) = ? OR lower(a.alias) = ?)
+        ORDER BY e.provisional ASC, e.canonical_name, e.id
+        LIMIT 1
+        """,
+        (typ, needle, needle),
+    ).fetchone()
+    return None if row is None else str(row["id"])
 
 
 def _orphaned_entity_corrections(conn: sqlcipher.Connection) -> tuple[Correction, ...]:
