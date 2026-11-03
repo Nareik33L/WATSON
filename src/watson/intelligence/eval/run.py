@@ -36,6 +36,7 @@ from watson.intelligence.runtime.stats import (
 )
 from watson.intelligence.runtime.types import RuntimeUnavailable
 from watson.memory.db import connect, parse_iso
+from watson.memory.ids import bind_issued, reset_issued
 from watson.memory.migrate import upgrade_head
 from watson.pipeline.consolidation import (
     ConsolidationError,
@@ -107,6 +108,7 @@ class EvalReport:
     headroom: dict[str, Any] = field(default_factory=dict)
     measure_model: bool = False
     completed_without_kill: float = 0.0
+    model: str | None = None
 
     @property
     def pipeline_passed(self) -> bool:
@@ -155,7 +157,11 @@ def build_eval_runtime(
                 f"replay mode refuses implicit {runtime_name!r}. "
                 "Use --mode replay (default) or --runtime fake."
             )
-        return RecordingRuntime(path=recordings, mode="replay")
+        expected = ""
+        if config is not None:
+            intel = getattr(config, "intelligence", None)
+            expected = str(getattr(intel, "llm_model", "") or "")
+        return RecordingRuntime(path=recordings, mode="replay", expected_model=expected)
     if runtime_name != "ollama":
         raise RuntimeUnavailable(
             "record mode requires --runtime ollama (FakeRuntime is --runtime fake)."
@@ -192,6 +198,7 @@ def run_eval(
     days: list[DayEval] = []
     failure_reason: str | None = None
     runtime: Any = None
+    issued_token = bind_issued()
     try:
         runtime = build_eval_runtime(
             mode=mode, runtime_name=runtime_name, recordings=path, config=config
@@ -216,6 +223,7 @@ def run_eval(
     except Exception as exc:
         failure_reason = _format_failure(exc)
     finally:
+        reset_issued(issued_token)
         try:
             inner = getattr(runtime, "_inner", runtime)
             if isinstance(inner, RecordingRuntime):
@@ -228,7 +236,8 @@ def run_eval(
         if not isinstance(recorder, RecordingRuntime):
             recorder = runtime if isinstance(runtime, RecordingRuntime) else None
         if recorder is not None and recorder.miss_count and not failure_reason:
-            failure_reason = "ReplayMiss"
+            failure_reason = recorder.last_miss or "ReplayMiss"
+        recorded_model = recorder.recorded_model if recorder is not None else ""
         worker_plus_model = sampler.stop()
         reset_stats(stats_token)
         scored = [day.metrics for day in days if not day.error and day.metrics]
@@ -271,6 +280,7 @@ def run_eval(
                 worker_plus_model_peak_bytes=worker_plus_model,
             ),
             measure_model=measure_model,
+            model=recorded_model or None,
         )
         _write_reports(out_dir, report)
     return report
@@ -282,6 +292,7 @@ def render_markdown(report: EvalReport) -> str:
         "",
         f"mode: `{report.mode}`  ",
         f"runtime: `{report.runtime}`  ",
+        f"model: `{report.model or ''}`  ",
         f"wall_seconds: {report.wall_seconds:.3f}  ",
         f"peak_rss_bytes: {report.peak_rss_bytes}  ",
         f"worker_plus_model_peak_bytes: {report.worker_plus_model_peak_bytes}  ",
@@ -573,8 +584,12 @@ def _completed_without_kill(
 
 
 def _format_failure(exc: BaseException) -> str:
-    """Exception type only — never copy OCR, prompts, or window titles into reports."""
-    return type(exc).__name__
+    """Exception type, plus kind/hash for replay errors. Never copy OCR or prompts."""
+    name = type(exc).__name__
+    if name in {"ReplayMiss", "ReplayParamsError"}:
+        detail = str(exc).strip()
+        return f"{name}: {detail}" if detail else name
+    return name
 
 
 def _failed_day(name: str, exc: BaseException) -> DayEval:
@@ -595,6 +610,7 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
     payload = {
         "mode": report.mode,
         "runtime": report.runtime,
+        "model": report.model,
         "passed": report.passed,
         "pipeline_passed": report.pipeline_passed,
         "aggregate": report.aggregate,

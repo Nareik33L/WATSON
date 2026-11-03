@@ -10,9 +10,15 @@ from typing import Any
 import pytest
 
 from tests.replay_support import TEST_KEY
-from watson.intelligence.eval.recordings import RecordingRuntime, ReplayMiss, prompt_hash
+from watson.intelligence.eval.recordings import (
+    RecordingRuntime,
+    ReplayMiss,
+    ReplayParamsError,
+    prompt_hash,
+)
 from watson.intelligence.eval.run import run_eval
 from watson.intelligence.runtime.types import RuntimeUnavailable
+from watson.memory.ids import bind_issued, reset_issued
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures"
@@ -416,30 +422,111 @@ def test_prompt_hash_uses_every_message_not_just_the_first() -> None:
 
 
 def test_prompt_hash_strips_run_scoped_ids() -> None:
-    left = "Claims:\n[c:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa] (commitment/observed) Send it\n"
-    right = "Claims:\n[c:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb] (commitment/observed) Send it\n"
-    assert prompt_hash([{"role": "user", "content": left}], schema={}) == prompt_hash(
-        [{"role": "user", "content": right}], schema={}
+    send_a = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    send_b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    left = f"Claims:\n[c:{send_a}] (commitment/observed) Send it\n"
+    right = f"Claims:\n[c:{send_b}] (commitment/observed) Send it\n"
+    assert prompt_hash(
+        [{"role": "user", "content": left}], schema={}, run_ids=[send_a]
+    ) == prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[send_b])
+
+
+def test_prompt_hash_keeps_claim_prompt_order() -> None:
+    """Sorted order must not be the key — prompt order is."""
+    send = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    edit = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    prompt_order = (
+        "Claims:\n"
+        f"1. [c:{send}] (commitment/observed) Send it\n"
+        f"2. [c:{edit}] (activity/observed) Edit doc\n"
+    )
+    swapped = (
+        "Claims:\n"
+        f"1. [c:{edit}] (activity/observed) Edit doc\n"
+        f"2. [c:{send}] (commitment/observed) Send it\n"
+    )
+    assert prompt_hash(
+        [{"role": "user", "content": prompt_order}], schema={}, run_ids=[send, edit]
+    ) != prompt_hash([{"role": "user", "content": swapped}], schema={}, run_ids=[send, edit])
+
+
+def test_prompt_hash_leaves_fixture_uuid_and_timestamp() -> None:
+    """Surviving mutant: uuid-to-constant / overbroad-dates."""
+    fixture_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    run_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    other_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    left = f"Window: note {fixture_id} at 2026-10-31T12:00:00Z\n[c:{run_id}]"
+    right = f"Window: note {other_id} at 2026-10-31T12:00:01Z\n[c:{run_id}]"
+    assert prompt_hash(
+        [{"role": "user", "content": left}], schema={}, run_ids=[run_id]
+    ) != prompt_hash([{"role": "user", "content": right}], schema={}, run_ids=[run_id])
+    same_fixture = f"Window: note {fixture_id} at 2026-10-31T12:00:00Z\n[c:{other_id}]"
+    assert prompt_hash(
+        [{"role": "user", "content": left}], schema={}, run_ids=[run_id]
+    ) == prompt_hash(
+        [{"role": "user", "content": same_fixture}],
+        schema={},
+        run_ids=[other_id],
     )
 
 
-def test_prompt_hash_ignores_claim_order_and_original_numbers() -> None:
-    """Surviving mutant: hash still includes DB list position / UUIDv7 order."""
-    left = (
-        "Extract cross-segment\n\nEntities:\n- person: Bob\n- project: Acme\n\n"
-        "Claims:\n"
-        "1. [c:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa] (commitment/observed) Send it\n"
-        "2. [c:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb] (activity/observed) Edit doc\n"
+def test_replay_maps_ordinal_cites_to_prompt_order_not_sorted(tmp_path: Path) -> None:
+    """Surviving mutant: no-ordinalize / sort-then-cite. Edit < Send alphabetically."""
+    send = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    edit = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    path = tmp_path / "cites.json"
+
+    class _CiteInner:
+        name = "ollama"
+        llm_model = "qwen2.5:7b"
+        temperature = 0.0
+
+        def complete(
+            self,
+            messages: list[dict[str, str]],
+            schema: dict[str, Any],
+            *,
+            num_predict: int | None = None,
+        ) -> dict[str, Any]:
+            del schema, num_predict
+            blob = "\n".join(item["content"] for item in messages)
+            cited = edit if edit in blob else send
+            return {"paragraphs": [{"text": f"Edited the doc [c:{cited}].", "claim_ids": [cited]}]}
+
+    prompt = (
+        "Write the daily narrative\nClaims:\n"
+        f"1. [c:{send}] (commitment/observed) Send it\n"
+        f"2. [c:{edit}] (activity/observed) Edit doc\n"
     )
-    right = (
-        "Extract cross-segment\n\nEntities:\n- project: Acme\n- person: Bob\n\n"
-        "Claims:\n"
-        "1. [c:cccccccc-cccc-4ccc-8ccc-cccccccccccc] (activity/observed) Edit doc\n"
-        "8. [c:dddddddd-dddd-4ddd-8ddd-dddddddddddd] (commitment/observed) Send it\n"
+    token = bind_issued([send, edit], [])
+    try:
+        runtime = RecordingRuntime(path=path, inner=_CiteInner(), mode="record")
+        recorded = runtime.complete([{"role": "user", "content": prompt}], {})
+        runtime.save()
+    finally:
+        reset_issued(token)
+    assert edit in str(recorded["paragraphs"][0]["text"])
+    stored = json.loads(path.read_text(encoding="utf-8"))["complete"][0]["response"]
+    assert "[c:2]" in str(stored["paragraphs"][0]["text"])
+    assert edit not in str(stored["paragraphs"][0]["text"])
+
+    send2 = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    edit2 = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    replay_prompt = (
+        "Write the daily narrative\nClaims:\n"
+        f"1. [c:{send2}] (commitment/observed) Send it\n"
+        f"2. [c:{edit2}] (activity/observed) Edit doc\n"
     )
-    assert prompt_hash([{"role": "user", "content": left}], schema={}) == prompt_hash(
-        [{"role": "user", "content": right}], schema={}
-    )
+    token = bind_issued([send2, edit2], [])
+    try:
+        replay = RecordingRuntime(path=path, mode="replay")
+        result = replay.complete([{"role": "user", "content": replay_prompt}], {})
+    finally:
+        reset_issued(token)
+    text = str(result["paragraphs"][0]["text"])
+    assert edit2 in text
+    assert send2 not in text
+    assert replay.miss_count == 0
 
 
 class _NamedInner:
@@ -591,15 +678,18 @@ def test_record_replay_round_trip_with_real_model_name(
     assert all(not day.error for day in first.days)
 
 
-def test_dropped_recording_row_fails_eval(tmp_path: Path, key_provider: object) -> None:
+def _drop_match(tmp_path: Path, needle: str) -> Path:
     payload = json.loads(RECORDINGS.read_text(encoding="utf-8"))
     payload["complete"] = [
-        row
-        for row in payload["complete"]
-        if "cedar daily" not in str(row.get("match") or "").casefold()
+        row for row in payload["complete"] if needle not in str(row.get("match") or "").casefold()
     ]
-    path = tmp_path / "dropped.json"
+    path = tmp_path / f"dropped-{needle.replace(' ', '-')}.json"
     path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    return path
+
+
+def test_dropped_recording_row_fails_eval(tmp_path: Path, key_provider: object) -> None:
+    path = _drop_match(tmp_path, "cedar daily")
     report = run_eval(
         fixtures_root=FIXTURES,
         names=("day_acme_q4",),
@@ -610,6 +700,149 @@ def test_dropped_recording_row_fails_eval(tmp_path: Path, key_provider: object) 
         key=TEST_KEY,
     )
     assert report.pipeline_passed is False
-    assert report.failure_reason == "ReplayMiss" or any(day.error for day in report.days)
-    exit_code = 0 if report.pipeline_passed else 1
-    assert exit_code != 0
+    reason = report.failure_reason or ""
+    assert "ReplayMiss" in reason
+    assert "understanding" in reason
+    assert "key=" in reason
+    assert (0 if report.pipeline_passed else 1) != 0
+
+
+def test_dropped_extract_row_fails_eval(tmp_path: Path, key_provider: object) -> None:
+    path = _drop_match(tmp_path, "extract cross-segment")
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_acme_q4",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=path,
+        out_dir=tmp_path / "dropped-extract",
+        key=TEST_KEY,
+    )
+    assert report.pipeline_passed is False
+    reason = report.failure_reason or ""
+    assert "ReplayMiss" in reason
+    assert "day_extract" in reason
+    assert (0 if report.pipeline_passed else 1) != 0
+
+
+def test_dropped_summary_row_fails_eval(tmp_path: Path, key_provider: object) -> None:
+    path = _drop_match(tmp_path, "write the daily narrative")
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_acme_q4",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=path,
+        out_dir=tmp_path / "dropped-summary",
+        key=TEST_KEY,
+    )
+    assert report.pipeline_passed is False
+    reason = report.failure_reason or ""
+    assert "ReplayMiss" in reason
+    assert "daily_summary" in reason
+    assert (0 if report.pipeline_passed else 1) != 0
+
+
+def test_new_format_rejects_different_model(tmp_path: Path) -> None:
+    path = tmp_path / "named.json"
+    runtime = RecordingRuntime(path=path, inner=_NamedInner(), mode="record")
+    _complete(runtime, _EXTRACT_PREFIX + "Claims:\n1. Alice\n")
+    runtime.save()
+    with pytest.raises(ReplayParamsError, match="qwen2.5:7b"):
+        RecordingRuntime(path=path, mode="replay", expected_model="llama3.1:8b")
+
+
+def test_replay_eval_rejects_configured_model_mismatch(
+    tmp_path: Path, key_provider: object
+) -> None:
+    path = tmp_path / "named.json"
+    runtime = RecordingRuntime(path=path, inner=_NamedInner(), mode="record")
+    _complete(runtime, _EXTRACT_PREFIX + "Claims:\n1. Alice\n")
+    runtime.save()
+
+    class _Intel:
+        llm_model = "llama3.1:8b"
+
+    class _Config:
+        intelligence = _Intel()
+
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=path,
+        out_dir=tmp_path / "mismatch",
+        key=TEST_KEY,
+        config=_Config(),
+    )
+    assert report.pipeline_passed is False
+    reason = report.failure_reason or ""
+    assert "ReplayParamsError" in reason
+    assert "qwen2.5:7b" in reason
+    assert "llama3.1:8b" in reason
+
+
+def test_report_names_recorded_model(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    from watson.intelligence.eval import run as run_mod
+    from watson.intelligence.runtime.fake import FakeRuntime
+
+    class _NamedFake:
+        name = "ollama"
+        llm_model = "qwen2.5:7b"
+        temperature = 0.0
+
+        def __init__(self) -> None:
+            self._fake = FakeRuntime(recordings=RECORDINGS)
+
+        def complete(
+            self,
+            messages: list[dict[str, str]],
+            schema: dict[str, Any],
+            *,
+            num_predict: int | None = None,
+        ) -> dict[str, Any]:
+            return self._fake.complete(messages, schema, num_predict=num_predict)
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return self._fake.embed(texts)
+
+        def end_phase(self) -> None:
+            self._fake.end_phase()
+
+    rec = tmp_path / "named.json"
+
+    def build(
+        *, mode: str, runtime_name: str, recordings: Path, config: object
+    ) -> RecordingRuntime:
+        del runtime_name, config
+        if mode == "record":
+            return RecordingRuntime(path=recordings, inner=_NamedFake(), mode="record")
+        return RecordingRuntime(path=recordings, mode="replay")
+
+    monkeypatch.setattr(run_mod, "build_eval_runtime", build)
+    run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="record",
+        runtime_name="ollama",
+        recordings=rec,
+        out_dir=tmp_path / "record",
+        key=TEST_KEY,
+    )
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_near_empty",),
+        mode="replay",
+        runtime_name="replay",
+        recordings=rec,
+        out_dir=tmp_path / "replay",
+        key=TEST_KEY,
+    )
+    assert report.model == "qwen2.5:7b"
+    markdown = (tmp_path / "replay" / "report.md").read_text(encoding="utf-8")
+    payload = json.loads((tmp_path / "replay" / "report.json").read_text(encoding="utf-8"))
+    assert "qwen2.5:7b" in markdown
+    assert payload["model"] == "qwen2.5:7b"

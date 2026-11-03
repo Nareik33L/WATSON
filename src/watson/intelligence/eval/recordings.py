@@ -4,15 +4,14 @@ Replay plays back committed JSON responses with no truth.yaml lexicon,
 no name-list enrichment, and no description hashing. Recordings are
 hand-authored plausible model output (see recordings.json ``source``).
 
-New ``complete`` rows are keyed by SHA-256 of roles + normalised contents
-+ model + temperature + num_predict + output schema. Run-scoped claim
-UUIDs and ISO timestamps are replaced with stable ordinals before
-hashing so a second record of the same fixtures yields the same keys.
-Replay builds that hash from the recorded or configured model params
-(so a stub runtime still finds rows recorded against Ollama). A miss
-hard-fails unless ``strict=False``. Legacy files still load: window
-titles and unique phrase keys match as before; shared prompt-prefix
-rows are attributed to a fixture day and never handed out in call order.
+New ``complete`` rows are keyed by SHA-256 of roles + contents + model +
+temperature + num_predict + schema. Only IDs and timestamps this run
+issued are replaced with prompt-order ordinals (fixture UUIDs/dates stay).
+Stored responses use those same ordinals; replay maps them back to the
+current prompt's IDs so ``[c:N]`` cites the same claim. New-format files
+(``format: prompt-hash-v1``) hash with the recorded model and reject a
+configured model/params mismatch. Legacy files (no format marker) still
+match window titles and unique phrases, filtered by call type.
 """
 
 from __future__ import annotations
@@ -27,13 +26,16 @@ from pathlib import Path
 from typing import Any
 
 from watson.intelligence.runtime.types import Message, RuntimeUnavailable
+from watson.memory.ids import issued_ids, issued_stamps
 
 DEFAULT_RECORDINGS = (
     Path(__file__).resolve().parents[4] / "tests" / "fixtures" / "eval" / "recordings.json"
 )
 
+FORMAT_V1 = "prompt-hash-v1"
 _WINDOW = re.compile(r"^Window:\s*(.+)$", re.MULTILINE)
 _PROMPT_HASH = re.compile(r"^[0-9a-f]{64}$")
+_CITE = re.compile(r"\[c:([^\]]+)\]")
 _ISO_DATE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _RUN_UUID = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
@@ -114,6 +116,10 @@ class ReplayMiss(RuntimeError):
     """No recording for this call. Message names kind and key hash only."""
 
 
+class ReplayParamsError(RuntimeError):
+    """Configured model/params do not match a new-format recordings file."""
+
+
 class RecordingRuntime:
     """Replay committed responses, or record a wrapped runtime.
 
@@ -130,6 +136,7 @@ class RecordingRuntime:
         inner: Any | None = None,
         mode: str = "replay",
         strict: bool | None = None,
+        expected_model: str = "",
     ) -> None:
         if mode not in {"replay", "record"}:
             raise ValueError('eval mode must be "replay" or "record"')
@@ -141,15 +148,19 @@ class RecordingRuntime:
         self.mode = mode
         self.path = path or DEFAULT_RECORDINGS
         self.inner = inner
+        self.expected_model = str(expected_model or "")
         self.name = "replay" if inner is None else str(getattr(inner, "name", "record"))
         self.strict = mode == "replay" if strict is None else bool(strict)
         self._recordings = _load(self.path) if self.path.is_file() else _empty()
         self._dirty = False
         self.complete_calls = 0
         self.miss_count = 0
+        self.last_miss: str | None = None
         self._legacy_warned = False
         self._day: str | None = None
         self._date: str | None = None
+        if mode == "replay":
+            self._reject_param_mismatch()
 
     def set_day(self, name: str | None, date: str | None = None) -> None:
         """Bind subsequent complete() calls to a fixture day (eval runner)."""
@@ -174,8 +185,8 @@ class RecordingRuntime:
         num_predict: int | None = None,
     ) -> dict[str, Any]:
         self.complete_calls += 1
-        model = self._model_name()
-        temperature = self._temperature()
+        model = self._hash_model()
+        temperature = self._hash_temperature()
         digest = prompt_hash(
             messages,
             schema=schema,
@@ -184,12 +195,7 @@ class RecordingRuntime:
             num_predict=num_predict,
         )
         if self.mode == "replay":
-            return self._replay(
-                messages,
-                schema=schema,
-                num_predict=num_predict,
-                digest=digest,
-            )
+            return self._replay(messages, digest=digest)
         assert self.inner is not None
         try:
             result = self.inner.complete(messages, schema, num_predict=num_predict)
@@ -213,7 +219,7 @@ class RecordingRuntime:
             }
         )
         self._dirty = True
-        return dict(stored)
+        return dict(result)
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if self.mode == "record":
@@ -243,83 +249,31 @@ class RecordingRuntime:
     def save(self) -> None:
         if not self._dirty:
             return
+        if self.mode == "record":
+            self._recordings["format"] = FORMAT_V1
+            self._recordings["model"] = self._model_name()
+            self._recordings["temperature"] = self._temperature()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self._recordings, indent=2) + "\n", encoding="utf-8")
         self._dirty = False
 
-    def _replay(
-        self,
-        messages: Sequence[Message],
-        *,
-        schema: Mapping[str, Any],
-        num_predict: int | None,
-        digest: str,
-    ) -> dict[str, Any]:
+    def _replay(self, messages: Sequence[Message], digest: str) -> dict[str, Any]:
         rows = self._recordings.get("complete", [])
-        wanted = set(
-            self._replay_digests(
-                messages,
-                schema=schema,
-                num_predict=num_predict,
-                digest=digest,
-            )
-        )
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            if str(row.get("match") or "") not in wanted:
+            if str(row.get("match") or "") != digest:
                 continue
             response = row.get("response")
             if isinstance(response, dict):
-                return dict(response)
+                return _restore_response(messages, dict(response))
 
-        blob = "\n".join(str(item.get("content") or "") for item in messages)
-        found = self._legacy_lookup(blob, rows)
-        if found is not None:
-            return found
+        if not _is_new_format(self._recordings):
+            blob = "\n".join(str(item.get("content") or "") for item in messages)
+            found = self._legacy_lookup(blob, rows)
+            if found is not None:
+                return found
         return self._miss(messages, digest)
-
-    def _replay_digests(
-        self,
-        messages: Sequence[Message],
-        *,
-        schema: Mapping[str, Any],
-        num_predict: int | None,
-        digest: str,
-    ) -> list[str]:
-        """Hashes from configured params and each hashed row's recorded params."""
-        canonical = _canonical(schema)
-        specs: list[tuple[str, float, int | None, Any]] = [
-            (self._model_name(), self._temperature(), num_predict, canonical)
-        ]
-        for row in self._recordings.get("complete") or []:
-            if not isinstance(row, dict):
-                continue
-            if not _PROMPT_HASH.fullmatch(str(row.get("match") or "")):
-                continue
-            specs.append(_row_hash_params(row, num_predict=num_predict, schema=canonical))
-        seen: set[tuple[str, float, int | None, str]] = set()
-        out: list[str] = [digest]
-        for model, temperature, predict, sch in specs:
-            fingerprint = (
-                model,
-                temperature,
-                predict,
-                json.dumps(sch, sort_keys=True, separators=(",", ":"), default=str),
-            )
-            if fingerprint in seen:
-                continue
-            seen.add(fingerprint)
-            hashed = prompt_hash(
-                messages,
-                schema=sch,
-                model=model,
-                temperature=temperature,
-                num_predict=predict,
-            )
-            if hashed not in out:
-                out.append(hashed)
-        return out
 
     def _legacy_lookup(self, blob: str, rows: Any) -> dict[str, Any] | None:
         window = _WINDOW.search(blob)
@@ -338,12 +292,15 @@ class RecordingRuntime:
             hits.append((index, row, needle))
         if not hits:
             return None
+        kind = call_kind(blob)
+        hits = [hit for hit in hits if _key_matches_kind(hit[2], kind)]
+        if not hits:
+            return None
         self._warn_legacy()
         if window:
             # Understand: first window-title hit. Never consume (revisits).
             return dict(hits[0][1]["response"])
 
-        kind = call_kind(blob)
         attributed = [
             hit
             for hit in hits
@@ -351,12 +308,10 @@ class RecordingRuntime:
             or (prompt_date and _row_date(hit[1]) == prompt_date)
         ]
         if attributed:
-            pool = [hit for hit in attributed if _key_matches_kind(hit[2], kind)]
-            pool = pool or attributed
             header = blob[:500].casefold()
-            header_same = [hit for hit in pool if hit[2].casefold() in header]
+            header_same = [hit for hit in attributed if hit[2].casefold() in header]
             # Same day's row may be reused (second consolidate / repair).
-            chosen = header_same or pool
+            chosen = header_same or attributed
             return dict(chosen[0][1]["response"])
 
         # Observation / claim prefixes identify the day by appearing in this
@@ -394,6 +349,8 @@ class RecordingRuntime:
         kind = call_kind(messages)
         detail = f"replay miss for {kind} key={digest}"
         self.miss_count += 1
+        self.last_miss = f"ReplayMiss: {detail}"
+        log.error("%s", detail)
         if self.strict:
             raise ReplayMiss(detail)
         log.warning("%s; lenient mode returning default", detail)
@@ -407,6 +364,65 @@ class RecordingRuntime:
             "legacy recording key used; exact prompt-hash lookup missed. "
             "Per-day rows match by day/date, not call order"
         )
+
+    @property
+    def recorded_model(self) -> str:
+        """Model name stored on a new-format file, else the inner/expected model."""
+        return self._recorded_model() or self._configured_model()
+
+    def _is_new_format(self) -> bool:
+        return _is_new_format(self._recordings)
+
+    def _configured_model(self) -> str:
+        if self.inner is not None:
+            return self._model_name()
+        return self.expected_model
+
+    def _hash_model(self) -> str:
+        return self._configured_model() or self._recorded_model()
+
+    def _hash_temperature(self) -> float:
+        if self.inner is not None:
+            return self._temperature()
+        recorded = self._recorded_temperature()
+        return recorded if recorded is not None else 0.0
+
+    def _recorded_model(self) -> str:
+        value = self._recordings.get("model")
+        if value:
+            return str(value)
+        for row in self._recordings.get("complete") or []:
+            if isinstance(row, dict) and _PROMPT_HASH.fullmatch(str(row.get("match") or "")):
+                model = str(row.get("model") or "")
+                if model:
+                    return model
+        return ""
+
+    def _recorded_temperature(self) -> float | None:
+        if "temperature" in self._recordings:
+            try:
+                return float(self._recordings["temperature"])
+            except (TypeError, ValueError):
+                return None
+        for row in self._recordings.get("complete") or []:
+            if isinstance(row, dict) and _PROMPT_HASH.fullmatch(str(row.get("match") or "")):
+                _, temperature = _row_model_temp(row)
+                return temperature
+        return None
+
+    def _reject_param_mismatch(self) -> None:
+        if not self._is_new_format():
+            return
+        recorded = self._recorded_model()
+        configured = self._configured_model()
+        if configured and recorded and configured != recorded:
+            raise ReplayParamsError(f"recordings are for {recorded}, not {configured}")
+        if self.inner is not None:
+            rec_temp = self._recorded_temperature()
+            if rec_temp is not None and self._temperature() != rec_temp:
+                raise ReplayParamsError(
+                    f"recordings temperature is {rec_temp}, not {self._temperature()}"
+                )
 
     def _model_name(self) -> str:
         inner = self.inner
@@ -435,10 +451,12 @@ def prompt_hash(
     model: str = "",
     temperature: float = 0.0,
     num_predict: int | None = None,
+    run_ids: Sequence[str] | None = None,
+    run_stamps: Sequence[str] | None = None,
 ) -> str:
-    """SHA-256 of roles, normalised contents, model, temperature, num_predict, schema."""
+    """SHA-256 of roles, contents with run-issued IDs ordinalized, model, params."""
     payload = {
-        "messages": _normalised_turns(messages),
+        "messages": _normalised_turns(messages, run_ids=run_ids, run_stamps=run_stamps),
         "model": model or "",
         "num_predict": num_predict,
         "schema": _canonical(schema),
@@ -475,106 +493,112 @@ def _turns(messages: Sequence[Message] | str) -> list[dict[str, str]]:
     ]
 
 
-def _id_ordinals(blob: str) -> dict[str, str]:
+def _run_ids(run_ids: Sequence[str] | None) -> tuple[str, ...]:
+    if run_ids is not None:
+        return tuple(run_ids)
+    return issued_ids()
+
+
+def _run_stamps(run_stamps: Sequence[str] | None) -> tuple[str, ...]:
+    if run_stamps is not None:
+        return tuple(run_stamps)
+    return issued_stamps()
+
+
+def _id_ordinals(blob: str, run_ids: Sequence[str]) -> dict[str, str]:
+    """Map run-issued UUIDs to 1-based ordinals in prompt appearance order."""
+    known = {item.casefold() for item in run_ids}
     mapping: dict[str, str] = {}
     for match in _RUN_UUID.finditer(blob):
         token = match.group(0)
-        if token not in mapping:
-            mapping[token] = str(len(mapping) + 1)
+        if token.casefold() not in known or token in mapping:
+            continue
+        mapping[token] = str(len(mapping) + 1)
     return mapping
 
 
-def _run_invariant_key(line: str, *, numbered: bool) -> str:
-    """Sort key with claim numbers, UUIDs, and run timestamps removed."""
-    body = line.strip()
-    if numbered and ". " in body:
-        body = body.split(". ", 1)[1]
-    return _RUN_STAMP.sub("<ts>", _RUN_UUID.sub("<id>", body))
+def _apply_run_ids(text: str, mapping: Mapping[str, str], stamps: Sequence[str]) -> str:
+    known_stamps = set(stamps)
 
+    def replace_id(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return mapping.get(token, token)
 
-def _renumber_lines(lines: list[str]) -> list[str]:
-    out: list[str] = []
-    for index, line in enumerate(lines, start=1):
-        newline = "\n" if line.endswith("\n") else ""
-        body = line.strip()
-        if ". " in body:
-            body = body.split(". ", 1)[1]
-        out.append(f"{index}. {body}{newline}")
-    return out
+    def replace_stamp(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return "<ts>" if token in known_stamps else token
 
-
-def _sort_section_lines(text: str, header: str, *, numbered: bool) -> str:
-    """Stable-sort run-varying retrieve / entity / claim blocks for the hash."""
-    start = text.find(header)
-    if start < 0:
-        return text
-    body_at = start + len(header)
-    rest = text[body_at:]
-    lines = rest.splitlines(keepends=True)
-    taken: list[str] = []
-    tail: list[str] = []
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped:
-            tail = lines[index:]
-            break
-        if numbered and not re.match(r"\d+\.\s", stripped):
-            tail = lines[index:]
-            break
-        if not numbered and not stripped.startswith("- "):
-            tail = lines[index:]
-            break
-        taken.append(line)
-    taken.sort(key=lambda line: _run_invariant_key(line, numbered=numbered))
-    if numbered:
-        taken = _renumber_lines(taken)
-    return text[:body_at] + "".join(taken) + "".join(tail)
-
-
-def _stabilise_contents(text: str) -> str:
-    text = _sort_section_lines(text, "Retrieved context:\n", numbered=False)
-    text = _sort_section_lines(text, "Entities:\n", numbered=False)
-    text = _sort_section_lines(text, "Claims:\n", numbered=True)
+    text = _RUN_UUID.sub(replace_id, text)
+    if known_stamps:
+        text = _RUN_STAMP.sub(replace_stamp, text)
     return text
 
 
-def _apply_run_ids(text: str, mapping: Mapping[str, str]) -> str:
-    def replace(match: re.Match[str]) -> str:
-        return mapping.get(match.group(0), match.group(0))
-
-    return _RUN_STAMP.sub("<ts>", _RUN_UUID.sub(replace, text))
-
-
-def _normalised_turns(messages: Sequence[Message] | str) -> list[dict[str, str]]:
-    """All roles + contents; UUIDs become 1-based ordinals, run stamps collapse."""
-    turns = [
-        {"role": item["role"], "content": _stabilise_contents(item["content"])}
-        for item in _turns(messages)
-    ]
-    mapping = _id_ordinals("\n".join(item["content"] for item in turns))
+def _normalised_turns(
+    messages: Sequence[Message] | str,
+    *,
+    run_ids: Sequence[str] | None = None,
+    run_stamps: Sequence[str] | None = None,
+) -> list[dict[str, str]]:
+    """Roles + contents; run-issued IDs become prompt-order ordinals. No sorting."""
+    turns = _turns(messages)
+    blob = "\n".join(item["content"] for item in turns)
+    mapping = _id_ordinals(blob, _run_ids(run_ids))
+    stamps = _run_stamps(run_stamps)
     return [
-        {"role": item["role"], "content": _apply_run_ids(item["content"], mapping)}
+        {"role": item["role"], "content": _apply_run_ids(item["content"], mapping, stamps)}
         for item in turns
     ]
 
 
-def _rewrite_value(value: Any, mapping: Mapping[str, str]) -> Any:
+def _rewrite_value(value: Any, mapping: Mapping[str, str], stamps: Sequence[str]) -> Any:
     if isinstance(value, str):
-        return _apply_run_ids(value, mapping)
+        return _apply_run_ids(value, mapping, stamps)
     if isinstance(value, list):
-        return [_rewrite_value(item, mapping) for item in value]
+        return [_rewrite_value(item, mapping, stamps) for item in value]
     if isinstance(value, dict):
-        return {str(key): _rewrite_value(item, mapping) for key, item in value.items()}
+        return {str(key): _rewrite_value(item, mapping, stamps) for key, item in value.items()}
     return value
 
 
 def _ordinalize_response(
     messages: Sequence[Message] | str, response: dict[str, Any]
 ) -> dict[str, Any]:
-    """Rewrite prompt UUIDs in the stored response to ordinals so replay cites resolve."""
-    mapping = _id_ordinals("\n".join(item["content"] for item in _turns(messages)))
-    rewritten = _rewrite_value(response, mapping)
+    """Rewrite prompt run-IDs in the stored response to prompt-order ordinals."""
+    blob = "\n".join(item["content"] for item in _turns(messages))
+    mapping = _id_ordinals(blob, _run_ids(None))
+    rewritten = _rewrite_value(response, mapping, _run_stamps(None))
     return rewritten if isinstance(rewritten, dict) else dict(response)
+
+
+def _restore_response(
+    messages: Sequence[Message] | str, response: dict[str, Any]
+) -> dict[str, Any]:
+    """Map stored prompt-order ordinals back to this run's IDs."""
+    blob = "\n".join(item["content"] for item in _turns(messages))
+    mapping = _id_ordinals(blob, _run_ids(None))
+    inverse = {ordinal: token for token, ordinal in mapping.items()}
+    restored = _restore_value(response, inverse)
+    return restored if isinstance(restored, dict) else dict(response)
+
+
+def _restore_value(value: Any, inverse: Mapping[str, str]) -> Any:
+    if isinstance(value, str):
+        if value in inverse:
+            return inverse[value]
+
+        def replace_cite(match: re.Match[str]) -> str:
+            token = match.group(1)
+            if token in inverse:
+                return f"[c:{inverse[token]}]"
+            return match.group(0)
+
+        return _CITE.sub(replace_cite, value)
+    if isinstance(value, list):
+        return [_restore_value(item, inverse) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _restore_value(item, inverse) for key, item in value.items()}
+    return value
 
 
 def _row_model_temp(row: Mapping[str, Any]) -> tuple[str, float]:
@@ -587,28 +611,8 @@ def _row_model_temp(row: Mapping[str, Any]) -> tuple[str, float]:
     return model, temperature
 
 
-def _row_num_predict(row: Mapping[str, Any], fallback: int | None) -> int | None:
-    if "num_predict" not in row:
-        return fallback
-    raw = row.get("num_predict")
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _row_hash_params(
-    row: Mapping[str, Any],
-    *,
-    num_predict: int | None,
-    schema: Any,
-) -> tuple[str, float, int | None, Any]:
-    model, temperature = _row_model_temp(row)
-    stored = row.get("schema")
-    sch = _canonical(stored) if isinstance(stored, Mapping) else schema
-    return model, temperature, _row_num_predict(row, num_predict), sch
+def _is_new_format(data: Mapping[str, Any]) -> bool:
+    return str(data.get("format") or "") == FORMAT_V1
 
 
 def _canonical(schema: Mapping[str, Any] | None) -> Any:
@@ -688,7 +692,7 @@ def _day_from_window_needle(needle: str) -> str | None:
 
 
 def _key_matches_kind(needle: str, kind: str) -> bool:
-    """Keep extract from returning a same-day clustering row, and vice versa."""
+    """Never serve extract/summary from an understand row, or vice versa."""
     folded = needle.casefold()
     if kind == "day_extract":
         return (
@@ -708,6 +712,8 @@ def _key_matches_kind(needle: str, kind: str) -> bool:
                 and not _is_window_key(needle)
             )
         )
+    if kind == "understanding":
+        return _is_window_key(needle)
     return True
 
 
@@ -769,7 +775,7 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise ValueError(f"{path}: recordings must be a JSON object")
     complete = loaded.get("complete")
-    if isinstance(complete, list):
+    if isinstance(complete, list) and not _is_new_format(loaded):
         _attribute_legacy_days(complete)
     return loaded
 

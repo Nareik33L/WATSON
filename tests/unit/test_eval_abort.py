@@ -208,6 +208,7 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
     allowed = {
         "mode",
         "runtime",
+        "model",
         "passed",
         "pipeline_passed",
         "aggregate",

@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
+from watson.memory.ids import note_stamp
 from watson.memory.keys import KEY_BYTES, KeyProvider
 
 
@@ -20,7 +21,9 @@ class DatabaseError(RuntimeError):
 
 def iso_now(moment: datetime | None = None) -> str:
     value = (moment or datetime.now(UTC)).astimezone(UTC)
-    return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    stamp = value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    note_stamp(stamp)
+    return stamp
 
 
 def parse_iso(value: str) -> datetime:
