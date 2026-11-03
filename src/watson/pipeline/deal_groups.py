@@ -396,9 +396,9 @@ def _blocks_by_deal_id(
     if tagged:
         return tagged
     blocks = _heading_blocks(narrative)
-    if not blocks or not claim_deal_ids:
+    if not blocks or not claim_deal_ids or len(blocks) != len(claim_deal_ids):
         return {}
-    return {deal_id: body for deal_id, (_heading, body) in zip(claim_deal_ids, blocks)}
+    return {deal_id: body for deal_id, (_heading, body) in zip(claim_deal_ids, blocks, strict=True)}
 
 
 _HEADING = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)

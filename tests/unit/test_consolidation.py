@@ -3006,7 +3006,17 @@ def test_failed_understand_is_flagged_not_silent(tmp_path: Path) -> None:
         day_id, segment_id = _closed_ununderstood(conn)
         good_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T10:00:00Z")
         good_segment = _insert_segment(conn, day_id, good_frame, started_at="2026-10-31T10:00:00Z")
-        _insert_observation(conn, good_segment, description="Editing Acme")
+        good_obs = _insert_observation(conn, good_segment, description="Editing Acme")
+        _insert_claim(
+            conn,
+            good_obs,
+            day_id,
+            good_segment,
+            good_frame,
+            kind="activity",
+            assertion="observed",
+            text="Editing the Acme appendix",
+        )
         good_job = enqueue(
             conn,
             kind=UNDERSTAND_JOB_KIND,
@@ -3043,10 +3053,12 @@ def test_failed_understand_is_flagged_not_silent(tmp_path: Path) -> None:
         ).fetchone()
         narrative = str(summary["narrative_md"])
         assert "excluded after understanding failed" in narrative
+        assert "##" in narrative
         note_at = narrative.find("Note:")
         heading_at = narrative.find("##")
         assert note_at != -1
-        assert heading_at == -1 or note_at < heading_at
+        assert heading_at != -1
+        assert note_at < heading_at
     finally:
         conn.close()
 

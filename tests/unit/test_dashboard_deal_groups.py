@@ -27,6 +27,7 @@ from watson.config import load_config
 from watson.dashboard.app import create_app
 from watson.memory.ids import new_id
 from watson.pipeline.deal_groups import (
+    _blocks_by_deal_id,
     _parse_slot_text,
     collect_deal_groups,
     segment_channel,
@@ -636,6 +637,252 @@ def test_legacy_rows_without_paragraph_deal_id_still_render(
         seeded = _seed_claimless_and_fallback(conn, tagged=False)
         groups = collect_deal_groups(conn, working_day_id=seeded["day_id"])
         _assert_claimless_and_fallback(groups, seeded)
+    finally:
+        conn.close()
+
+
+def _all_slot_blob(card) -> str:
+    return " ".join(_slot_blob(card, slot.slot) for slot in card.slots)
+
+
+def _seed_three_claimed_two_blocks(conn: object) -> dict[str, str]:
+    """Three claimed deals. Untagged narrative has two blocks that zip onto the wrong cards."""
+    day_id = _insert_day(conn, date="2026-10-31", state="consolidated")
+    call_f = _frame(
+        conn,
+        day_id,
+        app_name="Lumen Relay",
+        window_title="Acme call",
+        captured_at="2026-10-31T09:00:00Z",
+    )
+    deck_f = _frame(
+        conn,
+        day_id,
+        app_name="Lumen Quill",
+        window_title="Acme deck",
+        captured_at="2026-10-31T10:00:00Z",
+    )
+    globex_f = _frame(
+        conn,
+        day_id,
+        app_name="Lumen Mail",
+        window_title="Globex intro",
+        captured_at="2026-10-31T11:00:00Z",
+    )
+    call_seg = _insert_segment(conn, day_id, call_f, started_at="2026-10-31T09:00:00Z")
+    deck_seg = _insert_segment(conn, day_id, deck_f, started_at="2026-10-31T10:00:00Z")
+    globex_seg = _insert_segment(conn, day_id, globex_f, started_at="2026-10-31T11:00:00Z")
+    call_obs = _insert_observation(conn, call_seg, description="Pricing call")
+    deck_obs = _insert_observation(conn, deck_seg, description="Editing the deck")
+    globex_obs = _insert_observation(conn, globex_seg, description="Emailing Globex")
+    call_claim = _insert_claim(
+        conn,
+        call_obs,
+        day_id,
+        call_seg,
+        call_f,
+        kind="activity",
+        assertion="observed",
+        text="Joined the pricing call",
+    )
+    deck_claim = _insert_claim(
+        conn,
+        deck_obs,
+        day_id,
+        deck_seg,
+        deck_f,
+        kind="commitment",
+        assertion="observed",
+        text="Kieran will send revised pricing",
+    )
+    globex_claim = _insert_claim(
+        conn,
+        globex_obs,
+        day_id,
+        globex_seg,
+        globex_f,
+        kind="activity",
+        assertion="observed",
+        text="Mailed the intro",
+    )
+    stamp = "2026-10-31T18:00:00Z"
+    call_deal = _insert_deal(conn, day_id, "Acme call", stamp=stamp)
+    deck_deal = _insert_deal(conn, day_id, "Acme deck", stamp=stamp)
+    globex_deal = _insert_deal(conn, day_id, "Globex intro", stamp=stamp)
+    _assign(conn, call_seg, call_deal)
+    _assign(conn, deck_seg, deck_deal)
+    _assign(conn, globex_seg, globex_deal)
+    deck_block = f"## Acme deck\n\nNext step: Kieran will send revised pricing [c:{deck_claim}]."
+    globex_block = f"## Globex intro\n\nWhat happened: Mailed the intro [c:{globex_claim}]."
+    narrative = f"{deck_block}\n\n{globex_block}"
+    paragraphs: list[object] = [narrative]
+    _insert_deal_summary(
+        conn,
+        day_id,
+        narrative,
+        [call_claim, deck_claim, globex_claim],
+        deals=[
+            {"id": call_deal, "title": "Acme call"},
+            {"id": deck_deal, "title": "Acme deck"},
+            {"id": globex_deal, "title": "Globex intro"},
+        ],
+        slots=[
+            {"slot": "what_happened", "claim_ids": [call_claim], "deal_id": call_deal},
+            {"slot": "next_step", "claim_ids": [deck_claim], "deal_id": deck_deal},
+            {"slot": "what_happened", "claim_ids": [globex_claim], "deal_id": globex_deal},
+        ],
+        paragraphs=paragraphs,
+    )
+    return {
+        "day_id": day_id,
+        "call": call_deal,
+        "deck": deck_deal,
+        "globex": globex_deal,
+        "call_claim": call_claim,
+        "deck_claim": deck_claim,
+        "globex_claim": globex_claim,
+        "call_seg": call_seg,
+        "deck_seg": deck_seg,
+        "globex_seg": globex_seg,
+        "narrative": narrative,
+    }
+
+
+def _assert_own_claims_not_stolen(groups, seeded: dict[str, str]) -> None:
+    by_id = {card.id: card for card in groups.deals}
+    call = _all_slot_blob(by_id[seeded["call"]])
+    deck = _all_slot_blob(by_id[seeded["deck"]])
+    globex = _all_slot_blob(by_id[seeded["globex"]])
+    assert "Joined the pricing call" in call
+    assert seeded["call_claim"] in call
+    assert "Kieran will send revised pricing" not in call
+    assert "Mailed the intro" not in call
+    assert "Kieran will send revised pricing" in deck
+    assert seeded["deck_claim"] in deck
+    assert "Joined the pricing call" not in deck
+    assert "Mailed the intro" not in deck
+    assert "Mailed the intro" in globex
+    assert seeded["globex_claim"] in globex
+    assert "Kieran will send revised pricing" not in globex
+    assert "Joined the pricing call" not in globex
+    call_cites = {span.segment_id for slot in by_id[seeded["call"]].slots for span in slot.spans}
+    assert seeded["call_seg"] in call_cites
+    assert seeded["deck_seg"] not in call_cites
+
+
+def test_legacy_claimed_deal_without_block_does_not_steal(
+    data_dir: Path, key_provider: object
+) -> None:
+    """Untagged 3 claimed deals vs 2 blocks: zip-by-position would put the deck on Acme call."""
+    conn = open_test_db(data_dir)
+    try:
+        seeded = _seed_three_claimed_two_blocks(conn)
+        claim_ids = [seeded["call"], seeded["deck"], seeded["globex"]]
+        bound = _blocks_by_deal_id(
+            seeded["narrative"], {"paragraphs": [seeded["narrative"]]}, claim_ids
+        )
+        assert bound == {}
+        groups = collect_deal_groups(conn, working_day_id=seeded["day_id"])
+        _assert_own_claims_not_stolen(groups, seeded)
+    finally:
+        conn.close()
+
+
+def test_tagged_blocks_win_when_heading_order_differs(data_dir: Path, key_provider: object) -> None:
+    """Tagged deal_id maps beat positional zip when heading order is reversed."""
+    conn = open_test_db(data_dir)
+    try:
+        day_id = _insert_day(conn, date="2026-10-31", state="consolidated")
+        call_f = _frame(
+            conn,
+            day_id,
+            app_name="Lumen Relay",
+            window_title="Acme call",
+            captured_at="2026-10-31T09:00:00Z",
+        )
+        deck_f = _frame(
+            conn,
+            day_id,
+            app_name="Lumen Quill",
+            window_title="Acme deck",
+            captured_at="2026-10-31T10:00:00Z",
+        )
+        call_seg = _insert_segment(conn, day_id, call_f, started_at="2026-10-31T09:00:00Z")
+        deck_seg = _insert_segment(conn, day_id, deck_f, started_at="2026-10-31T10:00:00Z")
+        call_obs = _insert_observation(conn, call_seg, description="Pricing call")
+        deck_obs = _insert_observation(conn, deck_seg, description="Editing the deck")
+        call_claim = _insert_claim(
+            conn,
+            call_obs,
+            day_id,
+            call_seg,
+            call_f,
+            kind="activity",
+            assertion="observed",
+            text="Joined the pricing call",
+        )
+        deck_claim = _insert_claim(
+            conn,
+            deck_obs,
+            day_id,
+            deck_seg,
+            deck_f,
+            kind="commitment",
+            assertion="observed",
+            text="Kieran will send revised pricing",
+        )
+        stamp = "2026-10-31T18:00:00Z"
+        call_deal = _insert_deal(conn, day_id, "Acme call", stamp=stamp)
+        deck_deal = _insert_deal(conn, day_id, "Acme deck", stamp=stamp)
+        _assign(conn, call_seg, call_deal)
+        _assign(conn, deck_seg, deck_deal)
+        call_block = f"## Acme call\n\nWhat happened: Joined the pricing call [c:{call_claim}]."
+        deck_block = (
+            f"## Acme deck\n\nNext step: Kieran will send revised pricing [c:{deck_claim}]."
+        )
+        narrative = f"{deck_block}\n\n{call_block}"
+        _insert_deal_summary(
+            conn,
+            day_id,
+            narrative,
+            [call_claim, deck_claim],
+            deals=[
+                {"id": call_deal, "title": "Acme call"},
+                {"id": deck_deal, "title": "Acme deck"},
+            ],
+            slots=[
+                {"slot": "what_happened", "claim_ids": [call_claim], "deal_id": call_deal},
+                {"slot": "next_step", "claim_ids": [deck_claim], "deal_id": deck_deal},
+            ],
+            paragraphs=[
+                {"deal_id": call_deal, "text": call_block},
+                {"deal_id": deck_deal, "text": deck_block},
+            ],
+        )
+        groups = collect_deal_groups(conn, working_day_id=day_id)
+        by_id = {card.id: card for card in groups.deals}
+        call = _all_slot_blob(by_id[call_deal])
+        deck = _all_slot_blob(by_id[deck_deal])
+        assert "Joined the pricing call" in call
+        assert "Kieran will send revised pricing" not in call
+        assert "Kieran will send revised pricing" in deck
+        assert "Joined the pricing call" not in deck
+        positional = _blocks_by_deal_id(
+            narrative, {"paragraphs": [narrative]}, [call_deal, deck_deal]
+        )
+        assert "Kieran will send revised pricing" in positional[call_deal]
+        tagged = _blocks_by_deal_id(
+            narrative,
+            {
+                "paragraphs": [
+                    {"deal_id": call_deal, "text": call_block},
+                    {"deal_id": deck_deal, "text": deck_block},
+                ]
+            },
+            [call_deal, deck_deal],
+        )
+        assert "Joined the pricing call" in tagged[call_deal]
+        assert tagged != positional
     finally:
         conn.close()
 
