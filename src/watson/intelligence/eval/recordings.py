@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -21,7 +22,8 @@ DEFAULT_RECORDINGS = (
 )
 
 _WINDOW = re.compile(r"^Window:\s*(.+)$", re.MULTILINE)
-_MERGED_LINE = re.compile(r"^\d+\.\s+(.+)$", re.MULTILINE)
+_PROMPT_HASH = re.compile(r"^[0-9a-f]{64}$")
+log = logging.getLogger("watson.intelligence.eval.recordings")
 
 # Generic understanding when no recording matches. Not a quality oracle.
 _DEFAULT_UNDERSTAND: dict[str, Any] = {
@@ -71,6 +73,8 @@ class RecordingRuntime:
         self._recordings = _load(self.path) if self.path.is_file() else _empty()
         self._dirty = False
         self.complete_calls = 0
+        self._legacy_used: set[int] = set()
+        self._legacy_warned = False
 
     def probe(self) -> None:
         probe = getattr(self.inner, "probe", None)
@@ -103,7 +107,7 @@ class RecordingRuntime:
         if not isinstance(result, dict):
             raise TypeError("recorded complete() must return an object")
         self._recordings.setdefault("complete", []).append(
-            {"match": _match_key(blob), "response": dict(result)}
+            {"match": prompt_hash(blob), "response": dict(result)}
         )
         self._dirty = True
         return dict(result)
@@ -141,32 +145,68 @@ class RecordingRuntime:
         self._dirty = False
 
     def _replay(self, blob: str) -> dict[str, Any]:
-        """First matching recording wins. No post-processing.
+        """Exact prompt-hash lookup, then a warned legacy substring fallback.
 
-        Understand prompts are keyed by the ``Window:`` line so nav chrome
-        (e.g. Cedar Daily in an intranet page) cannot steal the match.
-        Summary / cluster / extract have no Window line and match the blob.
+        New recordings store ``sha256(full prompt)``. Legacy files keep window
+        titles and shared prefixes. A prefix that appears on more than one
+        extract/cluster/summary row is consumed 1:1 so one day's response is
+        never silently reused. A unique legacy key (CI's single extract) may
+        still apply to every day. Understand (``Window:``) keeps first-match.
         """
+        digest = prompt_hash(blob)
+        rows = self._recordings.get("complete", [])
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("match") or "") != digest:
+                continue
+            response = row.get("response")
+            if isinstance(response, dict):
+                return dict(response)
+
         window = _WINDOW.search(blob)
         haystack = window.group(1).strip() if window else blob
-        for row in self._recordings.get("complete", []):
+        hits: list[tuple[int, dict[str, Any], str]] = []
+        counts: dict[str, int] = {}
+        for index, row in enumerate(rows):
             if not isinstance(row, dict):
                 continue
             needle = str(row.get("match") or "")
+            if not needle or _PROMPT_HASH.fullmatch(needle):
+                continue
+            counts[needle] = counts.get(needle, 0) + 1
             response = row.get("response")
-            if needle and needle.casefold() in haystack.casefold() and isinstance(response, dict):
-                return dict(response)
+            if needle.casefold() in haystack.casefold() and isinstance(response, dict):
+                hits.append((index, row, needle))
+        if not hits:
+            return dict(_DEFAULT_UNDERSTAND)
+        self._warn_legacy()
+        if window:
+            return dict(hits[0][1]["response"])
+        ambiguous = [hit for hit in hits if counts.get(hit[2], 0) > 1]
+        for index, row, _needle in ambiguous:
+            if index in self._legacy_used:
+                continue
+            self._legacy_used.add(index)
+            return dict(row["response"])
+        unique = [hit for hit in hits if counts.get(hit[2], 0) == 1]
+        if unique:
+            return dict(unique[0][1]["response"])
         return dict(_DEFAULT_UNDERSTAND)
 
+    def _warn_legacy(self) -> None:
+        if self._legacy_warned:
+            return
+        self._legacy_warned = True
+        log.warning(
+            "legacy recording key used; exact prompt-hash lookup missed. "
+            "A replay will not silently reuse another day's extract"
+        )
 
-def _match_key(blob: str) -> str:
-    match = _WINDOW.search(blob)
-    if match and match.group(1).strip():
-        return match.group(1).strip()
-    line = _MERGED_LINE.search(blob)
-    if line and line.group(1).strip():
-        return line.group(1).strip()[:80]
-    return blob[:80]
+
+def prompt_hash(blob: str) -> str:
+    """SHA-256 of the full joined prompt. This is the recorded ``match`` key."""
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _load(path: Path) -> dict[str, Any]:

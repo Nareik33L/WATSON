@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.replay_support import TEST_KEY
-from watson.intelligence.eval.recordings import RecordingRuntime
+from watson.intelligence.eval.recordings import RecordingRuntime, prompt_hash
 from watson.intelligence.eval.run import DayEval, run_eval
 from watson.intelligence.eval.thresholds import load_thresholds
 from watson.intelligence.runtime.types import OutputParseError, RuntimeUnavailable
@@ -142,7 +142,7 @@ def test_eval_saves_recordings_on_abort(
     assert recordings.is_file()
     payload = json.loads(recordings.read_text(encoding="utf-8"))
     assert payload["complete"]
-    assert payload["complete"][0]["match"] == "R7 abort sentinel"
+    assert payload["complete"][0]["match"] == prompt_hash("Window: R7 abort sentinel")
 
 
 P1_SENTINEL = "plain pocket calendar marker for report privacy"

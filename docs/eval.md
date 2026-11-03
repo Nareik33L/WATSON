@@ -20,6 +20,8 @@ Writes `/tmp/watson-eval/report.json` and `report.md`. Exit status is `1` if the
 
 Replay does not call Ollama and does not rewrite recordings after load.
 
+Recorded `complete()` rows are keyed by the **SHA-256 of the full prompt** (every message body, joined). Extract, cluster, and summary prompts share a system-prompt prefix, so the old first-80-character / first-`match` substring key applied one day's extract to every later day. Replay looks up that exact hash first. Legacy files (window titles, `"Extract cross-segment"`, the first 80 characters of a prompt) still load: a documented substring fallback runs only after the hash miss, logs a warning, and never silently reuses another day's response when several rows share the same legacy key. A unique legacy key (the committed CI extract) may still apply to every day. New `--mode record` files store only the hash.
+
 ## Record / run against local Ollama (8 GB Mac)
 
 Device Ops, on the V1 machine (Apple Silicon, 8 GB), with Ollama serving the candidate (`qwen2.5:3b` baseline, or `--llm-model gemma2:9b` / `llama3.1:8b` / `qwen2.5:7b`) and `nomic-embed-text`:
