@@ -23,9 +23,13 @@ from watson.intelligence.eval.deals import (
     PredictedEvidence,
     PredictedSegment,
     _claim_covers,
+    _claim_near_key,
+    _collapse_duplicate_claims,
+    _fact_signature,
     _pair_claims,
     _stored_pipeline_texts,
     _unsupported,
+    align_segments,
     collect_predicted_deals,
     company_cluster,
     content_tokens,
@@ -36,7 +40,9 @@ from watson.intelligence.eval.deals import (
     honest_has_roster_name_and_deadline,
     honest_prediction,
     honest_prediction_filled,
+    is_multi_fact_claim,
     load_deal_corpus,
+    match_clusters,
     matching_slot_facts,
     privacy_bait_legal,
     required_terms_present,
@@ -1322,9 +1328,9 @@ def test_contradicts_gates_on_slot_and_deal_evidence() -> None:
 
 def test_company_cluster_does_not_read_deal_name() -> None:
     day = _day(
-        deals=[Deal("northwind", "Northwind Renewal", "Globex")],
-        people=[Person("ada", "Ada Lovelace", "Globex")],
-        segments=[_seg("s1", "northwind", "f1", title="Northwind Renewal")],
+        deals=[Deal("northwind", "Zephyr", "Globex")],
+        people=[],
+        segments=[_seg("s1", "northwind", "f1", title="Zephyr inbox")],
         frames={"f1": Frame("f1", "notes")},
     )
     assert company_cluster(day.segments[0], day) == NONE
@@ -1416,3 +1422,104 @@ def test_extract_amounts_rejects_units_and_versions() -> None:
     assert "amt:40000" in extract_amounts("40k")
     assert "amt:95000:usd" in extract_amounts("USD 95k")
     assert "amt:5000000:usd" in extract_amounts("$5m walk")
+    assert "amt:40000:gbp" in extract_amounts("GBP 40k")
+    assert "amt:12000:eur" in extract_amounts("EUR 12k")
+    assert extract_amounts("USD 95k") != extract_amounts("95k")
+    assert extract_amounts("GBP 40k") != extract_amounts("40k")
+
+
+def test_collapse_duplicate_claims_keeps_slot_and_word_order() -> None:
+    priya_to_acme = _claim("Priya sent pricing to Acme", claim_id="c1")
+    acme_to_priya = _claim("Acme sent pricing to Priya", claim_id="c2")
+    other_slot = _claim("Priya sent pricing to Acme", claim_id="c3", slot="who_involved")
+    collapsed = _collapse_duplicate_claims([priya_to_acme, acme_to_priya, other_slot])
+    assert [claim.id for claim in collapsed] == ["c1", "c2", "c3"]
+    deal, slot, tokens = _claim_near_key(priya_to_acme)
+    assert deal == "acme-q4"
+    assert slot == "what_happened"
+    assert tokens != _claim_near_key(acme_to_priya)[2]
+
+
+def test_is_multi_fact_claim_threshold_and_person_signature() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call q4 deck")},
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1",)),
+        ],
+    )
+    packed = _claim("joined the pricing call q4 deck")
+    assert is_multi_fact_claim(packed, day) is True
+    same_person = _day(
+        facts=[
+            GoldFact(
+                "w1",
+                "acme-q4",
+                "who_involved",
+                (),
+                {},
+                ("s1",),
+                person_id="priya-natarajan",
+            ),
+            GoldFact(
+                "w2",
+                "acme-q4",
+                "who_involved",
+                (),
+                {},
+                ("s2",),
+                person_id="priya-natarajan",
+            ),
+        ]
+    )
+    who = _claim("Priya Natarajan", slot="who_involved")
+    assert is_multi_fact_claim(who, same_person) is False
+    assert _fact_signature(same_person.facts[0])[1] == "priya-natarajan"
+
+
+def test_score_deals_next_step_without_commitment_is_rejected() -> None:
+    fact = GoldFact("g", "acme-q4", "next_step", ("pricing",), {}, ("s1",))
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing Friday")},
+        facts=[fact],
+    )
+    gold = DealCorpus(days=[day])
+    score = score_deals(gold, _pred(day, claims=[_claim("pricing Friday", slot="next_step")]))
+    plain = PredictedClaim("c", "acme-q4", "next_step", "pricing Friday")
+    assert slot_modal_ok(plain, fact) is False
+    assert score.summary.correct == 0
+
+
+def test_align_segments_tiebreak_started_at_before_id() -> None:
+    day = _day(segments=[_seg("s1", "acme-q4", "f1", "f2")])
+    late = PredictedSegment("a-late", ("f1", "f2"), "late", started_at="2026-01-01T10:00:00Z")
+    early = PredictedSegment("z-early", ("f1", "f2"), "early", started_at="2026-01-01T09:00:00Z")
+    labels = align_segments(day, [late, early])
+    assert labels["s1"] == "early"
+
+
+def test_match_clusters_equal_overlap_prefers_gold_id() -> None:
+    day = _day(
+        deals=[Deal("b-deal", "B"), Deal("a-deal", "A")],
+        segments=[_seg("s1", "a-deal", "f1"), _seg("s2", "b-deal", "f2")],
+    )
+    mapping = match_clusters(day, {"s1": "p1", "s2": "p1"})
+    assert mapping["p1"] == "a-deal"
+
+
+def test_contradicts_needs_deal_ok_not_just_evidence() -> None:
+    what = GoldFact("f1", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))
+    who = GoldFact("f2", "acme-q4", "who_involved", (), {}, ("s1",), person_id="priya-natarajan")
+    day = _day(
+        people=[PRIYA, CHEN],
+        facts=[what, who],
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "Priya Chen pricing call")},
+    )
+    claim = _claim("Priya Chen joined the pricing call")
+    assert contradicts(claim, what, day, "Priya Chen pricing call") is True
+    gold = DealCorpus(days=[day])
+    score = score_deals(gold, _pred(day, claims=[claim]))
+    assert score.summary.correct == 0

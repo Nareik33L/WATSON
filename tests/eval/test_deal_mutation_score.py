@@ -1,4 +1,4 @@
-"""Named-mutation score for the deal scorer. Target ≥ 80% of 68 mutants."""
+"""Named-mutation score for the deal scorer. Target ≥ 80% of 78 mutants."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 DEALS = "src/watson/intelligence/eval/deals.py"
 DEAL_GOLD = REPO / "tests" / "fixtures" / "deal_gold"
-TARGET_MUTANTS = 68
-KILL_FLOOR = 55  # 80% of 68
+TARGET_MUTANTS = 78
+KILL_FLOOR = 63  # 80% of 78
 TEST_PATHS = (
     "tests/eval/test_deal_scorer_e2e.py",
     "tests/unit/test_deal_metrics.py",
@@ -24,8 +24,75 @@ TEST_PATHS = (
 _COLLECTED = re.compile(r"(\d+) tests? collected")
 _RAN = re.compile(r"(\d+) (passed|failed)")
 
-# QA's remaining survivors first, then the rest of the 68-mutant set.
+# QA's remaining survivors first, then the rest of the 78-mutant set.
 MUTANTS: tuple[tuple[str, str, str], ...] = (
+    (
+        "collapse-drop-slot",
+        "    return (claim.deal, claim.slot, tokens)\n",
+        '    return (claim.deal, "", tokens)\n',
+    ),
+    (
+        "contradict-evidence-only",
+        "            if deal_ok and evidence_ok:\n                continue\n",
+        "            if evidence_ok:\n                continue\n",
+    ),
+    (
+        "contradict-fact-or-deal",
+        "            if deal_ok and evidence_ok:\n                continue\n",
+        "            if fact_values[kind] or deal_ok:\n                continue\n",
+    ),
+    (
+        "signature-person-id",
+        '        return ("person", fact.person_id)\n',
+        '        return ("person", fact.id)\n',
+    ),
+    (
+        "next-always",
+        "        return has_commit or imperative\n",
+        "        return True\n",
+    ),
+    (
+        "align-no-started",
+        (
+            "            key=lambda row: (\n"
+            "                -len(gold_frames & set(row.frame_ids)),\n"
+            "                row.started_at,\n"
+            "                row.id,\n"
+            "            ),\n"
+        ),
+        (
+            "            key=lambda row: (\n"
+            "                -len(gold_frames & set(row.frame_ids)),\n"
+            "                row.id,\n"
+            "            ),\n"
+        ),
+    ),
+    (
+        "match-no-gold-id",
+        "    pairs.sort(key=lambda item: (-item[0], item[1], item[2]))\n",
+        "    pairs.sort(key=lambda item: (-item[0], item[2]))\n",
+    ),
+    (
+        "collapse-drop-deal",
+        "    return (claim.deal, claim.slot, tokens)\n",
+        '    return ("", claim.slot, tokens)\n',
+    ),
+    (
+        "align-max",
+        "        cover = min(\n            candidates,\n",
+        "        cover = max(\n            candidates,\n",
+    ),
+    (
+        "collapse-frozenset",
+        (
+            "    tokens = tuple(token for token in content_tokens(claim.text)"
+            " if token not in _NEAR_FILLERS)\n"
+        ),
+        (
+            "    tokens = frozenset(token for token in content_tokens(claim.text)"
+            " if token not in _NEAR_FILLERS)\n"
+        ),
+    ),
     (
         "stored-empty",
         '        blobs.extend(str(row[0] or "") for row in rows)\n    return blobs\n',
@@ -506,7 +573,7 @@ def _classify(src_root: Path, *, original: str | None = None) -> str:
 
 
 @pytest.mark.timeout(420)
-def test_deal_scorer_kills_at_least_80_percent_of_68(tmp_path: Path) -> None:
+def test_deal_scorer_kills_at_least_80_percent_of_78(tmp_path: Path) -> None:
     assert DEAL_GOLD.is_dir(), f"deal gold fixtures missing at {DEAL_GOLD}"
     assert len(MUTANTS) == TARGET_MUTANTS, f"expected {TARGET_MUTANTS} mutants, have {len(MUTANTS)}"
     names = [row[0] for row in MUTANTS]

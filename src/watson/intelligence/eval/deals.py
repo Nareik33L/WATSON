@@ -1628,15 +1628,19 @@ def _deal_non_bait_count(day: DayGold, deal_id: str) -> int:
     )
 
 
-def _claim_near_key(claim: PredictedClaim) -> tuple[str, str, frozenset[str]]:
-    """Same-deal, same-slot identity after dropping please/still/revised/discussed."""
-    tokens = frozenset(token for token in content_tokens(claim.text) if token not in _NEAR_FILLERS)
+def _claim_near_key(claim: PredictedClaim) -> tuple[str, str, tuple[str, ...]]:
+    """Same-deal, same-slot identity after dropping please/still/revised/discussed.
+
+    Token order is kept, so ``Priya sent pricing to Acme`` does not collapse
+    with ``Acme sent pricing to Priya``.
+    """
+    tokens = tuple(token for token in content_tokens(claim.text) if token not in _NEAR_FILLERS)
     return (claim.deal, claim.slot, tokens)
 
 
 def _collapse_duplicate_claims(claims: Sequence[PredictedClaim]) -> list[PredictedClaim]:
     """Keep the first of identical or near-identical claims in one deal+slot."""
-    seen: set[tuple[str, str, frozenset[str]]] = set()
+    seen: set[tuple[str, str, tuple[str, ...]]] = set()
     out: list[PredictedClaim] = []
     for claim in claims:
         key = _claim_near_key(claim)
