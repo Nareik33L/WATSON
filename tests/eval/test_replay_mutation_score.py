@@ -1,4 +1,4 @@
-"""Operator-mutation score for eval replay. Target ≥ 24 of 28 mutants.
+"""Operator-mutation score for eval replay. Target ≥ 26 of 30 mutants.
 
 No-ops (replacement missing or source unchanged) and collection errors
 count as SURVIVED, not killed.
@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-TARGET_MUTANTS = 28
-KILL_FLOOR = 24
+TARGET_MUTANTS = 30
+KILL_FLOOR = 26
 TEST_PATHS = (
     "tests/unit/test_eval_recordings.py::test_record_stores_full_prompt_hash_and_params",
     "tests/unit/test_eval_recordings.py::test_prompt_hash_includes_roles_and_params",
@@ -28,6 +28,8 @@ TEST_PATHS = (
     "tests/unit/test_eval_recordings.py::test_prompt_hash_uses_every_message_not_just_the_first",
     "tests/unit/test_eval_recordings.py::test_prompt_hash_run_id_ordinals_follow_appearance_not_sort",
     "tests/unit/test_eval_recordings.py::test_prompt_hash_keeps_claim_prompt_order",
+    "tests/unit/test_eval_recordings.py::test_prompt_hash_repeated_ids_keep_distinct_ordinals",
+    "tests/unit/test_consolidation.py::test_load_claims_tied_created_at_orders_kind_assertion_text",
     "tests/unit/test_eval_recordings.py::test_prompt_hash_leaves_fixture_uuid",
     "tests/unit/test_eval_recordings.py::test_prompt_hash_leaves_fixture_timestamp",
     "tests/unit/test_eval_recordings.py::test_replay_maps_ordinal_cites_to_prompt_order_not_sorted",
@@ -59,8 +61,20 @@ UNDERSTANDING = "src/watson/pipeline/understanding.py"
 CONSOLIDATION = "src/watson/pipeline/consolidation.py"
 DB = "src/watson/memory/db.py"
 
-# One named replacement each. First 14 are the QA @509fca6 survivors.
+# One named replacement each. First two are the QA @37f4931 survivors.
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "load-claims-id-only",
+        CONSOLIDATION,
+        "        ORDER BY created_at, kind, assertion, text, id\n",
+        "        ORDER BY created_at, id\n",
+    ),
+    (
+        "ordinals-const",
+        RECORDINGS,
+        '        mapping[token] = str(len(mapping) + 1)\n    return mapping\n',
+        '        mapping[token] = "1"\n    return mapping\n',
+    ),
     (
         "understand-swallow",
         UNDERSTANDING,
@@ -378,7 +392,7 @@ def _classify(src_root: Path, *, changed: bool) -> str:
 
 
 @pytest.mark.timeout(300)
-def test_replay_kills_at_least_24_of_28(tmp_path: Path) -> None:
+def test_replay_kills_at_least_26_of_30(tmp_path: Path) -> None:
     assert len(MUTANTS) == TARGET_MUTANTS
     src_root = tmp_path / "src"
     shutil.copytree(REPO / "src" / "watson", src_root / "watson")

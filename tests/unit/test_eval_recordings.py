@@ -485,6 +485,17 @@ def test_prompt_hash_keeps_claim_prompt_order() -> None:
     ) != prompt_hash([{"role": "user", "content": swapped}], schema={}, run_ids=[send, edit])
 
 
+def test_prompt_hash_repeated_ids_keep_distinct_ordinals() -> None:
+    """A,B,A and A,B,B must hash differently. Mapping every run id to '1' collapses them."""
+    first = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    second = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    aba = f"note {first} then {second} then {first}"
+    abb = f"note {first} then {second} then {second}"
+    assert prompt_hash(
+        [{"role": "user", "content": aba}], schema={}, run_ids=[first, second]
+    ) != prompt_hash([{"role": "user", "content": abb}], schema={}, run_ids=[first, second])
+
+
 def test_prompt_hash_leaves_fixture_uuid() -> None:
     """Fixture UUIDs stay verbatim. Only run-issued IDs become ordinals."""
     fixture_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"

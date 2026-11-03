@@ -30,6 +30,7 @@ from watson.pipeline.consolidation import (
     _grounded_for_kind,
     _insert_achievements,
     _insert_extract,
+    _load_claims,
     _load_entities,
     _match_entity,
     _project_bucket,
@@ -2237,6 +2238,75 @@ def test_verify_count_mismatch_fails_without_sweep(
         ).fetchone()
         assert row["state"] == "failed"
         assert row["consolidation_error"] == "ConsolidationError"
+    finally:
+        conn.close()
+
+
+def test_load_claims_tied_created_at_orders_kind_assertion_text(tmp_path: Path) -> None:
+    """Equal created_at must not fall back to id (UUIDv7 random tail)."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        frame_id = _insert_frame(conn, day_id)
+        segment_id = _insert_segment(conn, day_id, frame_id)
+        obs_id = _insert_observation(conn, segment_id)
+        stamp = "2026-10-31T15:00:00Z"
+        # IDs sort the opposite of (kind, assertion, text).
+        commitment_id = "00000000-0000-4000-8000-000000000001"
+        unconfirmed_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        later_text_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        first_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+        for claim_id, kind, assertion, text in (
+            (commitment_id, "commitment", "observed", "zzz last by kind"),
+            (unconfirmed_id, "activity", "unconfirmed", "mmm middle by assertion"),
+            (later_text_id, "activity", "observed", "mmm later by text"),
+            (first_id, "activity", "observed", "aaa first by text"),
+        ):
+            conn.execute(
+                """
+                INSERT INTO claims (
+                    id, created_at, updated_at, observation_id, working_day_id,
+                    kind, text, assertion, confidence, status, due_hint, pipeline_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.8, NULL, NULL, ?)
+                """,
+                (
+                    claim_id,
+                    stamp,
+                    stamp,
+                    obs_id,
+                    day_id,
+                    kind,
+                    text,
+                    assertion,
+                    PIPELINE_VERSION,
+                ),
+            )
+        conn.commit()
+        loaded = _load_claims(conn, day_id, PIPELINE_VERSION)
+        assert [row["id"] for row in loaded] == [
+            first_id,
+            later_text_id,
+            unconfirmed_id,
+            commitment_id,
+        ]
+        assert [row["kind"] for row in loaded] == [
+            "activity",
+            "activity",
+            "activity",
+            "commitment",
+        ]
+        assert [row["assertion"] for row in loaded] == [
+            "observed",
+            "observed",
+            "unconfirmed",
+            "observed",
+        ]
+        assert [row["text"] for row in loaded] == [
+            "aaa first by text",
+            "mmm later by text",
+            "mmm middle by assertion",
+            "zzz last by kind",
+        ]
     finally:
         conn.close()
 
