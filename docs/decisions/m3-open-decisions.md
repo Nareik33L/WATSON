@@ -40,7 +40,7 @@ Decide whether V1 ships LLM consolidation or OCR + segments + rule-based summari
 | Profile | Machine | Understanding p95 | Worker+model peak (`phys_footprint`) | Consolidation | Precision (decisions/commitments) |
 |---|---|---:|---:|---:|---:|
 | **primary** | 32 GB target laptop | < 20 s/segment (gated) | < 3 GB (gated) | < 15 min | ≥ 0.85 |
-| **min-spec** | 8 GB testing Mac | recorded, not gated | reported, not gated; gate = `completed_without_kill` | < 15 min | ≥ 0.85 |
+| **min-spec** | 8 GB testing Mac | recorded, not gated | reported, not gated; gate = `completed_without_kill` | recorded, not gated | ≥ 0.85 |
 
 One model resident on both. Encoded in `src/watson/intelligence/eval/thresholds.json` → `profiles`. `watson eval --strict --measure-model` checks the active profile. Auto-select: `min-spec` when installed RAM is < 16 GiB (covers ≤ 8 GB); `primary` otherwise. Override with `--profile primary` or `--profile min-spec`.
 

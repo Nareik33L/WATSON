@@ -173,9 +173,9 @@ def gate_profile(
     """Compare measured profile metrics to the §11.4 profile.
 
     Primary gates understand p95, worker+model peak, and consolidation.
-    Min-spec records p95 and peak but gates ``completed_without_kill``
-    (eval finished every fixture day with no crash, OOM kill, or connection
-    loss) plus consolidation < 15 min.
+    Min-spec records p95, peak, and ``consolidate_s`` but gates
+    ``completed_without_kill`` (eval finished every fixture day with no
+    crash, OOM kill, or connection loss).
     """
     if profile not in KNOWN_PROFILES:
         raise ValueError(f"unknown eval profile {profile!r}")

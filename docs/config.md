@@ -49,8 +49,8 @@ endpoints; Ollama is loopback-only. Defaults: `runtime = "ollama"`,
 `entity_similarity_threshold = 0.80`, `retrieve_top_k = 5`.
 
 `[intelligence.ollama]` is the HTTP client: `timeout_s = 300` for 3B
-(passed to `/api/chat` and `/api/embed`; 7–9B presets use 900 s so a 7B
-can finish on 8 GB), `num_ctx` (defaults to `context_window`, 4096),
+(passed to `/api/chat` and `/api/embed`; 7–9B presets use 3600 s),
+`num_ctx` (defaults to `context_window`, 4096),
 `num_predict = 512` (sized to the understanding JSON schema; structured
 repair retries use 256), and `unload_between_phases = true` unloads
 resident models at sub-phase boundaries (understanding chat →

@@ -11,6 +11,7 @@ import pytest
 from tests.replay_support import TEST_KEY
 from watson.intelligence.eval.recordings import RecordingRuntime
 from watson.intelligence.eval.run import DayEval, run_eval
+from watson.intelligence.eval.thresholds import load_thresholds
 from watson.intelligence.runtime.types import OutputParseError, RuntimeUnavailable
 from watson.memory.db import connect
 from watson.pipeline.consolidation import ConsolidationWait
@@ -263,10 +264,10 @@ def test_run_eval_passes_measured_consolidate_s_into_profile_gate(
     assert "consolidate_s" not in (report.profile_gate.get("failures") or [])
 
 
-def test_run_eval_min_spec_gate_fails_when_measured_consolidate_exceeds_15_min(
+def test_run_eval_min_spec_passes_when_measured_consolidate_exceeds_15_min(
     tmp_path: Path, key_provider: object, monkeypatch: object
 ) -> None:
-    """C4: the 15-min cap is the measured max, not a constant 0."""
+    """Min-spec records consolidate_s; a 901 s sample must not fail the profile gate."""
     from watson.intelligence.eval import run as run_mod
 
     captured: dict[str, object] = {}
@@ -294,8 +295,67 @@ def test_run_eval_min_spec_gate_fails_when_measured_consolidate_exceeds_15_min(
         profile="min-spec",
     )
     assert captured.get("consolidate_s") == 901.0
-    assert report.profile_gate["passed"] is False
-    assert "consolidate_s" in report.profile_gate["failures"]
+    assert report.completed_without_kill == 1.0
+    assert report.profile_gate["passed"] is True
+    assert "consolidate_s" not in (report.profile_gate.get("failures") or [])
+
+
+def _day_with_metrics(name: str, **overrides: float) -> DayEval:
+    metrics = {metric: 1.0 for metric in load_thresholds()}
+    metrics["unsupported_achievements"] = 0.0
+    metrics["duplicate_observation_rate"] = 0.0
+    metrics.update(overrides)
+    return DayEval(
+        name=name,
+        date="2026-10-31",
+        metrics=metrics,
+        derived_first={"summaries": 1},
+        derived_second={"summaries": 1},
+        summary_present=True,
+        identical_counts=True,
+        narrative_nonempty=True,
+        citation_count=1,
+        claims=1,
+    )
+
+
+@pytest.mark.parametrize("metric", ["decisions_precision", "commitments_precision"])
+def test_run_eval_min_spec_fails_precision_0_84_and_passes_0_85(
+    tmp_path: Path, key_provider: object, monkeypatch: object, metric: str
+) -> None:
+    """A mutant that skips §11.2 precision when profile is min-spec must fail."""
+    from watson.intelligence.eval import run as run_mod
+
+    def run_with(value: float) -> object:
+        def fake_one(fixture: Path, **_kwargs: object) -> DayEval:
+            return _day_with_metrics(fixture.name, **{metric: value})
+
+        monkeypatch.setattr(run_mod, "_eval_one", fake_one)
+        return run_eval(
+            fixtures_root=FIXTURES,
+            names=("day_near_empty",),
+            mode="replay",
+            runtime_name="replay",
+            recordings=RECORDINGS,
+            out_dir=tmp_path / f"min-spec-{metric}-{value}",
+            key=TEST_KEY,
+            profile="min-spec",
+        )
+
+    miss = run_with(0.84)
+    hit = run_with(0.85)
+    assert miss.profile == "min-spec"
+    assert miss.aggregate[metric] == 0.84
+    assert miss.gate["passed"] is False
+    assert metric in miss.gate["failures"]
+    assert miss.pipeline_passed is True
+    assert miss.passed is False
+    assert hit.profile == "min-spec"
+    assert hit.aggregate[metric] == 0.85
+    assert hit.gate["passed"] is True
+    assert metric not in (hit.gate.get("failures") or [])
+    assert hit.pipeline_passed is True
+    assert hit.passed is True
 
 
 def test_run_eval_min_spec_gate_fails_when_runtime_aborts(

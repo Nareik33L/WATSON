@@ -11,6 +11,8 @@
 
 **Changelog (2026-11-02 21:53/21:55 via CoS):** Kieran 2026-11-02 21:53 via CoS: maximise accuracy; default chosen by strict precision ≥ 0.85; 7–8B allowed in V1; min-spec p95 recorded, not gated; min-spec memory gate = completes without crash or kill; primary targets unchanged. **21:55:** the default model is the largest model that runs to completion on the 8 GB Mac with strict precision ≥ 0.85, however slow. Candidates, biggest first: `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4; go smaller only if a bigger one crashes or misses 0.85. Code default stays `qwen2.5:3b` until the bake-off winner is sent. Larger models are no longer parked post-POC.
 
+**Changelog (2026-11-03 02:59 via CoS):** min-spec `consolidate_s` is recorded, not gated (timing is not a min-spec issue). Primary still gates consolidation < 15 min. 7–9B / unknown-model timeout preset is 3600 s.
+
 This document keeps the product definition, principles and non-goals of v1.1 unchanged. It revises *how* W.A.T.S.O.N is built. The changes fall into four groups:
 
 1. **Privacy exposure is reduced by an order of magnitude** — frames are deleted minutes after capture rather than at end of day, only the frontmost window is captured by default, and extracted text is itself tiered and expiring.
@@ -547,10 +549,10 @@ Thresholds are targets for the chosen model at M3; they are adjusted with eviden
 
 Per frame: OCR time, VLM time; per day: consolidation time, peak RSS of worker, database growth; capture helper CPU over an hour.
 
-Two hardware profiles, **same default model** on both (§14 #9). Helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled in V1.0; one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day; consolidation < 15 min.
+Two hardware profiles, **same default model** on both (§14 #9). Helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled in V1.0; one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day; consolidation < 15 min on primary (recorded, not gated on the 8 GB min-spec).
 
 - **Primary** (32 GB target laptop): understanding p95 < 20 s/segment; peak memory (worker plus model server, Darwin `phys_footprint`) < 3 GB; consolidation < 15 min. Unchanged (Kieran 21:53).
-- **Minimum-spec** (8 GB development / testing Mac): understand p95 is **recorded, not gated**. Memory gate is **completed without crash or OOM kill** (every fixture day processed, worker exit 0, no runtime connection loss or kill). Peak worker+model is reported but not gated. Consolidation < 15 min remains gated. Strict precision ≥ 0.85 and the other §11.2 metrics stay gating on both profiles. 7–9B Q4 models are allowed; timeout/num_ctx are per-model (900 s default for 7B on 8 GB). Engineering headroom (p95 < 30 s, peak < 3.3 GiB) is recorded in `report.json` → `headroom` and does not fail the gate.
+- **Minimum-spec** (8 GB development / testing Mac): understand p95 is **recorded, not gated**. Memory gate is **completed without crash or OOM kill** (every fixture day processed, worker exit 0, no runtime connection loss or kill). Peak worker+model and `consolidate_s` are reported but not gated. Strict precision ≥ 0.85 and the other §11.2 metrics stay gating on both profiles. 7–9B Q4 models are allowed; timeout/num_ctx are per-model (3600 s for 7–9B / unknown models; 300 s for 3B). Engineering headroom (p95 < 30 s, peak < 3.3 GiB) is recorded in `report.json` → `headroom` and does not fail the gate.
 
 Targets for the **16 GB V1.2 profile** (commercialisation, not the M3 eval profiles above): as the original 8 GB line plus VLM < 15 s/frame when used; consolidation < 10 min; worker peak RSS < 6 GB.
 
@@ -659,7 +661,7 @@ Former M7 packaging (signed, notarised app bundle with embedded helper and in-pr
 | 6 | Whether to request Accessibility permission for browser URLs in V1, or defer | M5 |
 | 7 | Tier-2 text default TTL (7 days proposed) | M3, after seeing re-consolidation needs |
 | 8 | Dashboard framework details (HTMX vs plain fetch) | M1 |
-| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask W.A.T.S.O.N | **DECIDED (Kieran, 2026-11-02 16:41 option A; superseded in part by 21:53/21:55 via CoS)** — V1 keeps LLM consolidation. **Primary** unchanged: p95 < 20 s/segment, worker+model peak < 3 GB, consolidation < 15 min. **Min-spec:** understand p95 recorded, not gated; memory gate = completes without crash or kill; consolidation < 15 min; peak worker+model reported, not gated. Strict precision ≥ 0.85 and the other §11.2 metrics stay gating on both. **Kieran 2026-11-02 21:53 via CoS:** maximise accuracy; default chosen by strict precision ≥ 0.85; 7–8B allowed in V1; min-spec p95 recorded, not gated; min-spec memory gate = completes without crash or kill; primary targets unchanged. **21:55:** default = largest model that completes on 8 GB at ≥ 0.85, however slow; candidates `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4. |
+| 9 | Whether the 8 GB LLM is good enough for consolidation, or whether V1 ships OCR + segments + rule-based summaries with the LLM only for Ask W.A.T.S.O.N | **DECIDED (Kieran, 2026-11-02 16:41 option A; superseded in part by 21:53/21:55 via CoS; 2026-11-03 02:59 via CoS)** — V1 keeps LLM consolidation. **Primary** unchanged: p95 < 20 s/segment, worker+model peak < 3 GB, consolidation < 15 min. **Min-spec:** understand p95 recorded, not gated; memory gate = completes without crash or kill; `consolidate_s` recorded, not gated; peak worker+model reported, not gated. Strict precision ≥ 0.85 and the other §11.2 metrics stay gating on both. 7–9B timeout preset is 3600 s. **Kieran 2026-11-02 21:53 via CoS:** "Maximise for accuracy. Timing is not an issue as it will be on a more powerful Mac usually this is just the base minimum". **21:55:** "I would opt for the biggest one that fits on this Mac despite the timing". |
 | 10 | Package runtime: llama.cpp vs MLX (in-process default, D6) | **M3**, owner Watson Lead — not measured at M0-A |
 
 ---
