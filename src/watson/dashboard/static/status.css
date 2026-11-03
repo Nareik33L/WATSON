@@ -78,6 +78,8 @@ button {
 .day-state-consolidated { color: var(--accent); font-weight: 600; }
 .cite { color: var(--accent); }
 .narrative { white-space: pre-wrap; }
+.deal-slot { margin: 0 0 8px; }
+article h3 { margin: 12px 0 6px; font-size: 14px; color: var(--accent); }
 .claims { list-style: none; padding-left: 0; }
 .orphans { list-style: none; padding-left: 0; }
 .orphan-flag { color: #8a6a12; font-weight: 600; }

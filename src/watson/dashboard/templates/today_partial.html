@@ -46,6 +46,14 @@
   {% endif %}
 </section>
 
+{% if today is not none and today.date is not none %}
+  {% if today.groups.deals or today.state in ["consolidated", "failed"] or not today.segments %}
+    {% with groups = today.groups %}
+      {% include "deal_groups.html" %}
+    {% endwith %}
+  {% endif %}
+{% endif %}
+
 {% if today is not none and today.day is not none and today.date is not none %}
 <section>
   <h2>Daily summary</h2>

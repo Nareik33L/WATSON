@@ -69,7 +69,7 @@ from watson.intelligence.schemas.consolidation import (
 )
 from watson.intelligence.structured import complete_structured
 from watson.memory.corrections import apply_claim_corrections, rejected_claim_ids
-from watson.memory.db import iso_now
+from watson.memory.db import iso_now, parse_iso
 from watson.memory.ids import new_id
 from watson.pipeline.frames import PIPELINE_VERSION
 from watson.pipeline.jobs import (
@@ -739,7 +739,7 @@ def _replace_derived(
         verified = _narrative_from_stored_deals(inserted_deals, buckets, cited, unverified)
         if skipped:
             note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
-            paragraphs = (*verified.paragraphs, note)
+            paragraphs = (note, *verified.paragraphs)
             verified = VerifiedNarrative(
                 narrative_md="\n\n".join(paragraphs),
                 paragraphs=paragraphs,
@@ -768,7 +768,7 @@ def _replace_derived(
             prompt_version=summary_prompt.prompt_version,
             pipeline_version=settings.pipeline_version,
             stamp=stamp,
-            extra_sections=_summary_deal_sections(inserted_deals, slot_drafts),
+            extra_sections=_summary_deal_sections(inserted_deals, slot_drafts, buckets),
         )
         conn.commit()
     except Exception:
@@ -1000,6 +1000,7 @@ def _insert_deals(
         assigned_obs.update(chosen)
         deal_id = new_id()
         group_key = _deal_group_key(index, cluster.title)
+        created = _deal_created_at(stamp, len(inserted))
         conn.execute(
             """
             INSERT INTO deals (
@@ -1009,8 +1010,8 @@ def _insert_deals(
             """,
             (
                 deal_id,
-                stamp,
-                stamp,
+                created,
+                created,
                 working_day_id,
                 cluster.title,
                 cluster.summary,
@@ -1706,6 +1707,14 @@ def _trim_numbered(items: list[str], *, item_max: int, list_max: int) -> str:
     return "\n".join(lines)
 
 
+def _deal_created_at(stamp: str, index: int) -> str:
+    """Stable per-deal created_at so UUID order cannot reshuffle same-second inserts."""
+    if index <= 0:
+        return stamp
+    moment = parse_iso(stamp) + timedelta(seconds=index)
+    return moment.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def _is_none_deal_title(title: str) -> bool:
     return " ".join(title.casefold().split()) in _NONE_DEAL_TITLES
 
@@ -1862,6 +1871,10 @@ def _strip_leading_headings(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _deal_heading_block(title: str, paras: list[str]) -> str:
+    return f"## {title}\n\n" + "\n\n".join(paras)
+
+
 def _narrative_from_stored_deals(
     deals: list[dict[str, Any]],
     buckets: dict[object, list[str]],
@@ -1874,7 +1887,7 @@ def _narrative_from_stored_deals(
         paras = buckets.get(deal["index"], [])
         if not paras:
             continue
-        parts.append(f"## {deal['title']}\n\n" + "\n\n".join(paras))
+        parts.append(_deal_heading_block(str(deal["title"]), paras))
     body = "\n\n".join(parts)
     return VerifiedNarrative(
         narrative_md=body,
@@ -1887,8 +1900,9 @@ def _narrative_from_stored_deals(
 def _summary_deal_sections(
     deals: list[dict[str, Any]],
     slot_drafts: list[tuple[object, str, list[str]]],
+    buckets: dict[object, list[str]] | None = None,
 ) -> dict[str, Any]:
-    """Store validated slot citations with deal_id; never raw model index tokens."""
+    """Store validated slot citations and narrative blocks with deal_id."""
     key_to_id = {row["index"]: str(row["id"]) for row in deals}
     slots: list[dict[str, Any]] = []
     for key, slot, claim_ids in slot_drafts:
@@ -1898,10 +1912,25 @@ def _summary_deal_sections(
         if any(not cid or cid.isdigit() for cid in claim_ids):
             continue
         slots.append({"slot": slot, "claim_ids": list(claim_ids), "deal_id": deal_id})
-    return {
+    payload: dict[str, Any] = {
         "deals": [{"id": row["id"], "title": row["title"]} for row in deals],
         "slots": slots,
     }
+    if buckets is None:
+        return payload
+    paragraphs: list[dict[str, str]] = []
+    for deal in deals:
+        paras = buckets.get(deal["index"], [])
+        if not paras:
+            continue
+        paragraphs.append(
+            {
+                "deal_id": str(deal["id"]),
+                "text": _deal_heading_block(str(deal["title"]), paras),
+            }
+        )
+    payload["paragraphs"] = paragraphs
+    return payload
 
 
 def _fallback_clustering(observations: list[dict[str, Any]]) -> ClusteringOutput:

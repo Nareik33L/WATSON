@@ -1,0 +1,63 @@
+<section>
+  <h2>Deals</h2>
+  {% if not groups.deals %}
+  <p>no deals</p>
+  {% else %}
+  {% for deal in groups.deals %}
+  <article id="deal-{{ deal.id }}">
+    <h3>{{ deal.title }}</h3>
+    {% for slot in deal.slots %}
+    <p class="deal-slot">
+      <span class="label">{{ slot.label }}</span>
+      {% if slot.spans %}
+        {% for span in slot.spans %}
+          {% if span.segment_id %}
+          <a class="cite" href="#segment-{{ span.segment_id }}">{{ span.text }}</a>
+          {% elif span.claim_id %}
+          <a class="cite" href="#claim-{{ span.claim_id }}">{{ span.text }}</a>
+          {% else %}
+          {{ span.text }}
+          {% endif %}
+        {% endfor %}
+      {% else %}
+      —
+      {% endif %}
+    </p>
+    {% endfor %}
+    {% for heading, items in deal.channel_rows() %}
+    <h3>{{ heading }}</h3>
+    {% if items %}
+    <ul>
+      {% for item in items %}
+      <li id="segment-{{ item.id }}">
+        <span class="label">{{ item.app_name or "-" }}</span>
+        {{ item.window_title or "-" }}
+        <span class="label">{{ item.range_label() }}</span>
+        {{ item.duration_label() }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>none</p>
+    {% endif %}
+    {% endfor %}
+  </article>
+  {% endfor %}
+  {% endif %}
+</section>
+
+{% if groups.none_segments %}
+<section>
+  <h2>No deal</h2>
+  <ul>
+    {% for item in groups.none_segments %}
+    <li id="segment-{{ item.id }}">
+      <span class="label">{{ item.app_name or "-" }}</span>
+      {{ item.window_title or "-" }}
+      <span class="label">{{ item.range_label() }}</span>
+      {{ item.duration_label() }}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

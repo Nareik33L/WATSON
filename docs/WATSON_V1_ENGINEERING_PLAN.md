@@ -5,6 +5,10 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-03, QA on #49 @a217ae6):** Each stored summary paragraph carries `deal_id`. Today cards bind blocks from that id, per deal; a count mismatch no longer blanks every card. Legacy rows without paragraph `deal_id` still render. Claimless deals stay empty; fallback-only deals keep their cited text.
+
+**Changelog (2026-11-03, QA on #49 @abdbf89):** Deal groups show on Today only (History and `/days` stay unchanged). Cards bind to summary blocks by stored `deal_id` / deal order, never by title. Deal insert stamps are offset so same-second UUID order cannot swap cards.
+
 **Changelog (2026-11-03, QA on #45 @7812803):** Exclusive-term rule scoped to same-slot contradictions only; honest-summary positive control ≥ 0.85. Keyword dump split into over-cap and within-cap. Group-by-company uses roster `company` in the window title only. Fixture-validation and baselines are pytest under `tests/` in existing Linux CI. §14 / D8 / D10 / D11 unchanged.
 
 **Changelog (2026-11-03, QA on #45 @de6f062):** Claim length and one-claim-one-fact caps; keyword-dump baseline. Per-slot modals (done vs planned, will vs may). Aliases bounded; weekday ≠ date. Correct claims must overlap gold `evidence_segments`. Unmatched-deal citation test (2) is cluster membership only. Same-company "guarantee" replaced by a computed fixture-validation test (the 12/1/1/1 corpus must fail it). `privacy_bait` only on frames already `skipped` as excluded. §14 / D8 / D10 / D11 unchanged.
@@ -908,7 +912,7 @@ Today (with observations), History, Projects/People, Memory with corrections, Pr
 
 *Acceptance (landed):* corrections change subsequent summaries on re-consolidation; delete-day removes tiers 1–4; every page usable at 1280 px wide with no Node toolchain.
 
-V1 uses Today / History / Memory / People as the deal-journal surfaces. Generic Projects and the Reports editor are parked (§16); no further M4c dashboard milestone is required for V1. Deal groups produced by M3f must show on the existing Today / History pages (acceptance sits on M3f).
+V1 uses Today / History / Memory / People as the deal-journal surfaces. Generic Projects and the Reports editor are parked (§16); no further M4c dashboard milestone is required for V1. Deal groups produced by M3f must show on the existing **Today** page (acceptance sits on M3f). History remains a day list; deal work is per-day and is not grouped again on History.
 
 *Tagged build:* not yet cut; land `v0.4.0-m4` on the M4b line if a historical tag is wanted.
 
