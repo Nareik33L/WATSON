@@ -383,6 +383,9 @@ def _eval_one(
     conn = connect(db_path, key, load_vec=False)
     try:
         result = replay_fixture(fixture, conn, instant=True, spool_dir=out_dir / "spool")
+        setter = getattr(runtime, "set_day", None)
+        if callable(setter):
+            setter(fixture.name, result.date)
         day_id = _day_id(conn, result.date)
         spool = out_dir / "spool"
         first = _eval_consolidate(

@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from tests.replay_support import TEST_KEY
-from watson.intelligence.eval.recordings import RecordingRuntime
+from watson.intelligence.eval.recordings import RecordingRuntime, ReplayMiss, prompt_hash
 from watson.intelligence.eval.run import run_eval
 from watson.intelligence.runtime.types import RuntimeUnavailable
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures"
 RECORDINGS = FIXTURES / "eval" / "recordings.json"
-QWEN_RECORDINGS = Path(
-    "/home/ubuntu/.cursor/projects/agent-repos-WATSON/uploads/recordings_c40e.json"
-)
 
 _EXTRACT_PREFIX = (
     "# WATSON day extract — v1\n\nFrom the day's numbered claims and known entities, extract:\n"
@@ -32,12 +30,8 @@ def test_replay_uses_recording_without_augmentation() -> None:
         "1. Internal Onboarding Guide and Priya Natarajan appear in chrome\n"
         "2. Section 3 of the Internal Onboarding Guide is published this morning.\n"
     )
-    result = runtime.complete([{"role": "user", "content": blob}], {})
-    # Unknown window → default understand. Must NOT copy truth.yaml names/claims.
-    assert result["project_candidates"] == []
-    assert result["people_candidates"] == []
-    texts = [str(claim["text"]) for claim in result["claims"]]
-    assert "Onboarding Guide section 3 published" not in texts
+    with pytest.raises(ReplayMiss, match=r"understanding key=[0-9a-f]{64}"):
+        runtime.complete([{"role": "user", "content": blob}], {})
 
 
 def test_replay_summary_uses_index_citation() -> None:
@@ -108,8 +102,8 @@ def test_record_mode_requires_inner_runtime() -> None:
         raise AssertionError("record mode must not construct FakeRuntime")
 
 
-def _sha(blob: str) -> str:
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+def _sha(blob: str, **kwargs: Any) -> str:
+    return prompt_hash([{"role": "user", "content": blob}], schema={}, **kwargs)
 
 
 def _complete(runtime: RecordingRuntime, blob: str) -> dict[str, Any]:
@@ -134,18 +128,37 @@ class _StubInner:
         return dict(self.response)
 
 
-def test_record_stores_full_prompt_hash(tmp_path: Path) -> None:
+def test_record_stores_full_prompt_hash_and_params(tmp_path: Path) -> None:
     """Surviving mutant: _match_key still stores Window / first 80 chars."""
     path = tmp_path / "rec.json"
     inner = _StubInner({"decisions": [], "commitments": [{"text": "A"}]})
     runtime = RecordingRuntime(path=path, inner=inner, mode="record")
+    runtime.set_day("day_acme_q4", "2026-10-31")
     blob = _EXTRACT_PREFIX + "Claims:\n1. [commitment/observed] Send Priya the slide outline\n"
     result = _complete(runtime, blob)
     runtime.save()
     payload = json.loads(path.read_text(encoding="utf-8"))
+    row = payload["complete"][0]
     assert result["commitments"][0]["text"] == "A"
-    assert payload["complete"][0]["match"] == _sha(blob)
-    assert payload["complete"][0]["match"] != blob[:80]
+    assert row["match"] == _sha(blob)
+    assert row["match"] != blob[:80]
+    assert row["day"] == "day_acme_q4"
+    assert row["date"] == "2026-10-31"
+    assert row["model"] == ""
+    assert row["temperature"] == 0.0
+    assert row["num_predict"] is None
+    assert row["schema"] == {}
+
+
+def test_prompt_hash_includes_roles_and_params() -> None:
+    blob = _EXTRACT_PREFIX + "Claims:\n1. Alice\n"
+    user = [{"role": "user", "content": blob}]
+    system = [{"role": "system", "content": blob}]
+    assert prompt_hash(user, schema={}) != prompt_hash(system, schema={})
+    assert prompt_hash(user, schema={}) != prompt_hash(user, schema={"type": "object"})
+    assert prompt_hash(user, schema={}, model="qwen2.5:7b") != prompt_hash(user, schema={})
+    assert prompt_hash(user, schema={}, temperature=0.7) != prompt_hash(user, schema={})
+    assert prompt_hash(user, schema={}, num_predict=256) != prompt_hash(user, schema={})
 
 
 def test_two_days_with_different_claims_get_own_extracts(tmp_path: Path) -> None:
@@ -167,27 +180,144 @@ def test_two_days_with_different_claims_get_own_extracts(tmp_path: Path) -> None
     assert _complete(runtime, day_b)["commitments"] == []
 
 
-def test_legacy_shared_prefix_does_not_reuse_another_day(tmp_path: Path) -> None:
-    """Legacy 80-char extract keys: consume each row once, never silent reuse."""
+def test_legacy_out_of_order_uses_day_not_call_order(tmp_path: Path) -> None:
+    """Replaying day B first must not receive day A's project-X extract."""
     prefix = _EXTRACT_PREFIX[:80]
-    day_a = _EXTRACT_PREFIX + "Claims:\n1. [commitment/observed] Send Priya the slide outline\n"
-    day_b = _EXTRACT_PREFIX + "Claims:\n(none)\n"
+    day_b_prompt = _EXTRACT_PREFIX + "Claims:\n(none)\n"
     path = _write_recordings(
         tmp_path / "legacy.json",
         [
             {
                 "match": prefix,
+                "day": "day_acme_q4",
                 "response": {"commitments": [{"text": "Commit to complete project X by Q4"}]},
             },
-            {"match": prefix, "response": {"commitments": []}},
+            {"match": prefix, "day": "day_near_empty", "response": {"commitments": []}},
         ],
     )
     runtime = RecordingRuntime(path=path, mode="replay")
-    first = _complete(runtime, day_a)
-    second = _complete(runtime, day_b)
-    assert first["commitments"][0]["text"] == "Commit to complete project X by Q4"
-    assert second["commitments"] == []
-    assert second != first
+    runtime.set_day("day_near_empty", "2026-11-06")
+    assert _complete(runtime, day_b_prompt)["commitments"] == []
+
+
+def test_legacy_exhausted_rows_are_a_miss(tmp_path: Path) -> None:
+    """Surviving mutant: exhausted-reuses-last (day C must not get day B)."""
+    prefix = _EXTRACT_PREFIX[:80]
+    prompt = _EXTRACT_PREFIX + "Claims:\n1. Alice\n"
+    path = _write_recordings(
+        tmp_path / "exhausted.json",
+        [
+            {
+                "match": prefix,
+                "day": "day_acme_q4",
+                "response": {"commitments": [{"text": "project X"}]},
+            },
+            {
+                "match": prefix,
+                "day": "day_near_empty",
+                "response": {"commitments": [{"text": "last-row"}]},
+            },
+        ],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    runtime.set_day("day_meeting_heavy", "2026-11-04")
+    with pytest.raises(ReplayMiss, match=r"day_extract key=[0-9a-f]{64}"):
+        _complete(runtime, prompt)
+
+
+def test_legacy_window_is_not_consumed(tmp_path: Path) -> None:
+    """Surviving mutant: window-consumes (revisit must still match)."""
+    path = _write_recordings(
+        tmp_path / "window.json",
+        [{"match": "cedar daily", "response": {"activity_type": "non_work", "claims": []}}],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    blob = "Window: cedar daily — harbor ferry\n1. civic news"
+    assert _complete(runtime, blob)["activity_type"] == "non_work"
+    assert _complete(runtime, blob)["activity_type"] == "non_work"
+
+
+def test_legacy_window_match_is_casefold(tmp_path: Path) -> None:
+    """Surviving mutant: no-casefold."""
+    path = _write_recordings(
+        tmp_path / "case.json",
+        [{"match": "cedar daily", "response": {"activity_type": "non_work", "claims": []}}],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    assert (
+        _complete(runtime, "Window: CEDAR DAILY — harbor ferry\n1. civic news")["activity_type"]
+        == "non_work"
+    )
+
+
+def test_replay_miss_including_trailing_space(tmp_path: Path) -> None:
+    blob = _EXTRACT_PREFIX + "Claims:\n1. Alice\n"
+    path = _write_recordings(
+        tmp_path / "miss.json",
+        [{"match": _sha(blob), "response": {"commitments": [{"text": "hit"}]}}],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    assert _complete(runtime, blob)["commitments"][0]["text"] == "hit"
+    with pytest.raises(ReplayMiss, match=r"day_extract key=[0-9a-f]{64}") as raised:
+        _complete(runtime, blob + " ")
+    assert "Alice" not in str(raised.value)
+    assert blob not in str(raised.value)
+
+
+def test_lenient_miss_warns_and_returns_default(tmp_path: Path, caplog: Any) -> None:
+    path = _write_recordings(tmp_path / "lenient.json", [])
+    runtime = RecordingRuntime(path=path, mode="replay", strict=False)
+    with caplog.at_level(logging.WARNING):
+        result = _complete(runtime, "Window: Mystery App\n1. nothing")
+    assert result["project_candidates"] == []
+    assert any("lenient" in rec.getMessage().casefold() for rec in caplog.records)
+
+
+def test_legacy_content_key_reuse_does_not_require_unique_count(tmp_path: Path) -> None:
+    """Surviving mutant: cluster keys appear twice (two consolidate passes)."""
+    key = "Priya Natarajan is communicating about moving a demo date"
+    path = _write_recordings(
+        tmp_path / "cluster.json",
+        [
+            {"match": key, "response": {"activities": [{"title": "Pricing"}]}},
+            {"match": key, "response": {"activities": [{"title": "Pricing"}]}},
+        ],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    blob = f"Cluster these observations into activities.\n\n1. {key} and pricing\n"
+    assert _complete(runtime, blob)["activities"][0]["title"] == "Pricing"
+    assert _complete(runtime, blob)["activities"][0]["title"] == "Pricing"
+
+
+def test_legacy_shared_prefix_follows_neighbor_window_not_slot_order(
+    tmp_path: Path,
+) -> None:
+    """Four extract prefixes are 2× acme + 2× meeting, not one per first four days."""
+    prefix = _EXTRACT_PREFIX[:80]
+    path = _write_recordings(
+        tmp_path / "neighbors.json",
+        [
+            {
+                "match": "re: acme q4 proposal — priya natarajan",
+                "response": {"activity_type": "communication", "claims": []},
+            },
+            {"match": prefix, "response": {"commitments": [{"text": "acme-row"}]}},
+            {"match": prefix, "response": {"commitments": [{"text": "acme-row"}]}},
+            {
+                "match": "lumen room — delivery standup",
+                "response": {"activity_type": "communication", "claims": []},
+            },
+            {"match": prefix, "response": {"commitments": [{"text": "meeting-row"}]}},
+            {"match": prefix, "response": {"commitments": [{"text": "meeting-row"}]}},
+        ],
+    )
+    runtime = RecordingRuntime(path=path, mode="replay")
+    runtime.set_day("day_meeting_heavy", "2026-11-04")
+    meeting = _EXTRACT_PREFIX + "Claims:\n1. standup\n"
+    assert _complete(runtime, meeting)["commitments"][0]["text"] == "meeting-row"
+    runtime.set_day("day_near_empty", "2026-11-06")
+    with pytest.raises(ReplayMiss, match=r"day_extract key=[0-9a-f]{64}"):
+        _complete(runtime, _EXTRACT_PREFIX + "Claims:\n1. empty\n")
 
 
 def test_legacy_unique_extract_still_applies_to_every_day(tmp_path: Path) -> None:
@@ -215,10 +345,6 @@ def test_legacy_format_file_still_loads() -> None:
     assert result["activity_type"] == "non_work"
     narrative = _complete(runtime, "Write the daily narrative\n[c:deadbeef]")
     assert "[c:1]" in str(narrative["paragraphs"][0]["text"])
-    if QWEN_RECORDINGS.is_file():
-        qwen = RecordingRuntime(path=QWEN_RECORDINGS, mode="replay")
-        assert qwen.complete_calls == 0
-        _complete(qwen, "Window: cedar daily — harbor ferry\n1. civic news")
 
 
 def test_legacy_fallback_emits_a_warning(tmp_path: Path, caplog: Any) -> None:
@@ -230,6 +356,7 @@ def test_legacy_fallback_emits_a_warning(tmp_path: Path, caplog: Any) -> None:
     with caplog.at_level(logging.WARNING):
         _complete(runtime, "Extract cross-segment decisions\nClaims:\n1. Alice\n")
     assert any("legacy" in rec.getMessage().casefold() for rec in caplog.records)
+    assert any("day/date" in rec.getMessage().casefold() for rec in caplog.records)
 
 
 def test_replay_same_recordings_twice_gives_identical_metrics(

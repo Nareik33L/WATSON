@@ -142,7 +142,13 @@ def test_eval_saves_recordings_on_abort(
     assert recordings.is_file()
     payload = json.loads(recordings.read_text(encoding="utf-8"))
     assert payload["complete"]
-    assert payload["complete"][0]["match"] == prompt_hash("Window: R7 abort sentinel")
+    assert payload["complete"][0]["match"] == prompt_hash(
+        [{"role": "user", "content": "Window: R7 abort sentinel"}],
+        schema={},
+    )
+    assert "model" in payload["complete"][0]
+    assert "temperature" in payload["complete"][0]
+    assert "schema" in payload["complete"][0]
 
 
 P1_SENTINEL = "plain pocket calendar marker for report privacy"
