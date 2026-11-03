@@ -1629,6 +1629,70 @@ def test_extract_amounts_rejects_units_and_versions() -> None:
     assert extract_amounts("GBP 40k") != extract_amounts("40k")
 
 
+def test_near_identical_priya_acme_sentences_cover_distinct_facts() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "Priya sent pricing to Acme and Acme sent the deck to Priya")},
+        facts=[
+            GoldFact("f-priya", "acme-q4", "what_happened", ("priya", "pricing"), {}, ("s1",)),
+            GoldFact("f-acme", "acme-q4", "what_happened", ("acme", "deck"), {}, ("s1",)),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    near = _pred(
+        day,
+        claims=[
+            _claim("Priya sent pricing to Acme", claim_id="to-acme"),
+            _claim("Acme sent the deck to Priya", claim_id="to-priya"),
+        ],
+    )
+    score = score_deals(gold, near)
+    assert score.summary.correct == 2
+    assert score.summary.claims == 2
+    assert score.summary.what_happened_recall == pytest.approx(1.0)
+
+
+def test_nested_dump_windows_collapse_only_when_token_overlap_is_high() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call q4 deck demo extra words send")},
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1",)),
+            GoldFact("f-demo", "acme-q4", "what_happened", ("demo",), {}, ("s1",)),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    packed = _pred(
+        day,
+        claims=[
+            _claim("pricing call q4 deck demo extra words", claim_id="wide"),
+            _claim("q4 deck demo extra words send pricing", claim_id="nested"),
+        ],
+    )
+    packed_score = score_deals(gold, packed)
+    assert packed_score.summary.correct == 1
+    assert packed_score.summary.claims == 2
+    letter_day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "renewal letter draft notes extra words send term")},
+        facts=[
+            GoldFact("f-term", "acme-q4", "what_happened", ("renewal", "letter"), {}, ("s1",)),
+            GoldFact("f-letter", "acme-q4", "what_happened", ("draft", "notes"), {}, ("s1",)),
+        ],
+    )
+    loose = _pred(
+        letter_day,
+        claims=[
+            _claim("renewal letter draft notes extra words", claim_id="wide"),
+            _claim("letter draft notes extra words send term", claim_id="nested"),
+        ],
+    )
+    loose_score = score_deals(DealCorpus(days=[letter_day]), loose)
+    assert loose_score.summary.correct == 2
+    assert loose_score.summary.claims == 2
+
+
 def test_semantic_collapse_keeps_priya_acme_pair_and_drops_near_duplicates() -> None:
     day = _day(
         segments=[_seg("s1", "acme-q4", "f1")],

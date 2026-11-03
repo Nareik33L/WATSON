@@ -692,13 +692,21 @@ def _term_units(terms: Sequence[str]) -> list[str]:
     """Unique normalized terms, atomic multi-word phrases, file order."""
     units: list[str] = []
     seen: set[str] = set()
-    for term in terms:
-        phrase = normalize(term)
-        if not phrase or phrase in seen:
-            continue
-        if not content_tokens(phrase):
+    for phrase in _raw_term_units(terms):
+        if phrase in seen:
             continue
         seen.add(phrase)
+        units.append(phrase)
+    return units
+
+
+def _raw_term_units(terms: Sequence[str]) -> list[str]:
+    """Normalized terms in file order, repeats kept, empty/stopword-only dropped."""
+    units: list[str] = []
+    for term in terms:
+        phrase = normalize(term)
+        if not phrase or not content_tokens(phrase):
+            continue
         units.append(phrase)
     return units
 
@@ -708,9 +716,14 @@ def sliding_term_windows(
     *,
     width: int = 6,
     stride: int = 2,
+    unique: bool = True,
 ) -> list[str]:
-    """Sliding ``width``-term windows of a deal's unique terms, step ``stride``."""
-    units = _term_units(terms)
+    """Sliding ``width``-term windows, step ``stride``.
+
+    ``unique=True`` (default) dedupes normalized terms. ``unique=False`` keeps
+    the raw term list order, including repeats.
+    """
+    units = _term_units(terms) if unique else _raw_term_units(terms)
     if not units:
         return []
     width = max(1, width)
@@ -1118,6 +1131,20 @@ def baseline_keyword_dump_sliding(
         gold,
         lambda _day, segment: segment.deal,
         claims_of=lambda day: _sliding_dump_claims(day, width=width, stride=stride),
+    )
+
+
+def baseline_keyword_dump_sliding_what(
+    gold: DealCorpus,
+    *,
+    width: int = 6,
+    stride: int = 2,
+) -> PredictedCorpus:
+    """Raw sliding 6-term what_happened windows; full dump windows in next_step and who."""
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _sliding_what_full_next_who_claims(day, width=width, stride=stride),
     )
 
 
@@ -1866,10 +1893,10 @@ def _pair_claims(
 ) -> list[tuple[PredictedClaim, GoldFact]]:
     """1:1 inside (day, matched deal, slot) by maximum matching.
 
-    Pair claims to facts first so a paraphrase that also names an earlier fact
-    can still take its own fact. Then drop unmatched leftovers that copy a
-    matched claim (same deal and slot, covered-fact set is a subset, overlapping
-    cited segments). Extra copies are not true positives; they stay in the
+    Same covered-fact set with overlapping citations counts once before
+    matching, regardless of text. Matching then assigns each remaining claim
+    whichever fact maximises the number of pairs, so a paraphrase that also
+    names an earlier fact still takes its own fact. Extra copies stay in the
     precision denominator. File order never chooses the credited fact.
     """
     inverse = {gold_id: pred_id for pred_id, gold_id in mapping.items()}
@@ -1886,19 +1913,7 @@ def _pair_claims(
         cover_ids[claim.id] = frozenset(fact.id for fact in covered)
         cited_of[claim.id] = _claim_cited_segments(day, pred, claim)
     candidates = _matching_representatives(pred.claims, cover_ids, cited_of)
-    paired = _maximum_claim_fact_matching(candidates, cover_of)
-    matched_claims = [claim for claim, _fact in paired]
-    collapsed = _collapse_duplicate_claims(
-        pred.claims,
-        day,
-        pred,
-        mapping,
-        matched=matched_claims,
-        cover_of=cover_ids,
-        cited_of=cited_of,
-    )
-    keep = {claim.id for claim in collapsed}
-    return [(claim, fact) for claim, fact in paired if claim.id in keep]
+    return _maximum_claim_fact_matching(candidates, cover_of)
 
 
 def _token_jaccard(left: str, right: str) -> float:
@@ -1914,11 +1929,12 @@ def _matching_representatives(
     cover_ids: dict[str, frozenset[str]],
     cited_of: dict[str, frozenset[str]],
 ) -> list[PredictedClaim]:
-    """Same covered-fact set with overlapping citations counts once when packed.
+    """Same covered-fact set with overlapping citations counts once.
 
-    Near-duplicate dumps (high token overlap, or three or more facts) count
-    once. Atomic paraphrases that mention another fact stay so maximum
-    matching can assign each its own fact. File order is not used.
+    Text is ignored for equal cover sets. Nested dump windows (proper subset
+    of covered facts, overlapping citations, token Jaccard ≥ 0.7) also count
+    once. Atomic paraphrases stay, so maximum matching can assign each its
+    own fact. File order is not used.
     """
     kept: list[PredictedClaim] = []
     rows: list[tuple[str, str, frozenset[str], frozenset[str], str]] = []
@@ -1933,13 +1949,12 @@ def _matching_representatives(
             if deal != claim.deal or slot != claim.slot:
                 continue
             if covered != kept_cover:
-                continue
+                if not (covered < kept_cover and _token_jaccard(kept_text, claim.text) >= 0.7):
+                    continue
             if not (kept_cited & cited):
                 continue
-            packed = len(covered) >= 3 or _token_jaccard(kept_text, claim.text) >= 0.7
-            if packed:
-                duplicate = True
-                break
+            duplicate = True
+            break
         if duplicate:
             continue
         rows.append((claim.deal, claim.slot, covered, cited, claim.text))
@@ -2409,6 +2424,51 @@ def _sliding_dump_claims(
     return claims
 
 
+def _sliding_what_full_next_who_claims(
+    day: DayGold,
+    *,
+    width: int = 6,
+    stride: int = 2,
+) -> list[PredictedClaim]:
+    """Raw sliding windows in what_happened; full dump windows in next_step and who."""
+    claims: list[PredictedClaim] = []
+    for deal in day.deals:
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        terms = deal_term_list(day, deal.id)
+        what_windows = sliding_term_windows(terms, width=width, stride=stride, unique=False)
+        for window_index, window in enumerate(what_windows):
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-slide-raw-what-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="what_happened",
+                    text=window,
+                    evidence=list(evidence),
+                )
+            )
+        for window_index, window in enumerate(dump_windows(terms)):
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-slide-raw-next-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="next_step",
+                    text=f"will {window}".strip(),
+                    evidence=list(evidence),
+                )
+            )
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-slide-raw-who-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="who_involved",
+                    text=window,
+                    evidence=list(evidence),
+                )
+            )
+    return claims
+
+
 def _packed_dump_claims(day: DayGold, *, suffix: str = "") -> list[PredictedClaim]:
     """One claim per slot that packs required terms from several same-slot facts."""
     claims: list[PredictedClaim] = []
@@ -2826,6 +2886,7 @@ __all__ = [
     "baseline_keyword_dump_packed",
     "baseline_keyword_dump_please",
     "baseline_keyword_dump_sliding",
+    "baseline_keyword_dump_sliding_what",
     "baseline_keyword_dump_will_prefix",
     "baseline_keyword_dump_within_cap",
     "baseline_keyword_dump_within_cap_will_next",

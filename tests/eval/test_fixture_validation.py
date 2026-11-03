@@ -33,6 +33,7 @@ from watson.intelligence.eval.deals import (
     baseline_keyword_dump_packed,
     baseline_keyword_dump_please,
     baseline_keyword_dump_sliding,
+    baseline_keyword_dump_sliding_what,
     baseline_keyword_dump_will_prefix,
     baseline_keyword_dump_within_cap,
     baseline_keyword_dump_within_cap_will_next,
@@ -159,12 +160,15 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-sliding-6-2": score_deals(
             gold, baseline_keyword_dump_sliding(gold, width=6, stride=2)
         ).summary.accuracy,
+        "keyword-dump-sliding-what": score_deals(
+            gold, baseline_keyword_dump_sliding_what(gold, width=6, stride=2)
+        ).summary.accuracy,
     }
     for filler in ("please", "still", "revised", "discussed"):
         rows[f"keyword-dump-duplicate-{filler}"] = score_deals(
             gold, baseline_keyword_dump_duplicate_what_filled(gold, filler)
         ).summary.accuracy
-    for extra in ("also", "again", "ok", "noted"):
+    for extra in ("also", "again", "ok", "noted", "update status review progress"):
         rows[f"keyword-dump-duplicate-{extra}"] = score_deals(
             gold, baseline_keyword_dump_duplicate_what_extra(gold, extra)
         ).summary.accuracy
@@ -334,6 +338,10 @@ def test_baseline_score_table(gold) -> None:
             "keyword-dump-sliding-6-2",
             score_deals(gold, baseline_keyword_dump_sliding(gold, width=6, stride=2)).summary,
         ),
+        (
+            "keyword-dump-sliding-what",
+            score_deals(gold, baseline_keyword_dump_sliding_what(gold, width=6, stride=2)).summary,
+        ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
         (
             "honest-summary-filled",
@@ -472,3 +480,47 @@ def test_sliding_window_nearby_settings_stay_below_gate(gold) -> None:
         width=6,
         stride=2,
     ) == ["pricing call q4 deck demo priya", "q4 deck demo priya send"]
+
+
+def test_sliding_what_full_next_who_stays_below_gate(gold) -> None:
+    predicted = baseline_keyword_dump_sliding_what(gold, width=6, stride=2)
+    saw_what = False
+    saw_full = False
+    for day in predicted.days:
+        what = [claim for claim in day.claims if claim.slot == "what_happened"]
+        nxt = [claim for claim in day.claims if claim.slot == "next_step"]
+        who = [claim for claim in day.claims if claim.slot == "who_involved"]
+        if what:
+            saw_what = True
+            assert all(claim.text for claim in what)
+        if nxt:
+            saw_full = True
+            assert len(nxt) == len(who)
+            for claim in nxt:
+                assert claim.text.startswith("will ")
+            for left, right in zip(who, nxt, strict=True):
+                assert right.text == f"will {left.text}"
+    assert saw_what and saw_full
+    score = score_deals(gold, predicted).summary
+    assert score.accuracy < GATE, f"sliding-what summary {score.accuracy:.3f} must be < {GATE}"
+
+
+def test_padded_duplicate_what_stays_below_gate(gold) -> None:
+    words = (
+        "update status review progress notes checked later still pending follow extra item"
+    ).split()
+    scores: list[float] = []
+    for n in range(4, 13):
+        extra = " ".join(words[:n])
+        accuracy = score_deals(
+            gold, baseline_keyword_dump_duplicate_what_extra(gold, extra)
+        ).summary.accuracy
+        scores.append(accuracy)
+        assert accuracy < GATE, f"padded extra {n} tokens summary {accuracy:.3f} must be < {GATE}"
+    assert max(scores) < GATE
+    assert sliding_term_windows(
+        ["pricing", "call", "pricing", "call", "q4", "deck", "demo", "priya"],
+        width=6,
+        stride=2,
+        unique=False,
+    ) == ["pricing call pricing call q4 deck", "pricing call q4 deck demo priya"]

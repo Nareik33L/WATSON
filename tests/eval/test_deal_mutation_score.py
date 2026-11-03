@@ -84,8 +84,8 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-ignore-best",
-        "            if covered != kept_cover:\n                continue\n",
-        "            if False and covered != kept_cover:\n                continue\n",
+        "            if covered != kept_cover:\n",
+        "            if False and covered != kept_cover:\n",
     ),
     (
         "stored-empty",
@@ -134,8 +134,8 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "last-cover",
-        "    paired = _maximum_claim_fact_matching(candidates, cover_of)\n",
-        "    paired = _last_fact_greedy_matching(candidates, cover_of)\n",
+        "    return _maximum_claim_fact_matching(candidates, cover_of)\n",
+        "    return _last_fact_greedy_matching(candidates, cover_of)\n",
     ),
     (
         "contradict-slot",
