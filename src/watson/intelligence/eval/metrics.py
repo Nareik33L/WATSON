@@ -203,10 +203,47 @@ _NAME_SKIP = frozenset(
         "revised",
     }
 )
-# Unknown title-case is a name only in subject/object cues, never as a
-# sentence-initial capital alone ("Please send…", "Successfully published…").
-_NAME_SUBJECT_CUES = frozenset({"to", "will", "sent"})
-_NAME_OBJECT_CUES = frozenset({"to", "send", "sent"})
+# Sentence-initial verbs so "Send Priya…" does not treat Send as a name, while
+# an unknown title-case first token ("Jordan published…") still counts.
+_LEADING_VERBS = frozenset(
+    {
+        "adopt",
+        "adopted",
+        "agree",
+        "agreed",
+        "did",
+        "does",
+        "drop",
+        "flag",
+        "keep",
+        "kept",
+        "move",
+        "moved",
+        "not",
+        "publish",
+        "published",
+        "reject",
+        "rejected",
+        "send",
+        "sent",
+        "use",
+        "used",
+    }
+)
+# Sentence-initial capitals that are openers, not names. Any other first-token
+# capital remains a name candidate (Jordan published…).
+NON_NAME_OPENERS = frozenset(
+    {
+        "please",
+        "need",
+        "remember",
+        "successfully",
+        "finalised",
+        "highlight",
+        "agreed",
+        "decided",
+    }
+)
 
 
 def normalize(text: str) -> str:
@@ -283,12 +320,11 @@ def _temporals(text: str) -> set[str]:
 
 
 def _proper_names(text: str) -> set[str]:
-    """Known fixture names, plus unknown title-case tokens in subject/object cues."""
+    """Known names, plus title-case tokens that are not skipped first-word openers."""
     names: set[str] = set()
     surface = [part for part in _SURFACE_SPLIT.split(_PARENS.sub(" ", text)) if part]
-    folded_all = [part.casefold() for part in surface]
     for index, token in enumerate(surface):
-        folded = folded_all[index]
+        folded = token.casefold()
         if folded in _KNOWN_NAMES:
             names.add(folded)
             continue
@@ -299,11 +335,9 @@ def _proper_names(text: str) -> set[str]:
             or folded in _MONTHS
         ):
             continue
-        if not (token[0].isupper() and folded.isalpha() and folded != "i"):
+        if index == 0 and (folded in _LEADING_VERBS or folded in NON_NAME_OPENERS):
             continue
-        prev = folded_all[index - 1] if index else ""
-        nxt = folded_all[index + 1] if index + 1 < len(folded_all) else ""
-        if prev in _NAME_OBJECT_CUES or nxt in _NAME_SUBJECT_CUES:
+        if token[0].isupper() and folded.isalpha() and folded != "i":
             names.add(folded)
     return names
 

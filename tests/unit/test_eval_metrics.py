@@ -11,6 +11,8 @@ import pytest
 from watson.intelligence.eval.metrics import (
     ITEM_MATCH_JACCARD_MIN,
     ITEM_STOPWORDS,
+    NON_NAME_OPENERS,
+    _proper_names,
     completed_accuracy,
     duplicate_rate,
     f1_score,
@@ -960,32 +962,122 @@ def test_completed_nameless_pred_is_unsupported_against_named_gold() -> None:
     assert completed_accuracy([pred], [gold], []) == 0.0
 
 
+def test_non_name_openers_allow_list_is_exact() -> None:
+    """Cue-only detection is not used; only this allow-list skips first-word caps."""
+    assert NON_NAME_OPENERS == frozenset(
+        {
+            "please",
+            "need",
+            "remember",
+            "successfully",
+            "finalised",
+            "highlight",
+            "agreed",
+            "decided",
+        }
+    )
+
+
 def test_sentence_initial_openers_are_not_names() -> None:
     """Please / Finalised / Successfully must not trip the unsupported gate."""
+    gold = "Onboarding Guide section 3 published"
+    for opener in ("Please", "Need", "Remember", "Successfully", "Finalised", "Highlight"):
+        predicted = f"{opener} published Onboarding Guide section 3"
+        assert opener.casefold() in NON_NAME_OPENERS
+        assert _proper_names(predicted) == {"onboarding"}
+        assert items_match(predicted, gold, strict_names=True), predicted
+        assert unsupported_count([predicted], [gold]) == 0, predicted
+    assert _proper_names("Agreed published Onboarding Guide section 3") == {"onboarding"}
+    assert _proper_names("Decided published Onboarding Guide section 3") == {"onboarding"}
+
+
+def test_completed_rejects_unknown_name_on_either_side() -> None:
+    """Completed names are either-side: Jordan published … is unsupported."""
+    gold = "Onboarding Guide section 3 published"
+    jordan = "Jordan published Onboarding Guide section 3"
+    assert not items_match(jordan, gold, strict_names=True)
+    assert unsupported_count([jordan], [gold]) == 1
+    assert completed_accuracy([jordan], [gold], []) == 0.0
+
+
+def test_jordan_completed_cases_are_unsupported() -> None:
+    """Unknown first-token and mid-string title-case stay names (not cue-only)."""
     cases = (
         (
-            "Please published Onboarding Guide section 3",
+            "Jordan published Onboarding Guide section 3",
             "Onboarding Guide section 3 published",
         ),
-        ("Finalised the Acme proposal appendix", "Acme proposal appendix finalised"),
+        ("Jordan finalised the slide order", "finalised the slide order"),
         (
-            "Successfully published Cedar Onboarding page 1",
+            "Jordan Blake published Cedar Onboarding page 1",
             "Cedar Onboarding page 1 published",
         ),
     )
     for predicted, gold in cases:
-        assert items_match(predicted, gold, strict_names=True), predicted
-        assert unsupported_count([predicted], [gold]) == 0, predicted
+        assert unsupported_count([predicted], [gold]) == 1, predicted
 
 
-def test_unknown_name_in_subject_or_object_cue() -> None:
-    """Unknown title-case is a name only after/before to, will, send, sent."""
+def test_unknown_name_in_first_position_is_a_name() -> None:
+    """Title-case fallback includes first position, not only mid-string tokens."""
     gold = "Send Priya the slide outline tomorrow"
     first = "Jordan to send the slide outline tomorrow"
     mid = "Send Jordan the slide outline tomorrow"
     assert not items_match(first, gold)
     assert not items_match(mid, gold)
     assert pair_item_matches([first], [gold]) == 0
+
+
+def test_mid_string_title_case_is_a_name_without_a_cue() -> None:
+    """Cue mutants: 'for Globex' / 'with Jordan' are names even without to/will/sent."""
+    assert not items_match(
+        "Adopt the published three-tier rate card for Globex",
+        "Adopt the published three-tier rate card for Acme",
+    )
+    assert (
+        unsupported_count(
+            ["Adopt the published three-tier rate card for Globex"],
+            ["Adopt the published three-tier rate card for Acme"],
+        )
+        == 1
+    )
+    assert not items_match(
+        "Send the slide outline with Jordan tomorrow",
+        "Send the slide outline with Priya tomorrow",
+    )
+    assert not items_match(
+        "Send the South Pier hours grid today",
+        "Send the North Pier hours grid today",
+    )
+    assert not items_match(
+        "Can send revised pricing to Priya by Friday",
+        "Send revised pricing to Priya by Friday",
+    )
+    assert not items_match(
+        "Cancelled Flag Q4 delivery risks in the proposal appendix",
+        "Flag Q4 delivery risks in the proposal appendix",
+    )
+    assert not items_match(
+        "Confirmed Acme demo stays 14 Nov",
+        "Acme demo stays 14 Nov",
+    )
+
+
+def test_one_sided_date_does_not_match() -> None:
+    """A date on only one side is a miss (require_both=True would pass)."""
+    assert not items_match(
+        "Send Priya the slide outline",
+        "Send Priya the slide outline tomorrow",
+    )
+
+
+def test_not_completed_vs_completed_is_unsupported() -> None:
+    """'X not completed' must not support 'X completed'."""
+    pred = "Onboarding Guide section 3 not completed"
+    gold = "Onboarding Guide section 3 completed"
+    assert unsupported_count([pred], [gold]) == 1
+    named = "Mina sent the revised Q4 pricing deck"
+    nameless = "Sent the revised Q4 pricing deck"
+    assert completed_accuracy([nameless], [], [named]) == 1.0
 
 
 def test_nameless_fallback_unambiguous_and_ambiguous() -> None:
