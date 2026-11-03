@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from watson.intelligence.eval.metrics import (
+    ITEM_MATCH_JACCARD_MIN,
+    ITEM_STOPWORDS,
+    NON_NAME_OPENERS,
+    _proper_names,
     completed_accuracy,
     duplicate_rate,
     f1_score,
+    item_jaccard,
+    items_match,
+    names_match,
+    pair_item_matches,
+    pair_matches,
     precision,
     recall,
     token_jaccard,
@@ -81,6 +91,46 @@ def test_five_day_aggregate_fails_when_one_day_predicts_nothing() -> None:
     gate = gate_metrics(aggregate, load_thresholds())
     assert gate["passed"] is False
     assert "commitments_precision" in gate["failures"]
+
+
+def test_pair_matches_dedup_one_gold_per_prediction() -> None:
+    """Two copies of the same prediction consume one gold (1:1), not two TPs."""
+    predicted = [
+        "Send revised pricing to Priya by Friday",
+        "Send revised pricing to Priya by Friday",
+    ]
+    truth = ["Send revised pricing to Priya by Friday"]
+    assert pair_matches(predicted, truth) == 1
+    assert precision(predicted, truth) == 0.5
+    assert recall(predicted, truth) == 1.0
+
+
+def test_matching_tolerance_normalizes_case_and_punctuation() -> None:
+    """Surviving mutant: drop normalize() and only exact raw strings match."""
+    gold = "Send revised pricing to Priya by Friday"
+    assert names_match("SEND REVISED PRICING TO PRIYA BY FRIDAY!", gold)
+    assert names_match("Send revised pricing, to Priya, by Friday.", gold)
+    assert precision(["SEND REVISED PRICING TO PRIYA BY FRIDAY!"], [gold]) == 1.0
+
+
+def test_matching_tolerance_rejects_different_person_day_object() -> None:
+    """Surviving mutant: any token overlap or always-true match."""
+    gold = "Send the Harbor checklist to Ellis Voss by Wednesday"
+    assert names_match(gold, gold)
+    assert not names_match("Send the Harbor checklist to Mina Okonkwo by Wednesday", gold)
+    assert not names_match("Send the Harbor checklist to Ellis Voss by Friday", gold)
+    assert not names_match("Send the Harbor hours grid to Ellis Voss by Wednesday", gold)
+    assert (
+        precision(
+            [
+                "Send the Harbor checklist to Mina Okonkwo by Wednesday",
+                "Send the Harbor checklist to Ellis Voss by Friday",
+                "Send the Harbor hours grid to Ellis Voss by Wednesday",
+            ],
+            [gold],
+        )
+        == 0.0
+    )
 
 
 def test_f1_is_not_accuracy() -> None:
@@ -659,6 +709,429 @@ def test_each_threshold_fails_on_deliberately_bad_value() -> None:
         gate = gate_metrics(metrics, rules)
         assert gate["passed"] is False, name
         assert name in gate["failures"], name
+
+
+def test_item_match_threshold_is_the_named_constant() -> None:
+    """A single named cutoff; 0.7 rejects a one-token swap on a 5-token item."""
+    assert ITEM_MATCH_JACCARD_MIN == 0.7
+    five = ("alpha beta gamma delta epsilon", "alpha beta gamma delta zeta")
+    assert item_jaccard(*five) == pytest.approx(4 / 6)
+    assert item_jaccard(*five) < ITEM_MATCH_JACCARD_MIN
+    assert not items_match(*five)
+
+
+def test_item_match_accepts_bakeoff_commitment_paraphrase() -> None:
+    """FP-table true match: first-person + stopwords vs gold addressee."""
+    predicted = "I will send the slide outline tomorrow"
+    gold = "Send Priya the slide outline tomorrow"
+    assert item_jaccard(predicted, gold) == pytest.approx(4 / 5)
+    assert items_match(predicted, gold)
+    assert pair_item_matches([predicted], [gold]) == 1
+    assert precision([predicted], [gold], matches=pair_item_matches) == 1.0
+    assert recall([predicted], [gold], matches=pair_item_matches) == 1.0
+    assert not names_match(predicted, gold)
+
+
+def test_item_match_accepts_bakeoff_completed_paraphrase() -> None:
+    """FP-table true match: copula 'is' is a stopword, not a different object."""
+    predicted = "Cedar Onboarding page 1 is published"
+    gold = "Cedar Onboarding page 1 published"
+    assert item_jaccard(predicted, gold) == 1.0
+    assert items_match(predicted, gold)
+    not_done = ["Cedar Onboarding page 2 (still a draft)"]
+    assert completed_accuracy([predicted], [gold], not_done) == 1.0
+    assert unsupported_count([predicted], [gold]) == 0
+    assert not names_match(predicted, gold)
+
+
+def test_item_match_rejects_different_person_day_object() -> None:
+    """Near-miss negatives: a different person, day, or object must not match."""
+    gold = "Send Priya the slide outline tomorrow"
+    person = "I will send Mina the slide outline tomorrow"
+    day = "I will send the slide outline Friday"
+    obj = "I will send the hours grid tomorrow"
+    assert item_jaccard(person, gold) == pytest.approx(4 / 6)
+    assert item_jaccard(day, gold) == pytest.approx(3 / 6)
+    assert item_jaccard(obj, gold) == pytest.approx(2 / 7)
+    assert not items_match(person, gold)
+    assert not items_match(day, gold)
+    assert not items_match(obj, gold)
+    assert pair_item_matches([person, day, obj], [gold]) == 0
+    assert precision([person, day, obj], [gold], matches=pair_item_matches) == 0.0
+
+
+def test_item_match_rejects_different_completed_object() -> None:
+    """Page 2 is not page 1 — one content token is enough to fall under 0.7."""
+    gold = "Cedar Onboarding page 1 published"
+    other = "Cedar Onboarding page 2 is published"
+    assert item_jaccard(other, gold) == pytest.approx(4 / 6)
+    assert not items_match(other, gold)
+    assert unsupported_count([other], [gold]) == 1
+
+
+def test_pair_item_matches_is_one_to_one_by_best_score() -> None:
+    """Each prediction consumes at most one gold; higher Jaccard wins first."""
+    gold = "Send Priya the slide outline tomorrow"
+    weaker = "I will send Priya the slide outline"
+    exact = "Send Priya the slide outline tomorrow"
+    assert item_jaccard(weaker, gold) == pytest.approx(4 / 5)
+    assert item_jaccard(exact, gold) == 1.0
+    assert pair_item_matches([weaker, exact], [gold]) == 1
+    assert precision([weaker, exact], [gold], matches=pair_item_matches) == 0.5
+    assert recall([weaker, exact], [gold], matches=pair_item_matches) == 1.0
+    two_gold = [gold, "Keep the Harbor walkthrough on Thursday"]
+    assert pair_item_matches([weaker, exact], two_gold) == 1
+
+
+_V1_GOLD_ITEMS = (
+    "Agreed to move the Acme demo to 14 Nov",
+    "Adopt the published three-tier rate card for Acme",
+    "Send revised pricing to Priya by Friday",
+    "Flag Q4 delivery risks in the proposal appendix",
+    "Agreed to move the Harbor walkthrough to Thursday",
+    "Use a two-year term for the Northwind renewal",
+    "Send the Harbor checklist to Ellis by Wednesday",
+    "Publish Cedar Onboarding page 2 before Friday standup",
+    "Keep the Harbor walkthrough on Thursday",
+    "Acme demo stays 14 Nov",
+    "Send Priya the slide outline tomorrow",
+    "Samira Cole still owes the slide order",
+    "Send the North Pier hours grid today",
+    "Send the hours grid to Mina today",
+    "Onboarding Guide section 3 published",
+)
+
+_PERSON_DATE_SWAPS = (
+    ("Priya", "Mina"),
+    ("Mina", "Priya"),
+    ("Ellis", "Jun"),
+    ("Samira Cole", "Ned Quinn"),
+    ("Acme", "Northwind"),
+    ("Harbor", "Northwind"),
+    ("Northwind", "Acme"),
+    ("Cedar", "Acme"),
+    ("North Pier", "Harbor"),
+    ("Friday", "Wednesday"),
+    ("Thursday", "Friday"),
+    ("Wednesday", "Monday"),
+    ("tomorrow", "Friday"),
+    ("today", "tomorrow"),
+    ("14 Nov", "15 Nov"),
+    ("Q4", "Q3"),
+    ("page 2", "page 1"),
+    ("section 3", "section 2"),
+    ("two-year", "three-year"),
+    ("Nov", "Dec"),
+)
+
+
+def _gold_swap_variants(text: str) -> list[str]:
+    variants: list[str] = []
+    for old, new in _PERSON_DATE_SWAPS:
+        if old in text:
+            variants.append(text.replace(old, new, 1))
+    lowered = text[0].lower() + text[1:]
+    variants.append(f"Not {lowered}")
+    variants.append(re.sub(r"\b[Ss]end\b", "Won't send", text, count=1))
+    variants.append(re.sub(r"\b[Ss]end\b", "Should send", text, count=1))
+    variants.append(re.sub(r"\b[Ss]end\b", "Might send", text, count=1))
+    if " to " in text:
+        variants.append(text.replace(" to ", " from ", 1))
+    if " by " in text:
+        variants.append(text.replace(" by ", " or ", 1))
+    if text.startswith("Adopt "):
+        variants.append("Reject " + text[6:])
+    if text.startswith("Agreed "):
+        variants.append("Not agreed " + text[7:])
+    if text.endswith(" published"):
+        variants.append(text.replace(" published", " not published", 1))
+    return [item for item in variants if item != text]
+
+
+def test_gold_items_reject_person_date_and_polarity_swaps() -> None:
+    """Every V1 gold item: one-word person/date swaps and won't/should/from-to are FPs."""
+    assert len(_V1_GOLD_ITEMS) == 15
+    failures: list[str] = []
+    for gold in _V1_GOLD_ITEMS:
+        assert items_match(gold, gold)
+        for variant in _gold_swap_variants(gold):
+            if items_match(variant, gold):
+                failures.append(f"{variant!r} matched {gold!r}")
+    assert failures == []
+
+
+def test_item_stopwords_exclude_will_i_and_relations() -> None:
+    assert {"will", "i", "from", "to", "by", "or"}.isdisjoint(ITEM_STOPWORDS)
+    assert "not" not in ITEM_STOPWORDS
+    assert "is" in ITEM_STOPWORDS
+
+
+def test_negation_is_not_a_stopword_and_blocks_published() -> None:
+    """Surviving mutant: put 'not' in stopwords so 'not published' ≈ 'published'."""
+    gold = "Onboarding Guide section 3 published"
+    negated = "Onboarding Guide section 3 not published"
+    assert item_jaccard(negated, gold) == pytest.approx(5 / 6)
+    assert not items_match(negated, gold)
+    assert pair_item_matches([negated], [gold]) == 0
+    assert completed_accuracy([negated], [gold], []) == 0.0
+    assert unsupported_count([negated], [gold]) == 1
+
+
+def test_pair_item_matches_sorts_best_score_descending() -> None:
+    """Surviving mutant: greedy without sort, or ascending sort, steals the only gold."""
+    gold1 = "alpha beta gamma delta epsilon zeta eta"
+    gold2 = "alpha beta gamma delta epsilon theta iota"
+    pred1 = "alpha beta gamma delta epsilon zeta eta theta iota"
+    pred2 = gold1
+    assert item_jaccard(pred1, gold1) == pytest.approx(7 / 9)
+    assert item_jaccard(pred1, gold2) == pytest.approx(7 / 9)
+    assert item_jaccard(pred2, gold1) == 1.0
+    assert item_jaccard(pred2, gold2) < ITEM_MATCH_JACCARD_MIN
+    assert pair_item_matches([pred1, pred2], [gold1, gold2]) == 2
+    unsorted_first = pair_item_matches([pred1], [gold1])
+    assert unsorted_first == 1
+
+
+def test_item_match_threshold_is_inclusive() -> None:
+    """Surviving mutant: `>=` became `>`; Jaccard of exactly 0.7 must still match."""
+    short = "alpha beta gamma delta epsilon zeta eta"
+    long = "alpha beta gamma delta epsilon zeta eta extra1 extra2 extra3"
+    assert item_jaccard(short, long) == pytest.approx(0.7)
+    assert items_match(short, long)
+
+
+def test_exact_normalize_matches_even_when_tokens_are_empty() -> None:
+    """Surviving mutant: drop the exact-string shortcut; all-stopword twins fail."""
+    assert items_match("The is a", "the is a")
+    assert item_jaccard("The is a", "the is a") == 0.0
+
+
+def test_empty_item_tokens_score_jaccard_zero() -> None:
+    """Surviving mutant: empty token sets score 1.0 and match anything empty."""
+    assert item_jaccard("the", "a") == 0.0
+    assert item_jaccard("", "published") == 0.0
+    assert not items_match("the", "a")
+    assert not items_match("", "Onboarding Guide section 3 published")
+
+
+def test_not_completed_uses_item_match_not_names_match() -> None:
+    """Surviving mutant: not-completed check reverted to names_match / skipped."""
+    predicted = ["Cedar Onboarding page 1 is published"]
+    not_done = ["Cedar Onboarding page 1 published"]
+    assert items_match(predicted[0], not_done[0])
+    assert not names_match(predicted[0], not_done[0])
+    assert completed_accuracy(predicted, [], not_done) == 0.0
+
+
+def test_polarity_and_relation_near_misses() -> None:
+    gold = "Send revised pricing to Priya by Friday"
+    assert not items_match("Won't send revised pricing to Priya by Friday", gold)
+    assert not items_match("I should send revised pricing to Priya by Friday", gold)
+    assert not items_match("I might send revised pricing to Priya by Friday", gold)
+    assert not items_match("Send revised pricing from Priya by Friday", gold)
+    assert not items_match("Send revised pricing to Priya or Friday", gold)
+    assert not items_match(
+        "Not agreed to move the Acme demo to 14 Nov",
+        "Agreed to move the Acme demo to 14 Nov",
+    )
+    assert not items_match(
+        "Reject the published three-tier rate card for Acme",
+        "Adopt the published three-tier rate card for Acme",
+    )
+
+
+def test_modal_and_date_guards_with_i_should_opener() -> None:
+    """'Should…' used to fail on the name rule; 'I should' isolates modal and date."""
+    gold = "Send Priya the slide outline tomorrow"
+    assert not items_match("I should send the slide outline tomorrow", gold)
+    assert not items_match("I should send the slide outline Friday", gold)
+    assert not items_match(
+        "I should send the slide outline Friday",
+        "I should send the slide outline tomorrow",
+    )
+
+
+def test_completed_nameless_pred_is_unsupported_against_named_gold() -> None:
+    """Gate path: deleting strict_names would score this pair as supported (0)."""
+    pred = "Sent the revised Q4 pricing deck"
+    gold = "Mina sent the revised Q4 pricing deck"
+    assert item_jaccard(pred, gold) >= ITEM_MATCH_JACCARD_MIN
+    assert items_match(pred, gold)
+    assert not items_match(pred, gold, strict_names=True)
+    assert unsupported_count([pred], [gold]) == 1
+    assert completed_accuracy([pred], [gold], []) == 0.0
+
+
+def test_non_name_openers_allow_list_is_exact() -> None:
+    """Cue-only detection is not used; only this allow-list skips first-word caps."""
+    assert NON_NAME_OPENERS == frozenset(
+        {
+            "please",
+            "need",
+            "remember",
+            "successfully",
+            "finalised",
+            "highlight",
+            "agreed",
+            "decided",
+        }
+    )
+
+
+def test_sentence_initial_openers_are_not_names() -> None:
+    """Please / Finalised / Successfully must not trip the unsupported gate."""
+    gold = "Onboarding Guide section 3 published"
+    for opener in ("Please", "Need", "Remember", "Successfully", "Finalised", "Highlight"):
+        predicted = f"{opener} published Onboarding Guide section 3"
+        assert opener.casefold() in NON_NAME_OPENERS
+        assert _proper_names(predicted) == {"onboarding"}
+        assert items_match(predicted, gold, strict_names=True), predicted
+        assert unsupported_count([predicted], [gold]) == 0, predicted
+    assert _proper_names("Agreed published Onboarding Guide section 3") == {"onboarding"}
+    assert _proper_names("Decided published Onboarding Guide section 3") == {"onboarding"}
+
+
+def test_completed_rejects_unknown_name_on_either_side() -> None:
+    """Completed names are either-side: Jordan published … is unsupported."""
+    gold = "Onboarding Guide section 3 published"
+    jordan = "Jordan published Onboarding Guide section 3"
+    assert not items_match(jordan, gold, strict_names=True)
+    assert unsupported_count([jordan], [gold]) == 1
+    assert completed_accuracy([jordan], [gold], []) == 0.0
+
+
+def test_jordan_completed_cases_are_unsupported() -> None:
+    """Unknown first-token and mid-string title-case stay names (not cue-only)."""
+    cases = (
+        (
+            "Jordan published Onboarding Guide section 3",
+            "Onboarding Guide section 3 published",
+        ),
+        ("Jordan finalised the slide order", "finalised the slide order"),
+        (
+            "Jordan Blake published Cedar Onboarding page 1",
+            "Cedar Onboarding page 1 published",
+        ),
+    )
+    for predicted, gold in cases:
+        assert unsupported_count([predicted], [gold]) == 1, predicted
+
+
+def test_unknown_name_in_first_position_is_a_name() -> None:
+    """Title-case fallback includes first position, not only mid-string tokens."""
+    gold = "Send Priya the slide outline tomorrow"
+    first = "Jordan to send the slide outline tomorrow"
+    mid = "Send Jordan the slide outline tomorrow"
+    assert not items_match(first, gold)
+    assert not items_match(mid, gold)
+    assert pair_item_matches([first], [gold]) == 0
+
+
+def test_mid_string_title_case_is_a_name_without_a_cue() -> None:
+    """Cue mutants: 'for Globex' / 'with Jordan' are names even without to/will/sent."""
+    assert not items_match(
+        "Adopt the published three-tier rate card for Globex",
+        "Adopt the published three-tier rate card for Acme",
+    )
+    assert (
+        unsupported_count(
+            ["Adopt the published three-tier rate card for Globex"],
+            ["Adopt the published three-tier rate card for Acme"],
+        )
+        == 1
+    )
+    assert not items_match(
+        "Send the slide outline with Jordan tomorrow",
+        "Send the slide outline with Priya tomorrow",
+    )
+    assert not items_match(
+        "Send the South Pier hours grid today",
+        "Send the North Pier hours grid today",
+    )
+    assert not items_match(
+        "Can send revised pricing to Priya by Friday",
+        "Send revised pricing to Priya by Friday",
+    )
+    assert not items_match(
+        "Cancelled Flag Q4 delivery risks in the proposal appendix",
+        "Flag Q4 delivery risks in the proposal appendix",
+    )
+    assert not items_match(
+        "Confirmed Acme demo stays 14 Nov",
+        "Acme demo stays 14 Nov",
+    )
+
+
+def test_one_sided_date_does_not_match() -> None:
+    """A date on only one side is a miss (require_both=True would pass)."""
+    assert not items_match(
+        "Send Priya the slide outline",
+        "Send Priya the slide outline tomorrow",
+    )
+
+
+def test_not_completed_vs_completed_is_unsupported() -> None:
+    """'X not completed' must not support 'X completed'."""
+    pred = "Onboarding Guide section 3 not completed"
+    gold = "Onboarding Guide section 3 completed"
+    assert unsupported_count([pred], [gold]) == 1
+    named = "Mina sent the revised Q4 pricing deck"
+    nameless = "Sent the revised Q4 pricing deck"
+    assert completed_accuracy([nameless], [], [named]) == 1.0
+
+
+def test_nameless_fallback_unambiguous_and_ambiguous() -> None:
+    """Name-less pred matches one named gold; two named golds make it ambiguous."""
+    pred = "I will send the slide outline tomorrow"
+    priya = "Send Priya the slide outline tomorrow"
+    mina = "Send Mina the slide outline tomorrow"
+    assert items_match(pred, priya)
+    assert items_match(pred, mina)
+    assert pair_item_matches([pred], [priya]) == 1
+    assert pair_item_matches([pred], [mina]) == 1
+    assert pair_item_matches([pred], [priya, mina]) == 0
+    assert precision([pred], [priya, mina], matches=pair_item_matches) == 0.0
+
+
+def test_duplicate_nameless_predictions_do_not_take_two_golds() -> None:
+    """Two copies of a name-less pred cannot credit both Priya's and Mina's items."""
+    pred = "I will send the slide outline tomorrow"
+    priya = "Send Priya the slide outline tomorrow"
+    mina = "Send Mina the slide outline tomorrow"
+    assert pair_item_matches([pred, pred], [priya, mina]) == 0
+    assert precision([pred, pred], [priya, mina], matches=pair_item_matches) == 0.0
+    assert recall([pred, pred], [priya, mina], matches=pair_item_matches) == 0.0
+
+
+def test_pair_item_matches_is_one_to_one_on_the_truth_side() -> None:
+    """One prediction consumes at most one gold, even if gold lists a duplicate."""
+    pred = "Send Priya the slide outline tomorrow"
+    gold = "Send Priya the slide outline tomorrow"
+    assert pair_item_matches([pred], [gold, gold]) == 1
+    assert recall([pred], [gold, gold], matches=pair_item_matches) == 0.5
+    assert pair_item_matches([pred, pred], [gold]) == 1
+
+
+def test_nt_contractions_are_negations() -> None:
+    """Surviving mutant: n't expansion dropped, so didn't/isn't/hasn't match."""
+    gold = "Onboarding Guide section 3 published"
+    assert not items_match("Onboarding Guide section 3 didn't publish", gold)
+    assert not items_match("Onboarding Guide section 3 isn't published", gold)
+    assert not items_match("Onboarding Guide section 3 hasn't published", gold)
+    assert (
+        pair_item_matches(["Onboarding Guide section 3 isn't published"], [gold], strict_names=True)
+        == 0
+    )
+    assert unsupported_count(["Onboarding Guide section 3 hasn't published"], [gold]) == 1
+
+
+def test_qwen_section_three_paraphrase_still_matches() -> None:
+    """Legitimate bake-off completed item (J≈0.714). Title nouns are not names."""
+    predicted = "Section 3 of the Internal Onboarding Guide is published this morning."
+    gold = "Onboarding Guide section 3 published"
+    assert item_jaccard(predicted, gold) == pytest.approx(5 / 7)
+    assert items_match(predicted, gold)
+    assert unsupported_count([predicted], [gold]) == 0
 
 
 def test_completed_accuracy_penalizes_false_completions() -> None:

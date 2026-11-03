@@ -77,3 +77,29 @@ footprint -p <pid>    # look for phys_footprint
 One config: `src/watson/intelligence/eval/thresholds.json` (plan §11.2). Hard gates: unsupported achievements = 0; claims-with-evidence = 100%; citations-resolvable = 100% over a **non-empty** citation set when the day has claims.
 
 `duplicate_observation_rate` measures **over-segmentation**, not per-segment extras (those are always 0: `observations` is `UNIQUE(segment_id, pipeline_version)`). An observation is a duplicate when it immediately follows an adjacent segment with the **same app** (`bundle_id`) **and** the **same window** (`window_title_norm`) **and** a token-set Jaccard similarity **≥ 0.5** against the previous description. Tokens are the case-folded, punctuation-stripped words from `normalize()`. Rotating the first verb still counts (paraphrase). A later revisit after a different app or window does not. The cutoff lives on `duplicate_observation_rate.jaccard_min` in `thresholds.json` (default 0.5). Load-time validation requires `0 < jaccard_min <= 1`. The rate threshold `< 0.05` is not lowered to match replay.
+
+## Item matching (decisions, commitments, completed)
+
+People and projects still use `names_match`: normalized equality or substring (so `Priya Natarajan` matches `Priya Natarajan (Acme)`).
+
+Decisions, commitments, and completed / achievement items use wording-tolerant matching in `metrics.py`:
+
+1. Expand `won't` / `n't` / `I'll`, then `normalize()` (case, parentheticals, punctuation).
+2. Strip a leading first-person future (`i will `). That is a commitment-voice **prefix**, not a stopword — `will` and `i` stay content words everywhere else.
+3. Drop `ITEM_STOPWORDS` (`a`, `an`, `and`, `is`, `the`, …). **Not** in the list: `will`, `i`, `from`, `to`, `by`, `or`.
+4. Token-set Jaccard via the existing helper. Empty token sets score **0**, never 1.
+5. A pair matches when the normalized strings are identical **or** (guards pass **and** Jaccard ≥ `ITEM_MATCH_JACCARD_MIN` = 0.7, inclusive).
+6. Pairing is **1:1 on both sides**, greedy by **best** score (descending), then prediction order. A gold item is consumed once; duplicate predictions cannot each take a different gold.
+
+Guards — any mismatch is a hard reject, even when Jaccard is high:
+
+- **Polarity / modal / status.** If one side has a negation (`not`, `no`, `never`, `won't` / `didn't` / `isn't` / `hasn't` → `… not`, `unpublished`, …), a modal (`should`, `could`, `might`, `may`), or a different status lemma (`publish`/`published`, `send`/`sent`, `adopt`/`reject`, `agree`, `draft`, …) and the other side does not, there is no match. `section 3 not published` does not match `section 3 published`.
+- **Relation markers.** `from`/`to`/`by`/`or` must be the same set. `to Priya` is not `from Priya`; `by Friday` is not `or Friday`.
+- **Numbers, dates, weekdays.** Digits, `Q4`, number-words, month names, and `today`/`tomorrow`/`Friday`/… must be equal as sets when present on **either** side. `page 2` ≠ `page 1`; `14 Nov` ≠ `15 Nov`; `Friday` ≠ `tomorrow`.
+- **Names.** A name is a **known V1 person or project**, or any **title-case** token that is not a skipped first-word opener. Mid-string title-case is always a name (`for Globex`, `with Jordan`). Sentence-initial capitals are names unless they are in `NON_NAME_OPENERS` (`Please`, `Need`, `Remember`, `Successfully`, `Finalised`, `Highlight`, `Agreed`, `Decided`) or a small leading-verb list (`Send`, `Publish`, …). `Jordan published…` therefore counts `Jordan`. Title nouns (`Internal`, `Guide`, `Section`) are never names.
+  - **Completed / achievements:** if either side has a name, both must have the same set. `Jordan published Onboarding Guide section 3` does not support `Onboarding Guide section 3 published`. `Sent the revised Q4 pricing deck` does not support `Mina sent the revised Q4 pricing deck`.
+  - **Decisions / commitments:** a name-less prediction may match a named gold item only when that pairing is **unambiguous** — exactly one gold candidate passes every other guard (polarity, dates, Jaccard, …). Two name-less `Send the slide outline tomorrow` rows cannot take both Priya's item and Mina's item. The bake-off `I will send the slide outline tomorrow` vs a single Priya gold stays a match.
+
+`0.7` still rejects a one-content-token swap on a typical 5-token item (4/6 ≈ 0.667). True matches that must stay: `I will send the slide outline tomorrow` vs `Send Priya the slide outline tomorrow` (4/5 = 0.8 after the prefix); `Cedar Onboarding page 1 is published` vs `Cedar Onboarding page 1 published` (1.0).
+
+This constant is **not** in `thresholds.json`. Changing it does not loosen the §11.2 quality gates.

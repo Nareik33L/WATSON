@@ -553,6 +553,205 @@ def test_empty_derived_commitments_are_not_diluted_by_claims(tmp_path: Path) -> 
         conn.close()
 
 
+def test_completed_union_dedupes_claim_and_candidate(tmp_path: Path) -> None:
+    """UNION (not UNION ALL) collapses the same achievement text from both tables."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        stamp = "2026-10-31T09:00:00Z"
+        claim_id = conn.execute(
+            """
+            SELECT id FROM claims
+            WHERE working_day_id = ? AND kind = 'achievement'
+            """,
+            (day_id,),
+        ).fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO achievement_candidates (
+                id, created_at, updated_at, working_day_id, claim_id, text, pipeline_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_id(),
+                stamp,
+                stamp,
+                day_id,
+                claim_id,
+                "Onboarding Guide section 3 published",
+                PIPELINE_VERSION,
+            ),
+        )
+        conn.commit()
+        predicted = collect_predicted(conn, day_id)
+        assert predicted["completed"] == ["Onboarding Guide section 3 published"]
+        metrics = score_day(conn, day_id, TRUTH)
+        assert metrics["unsupported_achievements"] == 0.0
+    finally:
+        conn.close()
+
+
+def test_collect_predicted_filters_other_pipeline_version(tmp_path: Path) -> None:
+    """Stale pipeline_version rows must not enter the predicted item lists."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        stamp = "2026-10-31T09:00:00Z"
+        stale = PIPELINE_VERSION - 1
+        conn.execute(
+            """
+            INSERT INTO commitments (
+                id, created_at, updated_at, working_day_id, text, status, due_hint,
+                claim_ids, prompt_version, pipeline_version
+            ) VALUES (?, ?, ?, ?, ?, 'open', NULL, '[]', 'day_extract/v1', ?)
+            """,
+            (new_id(), stamp, stamp, day_id, "Ghost commitment from an old pipeline", stale),
+        )
+        conn.execute(
+            """
+            INSERT INTO decisions (
+                id, created_at, updated_at, working_day_id, text, claim_ids,
+                prompt_version, pipeline_version
+            ) VALUES (?, ?, ?, ?, ?, '[]', 'day_extract/v1', ?)
+            """,
+            (new_id(), stamp, stamp, day_id, "Ghost decision from an old pipeline", stale),
+        )
+        observation_id = _observation_id(conn, day_id)
+        conn.execute(
+            """
+            INSERT INTO claims (
+                id, created_at, updated_at, observation_id, working_day_id, kind, text,
+                assertion, confidence, status, due_hint, pipeline_version
+            ) VALUES (?, ?, ?, ?, ?, 'achievement', ?, 'observed', 0.8, NULL, NULL, ?)
+            """,
+            (
+                new_id(),
+                stamp,
+                stamp,
+                observation_id,
+                day_id,
+                "Ghost shipped the entire product",
+                stale,
+            ),
+        )
+        conn.commit()
+        predicted = collect_predicted(conn, day_id)
+        assert "Ghost commitment from an old pipeline" not in predicted["commitments"]
+        assert "Ghost decision from an old pipeline" not in predicted["decisions"]
+        assert "Ghost shipped the entire product" not in predicted["completed"]
+        assert predicted["commitments"] == [
+            "Flag Q4 delivery risks in the proposal appendix",
+            "Send revised pricing to Priya by Friday",
+        ]
+        metrics = score_day(conn, day_id, TRUTH)
+        assert metrics["commitments_precision"] == 1.0
+        assert metrics["unsupported_achievements"] == 0.0
+    finally:
+        conn.close()
+
+
+def test_score_day_item_match_accepts_wording_paraphrases(tmp_path: Path) -> None:
+    """Derived wording can differ from gold after stopword / first-person normalize."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        conn.execute(
+            """
+            UPDATE decisions
+            SET text = 'Agreed to move Acme demo to 14 Nov'
+            WHERE working_day_id = ? AND text LIKE '%Acme demo%'
+            """,
+            (day_id,),
+        )
+        conn.execute(
+            """
+            UPDATE commitments
+            SET text = 'I will send the revised pricing to Priya by Friday'
+            WHERE working_day_id = ? AND text LIKE '%revised pricing%'
+            """,
+            (day_id,),
+        )
+        conn.execute(
+            """
+            UPDATE claims
+            SET text = 'Onboarding Guide section 3 is published'
+            WHERE working_day_id = ? AND kind = 'achievement'
+            """,
+            (day_id,),
+        )
+        conn.commit()
+        metrics = score_day(conn, day_id, TRUTH)
+        assert metrics["decisions_precision"] == 1.0
+        assert metrics["decisions_recall"] == 1.0
+        assert metrics["commitments_precision"] == 1.0
+        assert metrics["commitments_recall"] == 1.0
+        assert metrics["completed_accuracy"] == 1.0
+        assert metrics["unsupported_achievements"] == 0.0
+    finally:
+        conn.close()
+
+
+def test_score_day_nameless_completed_is_unsupported_against_named_gold(
+    tmp_path: Path,
+) -> None:
+    """score_day gate: name-less achievement vs named gold is unsupported."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        conn.execute(
+            """
+            UPDATE claims
+            SET text = 'Sent the revised Q4 pricing deck'
+            WHERE working_day_id = ? AND kind = 'achievement'
+            """,
+            (day_id,),
+        )
+        conn.commit()
+        gold = {
+            **TRUTH,
+            "completed": ["Mina sent the revised Q4 pricing deck"],
+            "not_completed": [],
+        }
+        metrics = score_day(conn, day_id, gold)
+        assert metrics["unsupported_achievements"] == 1.0
+        assert metrics["completed_accuracy"] == 0.0
+    finally:
+        conn.close()
+
+
+def test_score_day_item_match_rejects_near_miss_commitment(tmp_path: Path) -> None:
+    """A different person / day / object in the derived row is still a miss."""
+    conn = _open(tmp_path)
+    try:
+        day_id = _seed(conn)
+        conn.execute("DELETE FROM commitments WHERE working_day_id = ?", (day_id,))
+        stamp = "2026-10-31T09:00:00Z"
+        for text in (
+            "I will send Mina the slide outline tomorrow",
+            "I will send the slide outline Friday",
+            "I will send the hours grid tomorrow",
+        ):
+            conn.execute(
+                """
+                INSERT INTO commitments (
+                    id, created_at, updated_at, working_day_id, text, status, due_hint,
+                    claim_ids, prompt_version, pipeline_version
+                ) VALUES (?, ?, ?, ?, ?, 'open', NULL, '[]', 'day_extract/v1', ?)
+                """,
+                (new_id(), stamp, stamp, day_id, text, PIPELINE_VERSION),
+            )
+        conn.commit()
+        gold = {
+            **TRUTH,
+            "commitments": [{"text": "Send Priya the slide outline tomorrow"}],
+        }
+        metrics = score_day(conn, day_id, gold)
+        assert metrics["commitments_precision"] == 0.0
+        assert metrics["commitments_recall"] == 0.0
+    finally:
+        conn.close()
+
+
 def test_decisions_precision_counts_derived_items_not_claims(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:

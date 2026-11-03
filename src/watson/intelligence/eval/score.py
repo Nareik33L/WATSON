@@ -12,6 +12,7 @@ from watson.intelligence.eval.metrics import (
     duplicate_rate,
     f1_score,
     names_match,
+    pair_item_matches,
     precision,
     recall,
     unsupported_count,
@@ -56,10 +57,16 @@ def score_day(
         "project_f1": f1_score(predicted["projects"], projects),
         "people_f1": f1_score(predicted["people"], people),
         "completed_accuracy": completed_accuracy(predicted["completed"], completed, not_completed),
-        "decisions_recall": recall(predicted["decisions"], decisions),
-        "decisions_precision": precision(predicted["decisions"], decisions),
-        "commitments_recall": recall(predicted["commitments"], commitments),
-        "commitments_precision": precision(predicted["commitments"], commitments),
+        "decisions_recall": recall(predicted["decisions"], decisions, matches=pair_item_matches),
+        "decisions_precision": precision(
+            predicted["decisions"], decisions, matches=pair_item_matches
+        ),
+        "commitments_recall": recall(
+            predicted["commitments"], commitments, matches=pair_item_matches
+        ),
+        "commitments_precision": precision(
+            predicted["commitments"], commitments, matches=pair_item_matches
+        ),
         "unsupported_achievements": float(unsupported_count(predicted["completed"], completed)),
         "duplicate_observation_rate": duplicate_rate(predicted["observation_rows"]),
         "noise_non_work_rate": _noise_rate(predicted["noise_rows"], noise),
