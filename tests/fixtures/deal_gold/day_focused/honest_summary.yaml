@@ -11,6 +11,11 @@ claims:
     slot: what_happened
     text: Edited the Q4 deck
     evidence_segments: [s-doc-q4]
+  - id: h-q4-demo
+    deal: acme-q4
+    slot: what_happened
+    text: Noted the 14 Nov demo
+    evidence_segments: [s-call-q4]
   - id: h-q4-who
     deal: acme-q4
     slot: who_involved
@@ -34,7 +39,7 @@ claims:
   - id: h-renewal-next
     deal: acme-renewal
     slot: next_step
-    text: draft the renewal letter
+    text: draft the revised renewal letter
     evidence_segments: [s-mail-renewal]
   - id: h-globex-kickoff
     deal: globex-pilot
@@ -49,5 +54,5 @@ claims:
   - id: h-globex-next
     deal: globex-pilot
     slot: next_step
-    text: will share the timeline Monday
+    text: will share the revised timeline Monday
     evidence_segments: [s-mail-globex]

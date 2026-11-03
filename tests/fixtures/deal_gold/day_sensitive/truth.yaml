@@ -102,6 +102,9 @@ deal_summaries:
       - id: fact-cedar-page
         required_terms: [onboarding, page]
         evidence_segments: [s-doc-cedar]
+      - id: fact-cedar-draft
+        required_terms: [onboarding, draft]
+        evidence_segments: [s-doc-cedar]
     who_involved:
       - id: fact-cedar-jun
         person_id: jun-park

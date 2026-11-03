@@ -368,7 +368,7 @@ def test_one_claim_covers_at_most_one_fact() -> None:
         ],
     )
     gold = DealCorpus(days=[day])
-    dump = "pricing call q4 deck"
+    dump = "joined the pricing call q4 deck"
     predicted = PredictedCorpus(
         days=[
             PredictedDay(

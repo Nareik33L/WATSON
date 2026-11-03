@@ -12,7 +12,11 @@ from watson.intelligence.eval.deals import (
     baseline_empty_summary,
     baseline_group_by_app,
     baseline_group_by_company,
+    baseline_keyword_dump_comma_list,
+    baseline_keyword_dump_extra_what,
+    baseline_keyword_dump_need_to,
     baseline_keyword_dump_over_cap,
+    baseline_keyword_dump_will_prefix,
     baseline_keyword_dump_within_cap,
     baseline_one_deal_corpus,
     baseline_one_deal_per_day,
@@ -20,10 +24,12 @@ from watson.intelligence.eval.deals import (
     content_tokens,
     corpus_guidance,
     dump_windows,
+    honest_has_roster_name_and_deadline,
     honest_prediction,
+    is_bare_term_list,
     load_deal_corpus,
     load_failing_acme_1211,
-    load_honest_claims,
+    load_v1_deal_corpus,
     privacy_bait_legal,
     privacy_leak,
     score_deals,
@@ -52,7 +58,7 @@ def test_v1_guidance_floors_and_dump_shape(gold) -> None:
     assert counts["lookalike_pairs"] >= 2
     assert counts["noise_rate"] >= 0.20
     assert counts["privacy_bait"] >= 1
-    assert counts["what_facts_per_deal_day"] >= 1.2
+    assert counts["what_facts_per_deal_day"] >= 1.5
 
 
 def test_negative_grouping_baselines_below_gate(gold) -> None:
@@ -79,9 +85,24 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-within-cap": score_deals(
             gold, baseline_keyword_dump_within_cap(gold)
         ).summary.accuracy,
+        "keyword-dump-will-prefix": score_deals(
+            gold, baseline_keyword_dump_will_prefix(gold)
+        ).summary.accuracy,
+        "keyword-dump-extra-what": score_deals(
+            gold, baseline_keyword_dump_extra_what(gold)
+        ).summary.accuracy,
+        "keyword-dump-need-to": score_deals(
+            gold, baseline_keyword_dump_need_to(gold)
+        ).summary.accuracy,
+        "keyword-dump-comma-list": score_deals(
+            gold, baseline_keyword_dump_comma_list(gold)
+        ).summary.accuracy,
     }
     for name, score in rows.items():
         assert score < GATE, f"{name} summary {score:.3f} must be < {GATE}"
+    assert rows["keyword-dump-will-prefix"] < GATE
+    assert rows["keyword-dump-extra-what"] < GATE
+    assert rows["keyword-dump-within-cap"] < GATE
 
 
 def test_honest_summary_meets_gate(gold) -> None:
@@ -91,7 +112,7 @@ def test_honest_summary_meets_gate(gold) -> None:
     assert score.summary.unsupported == 0
     assert score.summary.accuracy >= GATE
     assert not score.privacy_fail
-    _assert_honest_has_name_and_deadline()
+    assert honest_has_roster_name_and_deadline(gold, predicted)
 
 
 def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
@@ -105,6 +126,8 @@ def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
         baseline_empty_summary(gold),
         baseline_keyword_dump_over_cap(gold),
         baseline_keyword_dump_within_cap(gold),
+        baseline_keyword_dump_will_prefix(gold),
+        baseline_keyword_dump_extra_what(gold),
         honest_prediction(gold, DEAL_GOLD),
     ]
     for predicted in outputs:
@@ -178,6 +201,22 @@ def test_baseline_score_table(gold) -> None:
             "keyword-dump-within-cap",
             score_deals(gold, baseline_keyword_dump_within_cap(gold)).summary,
         ),
+        (
+            "keyword-dump-will-prefix",
+            score_deals(gold, baseline_keyword_dump_will_prefix(gold)).summary,
+        ),
+        (
+            "keyword-dump-extra-what",
+            score_deals(gold, baseline_keyword_dump_extra_what(gold)).summary,
+        ),
+        (
+            "keyword-dump-need-to",
+            score_deals(gold, baseline_keyword_dump_need_to(gold)).summary,
+        ),
+        (
+            "keyword-dump-comma-list",
+            score_deals(gold, baseline_keyword_dump_comma_list(gold)).summary,
+        ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
     ]
     print("baseline score table")
@@ -194,21 +233,47 @@ def test_baseline_score_table(gold) -> None:
     )
 
 
-def _assert_honest_has_name_and_deadline() -> None:
-    from watson.intelligence.eval.deals import extract_dates
+def test_within_cap_and_prefixed_dumps_are_bare_lists(gold) -> None:
+    from watson.intelligence.eval.deals import deal_vocab
 
-    found = False
-    for day_dir in DEAL_GOLD.iterdir():
-        if not (day_dir / "honest_summary.yaml").is_file():
-            continue
-        for claim in load_honest_claims(day_dir):
-            if claim.slot != "what_happened":
+    dumps = [
+        *baseline_keyword_dump_within_cap(gold).days,
+        *baseline_keyword_dump_will_prefix(gold).days,
+        *baseline_keyword_dump_need_to(gold).days,
+        *baseline_keyword_dump_comma_list(gold).days,
+        *baseline_keyword_dump_extra_what(gold).days,
+    ]
+    gold_by_name = {day.name: day for day in gold.days}
+    checked = 0
+    for day in dumps:
+        gold_day = gold_by_name[day.name]
+        for claim in day.claims:
+            if claim.slot == "who_involved":
                 continue
-            has_name = any(
-                token[0].isupper()
-                for token in claim.text.replace("—", " ").split()
-                if token.isalpha()
-            )
-            if has_name and extract_dates(claim.text):
-                found = True
-    assert found, "honest control must include a what_happened with full name + deadline"
+            vocab = deal_vocab(gold_day, claim.deal)
+            assert is_bare_term_list(claim.text, vocab), claim.text
+            checked += 1
+    assert checked >= 10
+
+
+def test_v1_pipeline_overlays_use_fixture_frame_ids() -> None:
+    import uuid
+
+    overlays = load_v1_deal_corpus(REPO / "tests" / "fixtures")
+    validate_corpus(overlays)
+    privacy_bait_legal(overlays)
+    assert {day.name for day in overlays.days} == {
+        "day_acme_q4",
+        "day_fragmented_multi",
+        "day_meeting_heavy",
+        "day_sensitive_traps",
+        "day_near_empty",
+    }
+    for day in overlays.days:
+        for segment in day.segments:
+            if segment.privacy_bait:
+                continue
+            assert segment.frame_ids
+            for frame_id in segment.frame_ids:
+                parsed = uuid.UUID(frame_id)
+                assert parsed.version == 5

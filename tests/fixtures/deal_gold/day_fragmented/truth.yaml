@@ -209,6 +209,9 @@ deal_summaries:
       - id: fact-harbor-check
         required_terms: [safety, audit, checklist]
         evidence_segments: [s-doc-harbor, s-call-harbor]
+      - id: fact-harbor-findings
+        required_terms: [audit, findings]
+        evidence_segments: [s-grid-harbor]
     who_involved:
       - id: fact-harbor-ellis
         person_id: ellis-voss

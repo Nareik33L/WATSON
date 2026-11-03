@@ -4,6 +4,11 @@ claims:
     slot: what_happened
     text: Kept the walkthrough Thursday
     evidence_segments: [s-call-walk]
+  - id: h-walk-notes
+    deal: harbor-walkthrough
+    slot: what_happened
+    text: Edited the walkthrough notes
+    evidence_segments: [s-doc-walk]
   - id: h-walk-who
     deal: harbor-walkthrough
     slot: who_involved
@@ -12,7 +17,7 @@ claims:
   - id: h-walk-next
     deal: harbor-walkthrough
     slot: next_step
-    text: keep the walkthrough Thursday
+    text: keep the walkthrough Thursday still
     evidence_segments: [s-mail-walk]
   - id: h-gr-outline
     deal: globex-renewal
@@ -27,5 +32,5 @@ claims:
   - id: h-gr-next
     deal: globex-renewal
     slot: next_step
-    text: need to update the outline tomorrow
+    text: need to update the outline tomorrow still
     evidence_segments: [s-mail-gr]

@@ -17,7 +17,7 @@ claims:
   - id: h-nw-next
     deal: northwind-renewal
     slot: next_step
-    text: send the term
+    text: send the term please
     evidence_segments: [s-mail-nw]
   - id: h-nwx-seats
     deal: northwind-expansion
@@ -32,7 +32,7 @@ claims:
   - id: h-nwx-next
     deal: northwind-expansion
     slot: next_step
-    text: file the expansion brief
+    text: file the revised expansion brief
     evidence_segments: [s-mail-nwx]
   - id: h-harbor-check
     deal: harbor-audit
@@ -47,5 +47,10 @@ claims:
   - id: h-harbor-next
     deal: harbor-audit
     slot: next_step
-    text: will send the checklist Wednesday
+    text: will send the revised checklist Wednesday
     evidence_segments: [s-mail-harbor]
+  - id: h-harbor-findings
+    deal: harbor-audit
+    slot: what_happened
+    text: Reviewed the audit findings
+    evidence_segments: [s-grid-harbor]

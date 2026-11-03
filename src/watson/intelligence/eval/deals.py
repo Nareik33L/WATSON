@@ -8,8 +8,9 @@ contradictions, and citation-failure-only unsupported. See ``docs/eval.md``.
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,7 @@ WHAT_FUTURE = frozenset({"will", "should"})
 WHAT_FUTURE_PHRASES = ("need to", "going to", "plan to")
 NEXT_HEDGES = frozenset({"might", "may", "could"})
 NEXT_NEGATION = frozenset({"not", "never", "wont"})
+LIST_PREFIXES = frozenset({"will", "should", "need", "going", "plan", "to"})
 ACTION_VERBS = frozenset(
     {
         "send",
@@ -330,7 +332,17 @@ def load_honest_claims(day_dir: Path) -> list[PredictedClaim]:
                 evidence=evidence,
             )
         )
-    return claims
+    day_name = day_dir.name
+    return [
+        replace(
+            claim,
+            evidence=[
+                replace(item, segment_id=stable_id(day_name, item.segment_id, "segment"))
+                for item in claim.evidence
+            ],
+        )
+        for claim in claims
+    ]
 
 
 def validate_day(day: DayGold) -> None:
@@ -380,10 +392,14 @@ def score_deals(gold: DealCorpus, predicted: PredictedCorpus) -> DealScore:
         aligned.append((day, labels, mapping))
     grouping = score_grouping(gold, aligned)
     summary = score_summary(gold, predicted, aligned)
+    leaked = privacy_leak(gold, predicted)
+    if leaked:
+        grouping = replace(grouping, accuracy=0.0)
+        summary = replace(summary, accuracy=0.0)
     return DealScore(
         grouping=grouping,
         summary=summary,
-        privacy_fail=privacy_leak(gold, predicted),
+        privacy_fail=leaked,
     )
 
 
@@ -737,7 +753,13 @@ def contradicts(
     day: DayGold,
     cited_text: str,
 ) -> bool:
-    """True when the claim asserts a competing same-slot person/date/amount."""
+    """True when the claim asserts a competing same-slot person/date/amount.
+
+    Any claimed person, date, or amount that is not F's value contradicts
+    unless it is both deal-correct and present in the cited evidence.
+    Invented values (14 Nov → 15 Nov) fail even when F is the only fact
+    that mentions a date.
+    """
     if claim.slot != fact.slot:
         return False
     fact_values = fact_slot_values(fact, day.people)
@@ -752,14 +774,58 @@ def contradicts(
             evidence_ok = value in evidence_values[kind]
             if deal_ok and evidence_ok:
                 continue
-            if (
-                fact_values[kind]
-                or value in deal_values[kind]
-                or value in {person.id for person in day.people}
-            ):
-                if not (deal_ok and evidence_ok):
-                    return True
+            return True
     return False
+
+
+def deal_vocab(day: DayGold, deal_id: str) -> set[str]:
+    """Content tokens of one deal's terms, aliases, roster names, and title."""
+    tokens: set[str] = set()
+    for fact in day.facts:
+        if fact.deal_id != deal_id:
+            continue
+        for term in fact.required_terms:
+            tokens.update(content_tokens(term))
+        for phrase in fact_alias_phrases(fact):
+            tokens.update(content_tokens(phrase))
+        if fact.person_id:
+            person = _person(day.people, fact.person_id)
+            if person is not None:
+                tokens.update(content_tokens(person.name))
+                if person.company:
+                    tokens.update(content_tokens(person.company))
+    for deal in day.deals:
+        if deal.id != deal_id:
+            continue
+        tokens.update(content_tokens(deal.name))
+        tokens.update(content_tokens(deal.company))
+    return tokens
+
+
+def leftover_claim_tokens(text: str) -> list[str]:
+    """Content tokens after stripping will/should/need/going/plan/to prefixes."""
+    return [token for token in content_tokens(text) if token not in LIST_PREFIXES]
+
+
+def is_bare_term_list(text: str, vocab: set[str]) -> bool:
+    """True when leftover tokens are only deal terms / aliases / roster names."""
+    leftover = leftover_claim_tokens(text)
+    if not leftover:
+        return True
+    return all(token in vocab for token in leftover)
+
+
+def asserts_relation(claim: PredictedClaim, fact: GoldFact, day: DayGold) -> bool:
+    """A claim must assert a relation, not a bare list of deal terms.
+
+    ``who_involved`` may be a roster slot value tied to the deal. Every other
+    slot needs leftover words beyond the deal vocabulary, whatever the modal
+    or prefix. A bare list never matches a fact.
+    """
+    if claim.slot == "who_involved" and fact.person_id:
+        if person_entities_match(claim.text, fact.person_id, day.people):
+            return True
+    return not is_bare_term_list(claim.text, deal_vocab(day, fact.deal_id))
 
 
 def slot_modal_ok(claim: PredictedClaim, fact: GoldFact) -> bool:
@@ -861,6 +927,40 @@ def baseline_keyword_dump_within_cap(gold: DealCorpus) -> PredictedCorpus:
     )
 
 
+def baseline_keyword_dump_will_prefix(gold: DealCorpus) -> PredictedCorpus:
+    """QA dump: 'will' + required-term list. Scored 0.833 before the relation rule."""
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_will_prefix_claims,
+    )
+
+
+def baseline_keyword_dump_extra_what(gold: DealCorpus) -> PredictedCorpus:
+    """QA dump: extra what-happened copies. Scored 0.914 before the relation rule."""
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_extra_what_claims,
+    )
+
+
+def baseline_keyword_dump_need_to(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_need_to_claims,
+    )
+
+
+def baseline_keyword_dump_comma_list(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_comma_list_claims,
+    )
+
+
 def honest_prediction(gold: DealCorpus, root: Path | None = None) -> PredictedCorpus:
     base = root if root is not None else deal_gold_root()
     days: list[PredictedDay] = []
@@ -940,6 +1040,203 @@ def corpus_guidance(gold: DealCorpus) -> dict[str, float]:
         "deal_days": float(deal_days),
         "what_facts": float(what_facts),
     }
+
+
+def stable_id(day_name: str, local_id: str | None, kind: str) -> str:
+    """Map a gold-local id to the UUID v5 the materialized fixture / replay use."""
+    raw = str(local_id or "")
+    if not raw:
+        return raw
+    try:
+        parsed = uuid.UUID(raw)
+    except ValueError:
+        parsed = None
+    if parsed is not None and parsed.version == 5:
+        return str(parsed)
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"watson.deal_gold:{kind}:{day_name}:{raw}"))
+
+
+def collect_predicted_deals(conn: Any, day_name: str) -> PredictedDay:
+    """Read replay/pipeline segments and stored text for deal scoring.
+
+    The pipeline has no deal column yet, so every predicted cluster is ``none``.
+    Alignment still works: gold and predicted share fixture frame ids.
+    """
+    segments: list[PredictedSegment] = []
+    for row in conn.execute("SELECT id, started_at FROM segments ORDER BY started_at, id"):
+        frames = tuple(
+            str(item[0])
+            for item in conn.execute(
+                """
+                SELECT frame_id FROM segment_frames
+                WHERE segment_id = ?
+                ORDER BY captured_at, frame_id
+                """,
+                (row[0],),
+            )
+        )
+        segments.append(
+            PredictedSegment(
+                id=str(row[0]),
+                frame_ids=frames,
+                deal=NONE,
+                started_at=str(row[1] or ""),
+            )
+        )
+    return PredictedDay(
+        name=day_name,
+        segments=segments,
+        claims=[],
+        stored_texts=_stored_pipeline_texts(conn),
+    )
+
+
+def honest_has_roster_name_and_deadline(gold: DealCorpus, predicted: PredictedCorpus) -> bool:
+    """Honest control must name a roster full name (not any capital) plus a date."""
+    roster = [person.name for day in gold.days for person in day.people if person.name]
+    for day in predicted.days:
+        for claim in day.claims:
+            if claim.slot != "what_happened":
+                continue
+            if not extract_dates(claim.text):
+                continue
+            if any(has_phrase(claim.text, name) for name in roster):
+                return True
+    return False
+
+
+def load_v1_deal_day(fixture_dir: Path) -> DayGold:
+    """Build deal gold from an existing V1 fixture day + optional ``deals.yaml``."""
+    overlay_path = fixture_dir / "deals.yaml"
+    if not overlay_path.is_file():
+        raise FileNotFoundError(overlay_path)
+    overlay = _load_yaml(overlay_path)
+    truth = _load_yaml(fixture_dir / "truth.yaml")
+    name = str(overlay.get("day") or truth.get("meta", {}).get("name") or fixture_dir.name)
+    date = str(overlay.get("date") or truth.get("meta", {}).get("date") or truth.get("date") or "")
+    deals = [
+        Deal(
+            id=str(row.get("id") or ""),
+            name=str(row.get("name") or ""),
+            company=str(row.get("company") or ""),
+            lookalike_of=(str(row["lookalike_of"]) if row.get("lookalike_of") else None),
+        )
+        for row in _row_list(overlay.get("deals"))
+    ]
+    people = [
+        Person(
+            id=str(row.get("id") or ""),
+            name=str(row.get("name") or ""),
+            company=str(row.get("company") or ""),
+        )
+        for row in _row_list(overlay.get("people"))
+    ]
+    rules = _row_list(overlay.get("rules"))
+    skipped_raw = truth.get("skipped") or []
+    skipped: dict[str, Frame] = {}
+    if isinstance(skipped_raw, list):
+        for row in skipped_raw:
+            if not isinstance(row, dict):
+                continue
+            frame_id = str(row.get("frame_id") or "")
+            skipped[frame_id] = Frame(
+                id=frame_id,
+                text="",
+                skipped=True,
+                skip_reason=str(row.get("reason") or ""),
+                bundle_id=str(row.get("bundle_id") or ""),
+            )
+    frames: dict[str, Frame] = {}
+    for sidecar_path in sorted((fixture_dir / "frames").glob("*/*.json")):
+        try:
+            payload = _load_json(sidecar_path)
+        except (OSError, ValueError):
+            continue
+        frame_id = str(payload.get("frame_id") or sidecar_path.stem)
+        lines = payload.get("ocr", {}).get("lines") or []
+        text = " ".join(str(line.get("text") or "") for line in lines if isinstance(line, dict))
+        skip = skipped.get(frame_id)
+        frames[frame_id] = Frame(
+            id=frame_id,
+            text=text,
+            skipped=skip is not None,
+            skip_reason=skip.skip_reason if skip is not None else "",
+            bundle_id=str(payload.get("bundle_id") or (skip.bundle_id if skip else "")),
+        )
+    for frame_id, skip in skipped.items():
+        frames.setdefault(frame_id, skip)
+    segments: list[GoldSegment] = []
+    expected = truth.get("expected_segments") or []
+    if isinstance(expected, list):
+        for index, raw in enumerate(expected):
+            if not isinstance(raw, dict):
+                continue
+            frame_ids = tuple(_string_list(raw.get("frame_ids"), "frame_ids"))
+            title = str(raw.get("window_title") or "")
+            bundle = str(raw.get("bundle_id") or "")
+            deal_id = _overlay_deal(title, bundle, rules)
+            segments.append(
+                GoldSegment(
+                    id=str(raw.get("start_frame") or f"{name}-seg-{index}"),
+                    frame_ids=frame_ids,
+                    deal=deal_id,
+                    bundle_id=bundle,
+                    window_title=title,
+                    started_at=str(raw.get("start") or ""),
+                    channel=str(raw.get("channel") or _channel_from_bundle(bundle)),
+                )
+            )
+    for frame_id, skip in skipped.items():
+        if skip.skip_reason not in EXCLUDED_REASONS:
+            continue
+        if any(frame_id in segment.frame_ids for segment in segments):
+            continue
+        segments.append(
+            GoldSegment(
+                id=f"{name}-bait-{frame_id}",
+                frame_ids=(frame_id,),
+                deal=NONE,
+                bundle_id=skip.bundle_id,
+                window_title="",
+                started_at="",
+                channel="excluded",
+                privacy_bait=True,
+            )
+        )
+    facts = _overlay_facts(name, overlay, {segment.id for segment in segments})
+    day = DayGold(
+        name=name,
+        date=date,
+        deals=deals,
+        people=people,
+        segments=segments,
+        frames=frames,
+        facts=facts,
+        skipped=skipped,
+    )
+    validate_day(day)
+    return day
+
+
+V1_PIPELINE_DAYS: tuple[str, ...] = (
+    "day_acme_q4",
+    "day_fragmented_multi",
+    "day_meeting_heavy",
+    "day_sensitive_traps",
+    "day_near_empty",
+)
+
+
+def load_v1_deal_corpus(root: Path | None = None) -> DealCorpus:
+    base = root if root is not None else Path(__file__).resolve().parents[4] / "tests" / "fixtures"
+    days = []
+    for name in V1_PIPELINE_DAYS:
+        overlay = base / name / "deals.yaml"
+        if overlay.is_file():
+            days.append(load_v1_deal_day(base / name))
+    if not days:
+        raise FileNotFoundError(f"no V1 deal overlays under {base}")
+    return DealCorpus(days=days)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -1045,15 +1342,17 @@ def _parse_day(truth: dict[str, Any], *, fallback_name: str) -> DayGold:
                             person_id=(str(row["person_id"]) if row.get("person_id") else None),
                         )
                     )
-    return DayGold(
-        name=name,
-        date=date,
-        deals=deals,
-        people=people,
-        segments=segments,
-        frames=frames,
-        facts=facts,
-        skipped=skipped,
+    return _expand_day_ids(
+        DayGold(
+            name=name,
+            date=date,
+            deals=deals,
+            people=people,
+            segments=segments,
+            frames=frames,
+            facts=facts,
+            skipped=skipped,
+        )
     )
 
 
@@ -1190,6 +1489,8 @@ def _claim_covers(
     if len(content_tokens(claim.text)) > CONTENT_TOKEN_CAP:
         return False
     if not required_terms_present(claim.text, fact, day.people):
+        return False
+    if not asserts_relation(claim, fact, day):
         return False
     if fact.slot == "who_involved" and fact.person_id:
         if not person_entities_match(claim.text, fact.person_id, day.people):
@@ -1402,6 +1703,68 @@ def _within_cap_claims(day: DayGold) -> list[PredictedClaim]:
     return claims
 
 
+def _will_prefix_claims(day: DayGold) -> list[PredictedClaim]:
+    claims: list[PredictedClaim] = []
+    for claim in _within_cap_claims(day):
+        claims.append(
+            replace(
+                claim,
+                id=claim.id.replace("dump-in-", "dump-will-", 1),
+                text=f"will {claim.text}".strip(),
+            )
+        )
+    return claims
+
+
+def _need_to_claims(day: DayGold) -> list[PredictedClaim]:
+    claims: list[PredictedClaim] = []
+    for claim in _within_cap_claims(day):
+        claims.append(
+            replace(
+                claim,
+                id=claim.id.replace("dump-in-", "dump-need-", 1),
+                text=f"need to {claim.text}".strip(),
+            )
+        )
+    return claims
+
+
+def _comma_list_claims(day: DayGold) -> list[PredictedClaim]:
+    claims: list[PredictedClaim] = []
+    for claim in _within_cap_claims(day):
+        claims.append(
+            replace(
+                claim,
+                id=claim.id.replace("dump-in-", "dump-comma-", 1),
+                text=", ".join(claim.text.split()),
+            )
+        )
+    return claims
+
+
+def _extra_what_claims(day: DayGold) -> list[PredictedClaim]:
+    claims = _within_cap_claims(day)
+    extras: list[PredictedClaim] = []
+    for deal in day.deals:
+        channels = {segment.channel for segment in _deal_segments(day, deal.id)}
+        if not {"email", "call", "doc"} <= channels:
+            continue
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        windows = dump_windows(deal_term_list(day, deal.id))
+        for window_index, window in enumerate(windows):
+            extras.append(
+                PredictedClaim(
+                    id=f"dump-extra-what-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="what_happened",
+                    text=window,
+                    evidence=list(evidence),
+                )
+            )
+    return claims + extras
+
+
 def _company_values(day: DayGold, corpus: DealCorpus | None = None) -> list[str]:
     days = corpus.days if corpus is not None else [day]
     values: list[str] = []
@@ -1588,6 +1951,134 @@ def _exclusive_other_term(phrase: str, fact_terms: set[str], others: Sequence[Go
     return False
 
 
+def _expand_day_ids(day: DayGold) -> DayGold:
+    """Rewrite local frame/segment ids to the UUID v5 replay/materialize uses."""
+    frame_map = {frame_id: stable_id(day.name, frame_id, "frame") for frame_id in day.frames}
+    frame_map.update({frame_id: stable_id(day.name, frame_id, "frame") for frame_id in day.skipped})
+    segment_map = {
+        segment.id: stable_id(day.name, segment.id, "segment") for segment in day.segments
+    }
+    frames = {
+        frame_map.get(frame.id, frame.id): replace(frame, id=frame_map.get(frame.id, frame.id))
+        for frame in day.frames.values()
+    }
+    skipped = {
+        frame_map.get(frame.id, frame.id): replace(frame, id=frame_map.get(frame.id, frame.id))
+        for frame in day.skipped.values()
+    }
+    segments = [
+        replace(
+            segment,
+            id=segment_map.get(segment.id, segment.id),
+            frame_ids=tuple(frame_map.get(frame_id, frame_id) for frame_id in segment.frame_ids),
+        )
+        for segment in day.segments
+    ]
+    facts = [
+        replace(
+            fact,
+            evidence_segments=tuple(
+                segment_map.get(segment_id, segment_id) for segment_id in fact.evidence_segments
+            ),
+        )
+        for fact in day.facts
+    ]
+    return replace(
+        day,
+        frames=frames,
+        skipped=skipped,
+        segments=segments,
+        facts=facts,
+    )
+
+
+def _stored_pipeline_texts(conn: Any) -> list[str]:
+    blobs: list[str] = []
+    queries = (
+        "SELECT text_redacted FROM frame_text",
+        "SELECT description FROM observations",
+        "SELECT text FROM claims",
+        "SELECT narrative_md FROM daily_summaries",
+        "SELECT text FROM decisions",
+        "SELECT text FROM commitments",
+        "SELECT merged_text FROM segments",
+        "SELECT detail_json FROM audit_events",
+    )
+    for sql in queries:
+        try:
+            rows = conn.execute(sql).fetchall()
+        except Exception:
+            continue
+        blobs.extend(str(row[0] or "") for row in rows)
+    return blobs
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    import json
+
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{path}: JSON must be a mapping")
+    return loaded
+
+
+def _overlay_deal(title: str, bundle: str, rules: Sequence[dict[str, Any]]) -> str:
+    blob = f"{title} {bundle}"
+    for row in rules:
+        deal_id = str(row.get("deal") or NONE)
+        needles = _string_list(row.get("match"), "match")
+        if needles and all(has_phrase(blob, needle) for needle in needles):
+            return deal_id
+    return NONE
+
+
+def _channel_from_bundle(bundle: str) -> str:
+    token = bundle.rsplit(".", 1)[-1].casefold()
+    if token in {"mail"}:
+        return "email"
+    if token in {"room", "relay"}:
+        return "call"
+    if token in {"quill", "grid", "anvil"}:
+        return "doc"
+    if token in {"passwords"}:
+        return "excluded"
+    return "noise"
+
+
+def _overlay_facts(day_name: str, overlay: dict[str, Any], segment_ids: set[str]) -> list[GoldFact]:
+    facts: list[GoldFact] = []
+    summaries = overlay.get("deal_summaries") or {}
+    if not isinstance(summaries, dict):
+        return facts
+    for deal_id, slots in summaries.items():
+        slot_map = _mapping(slots, f"{day_name} deal_summaries.{deal_id}")
+        for slot in SLOTS:
+            for row in _row_list(slot_map.get(slot)):
+                aliases_raw = row.get("aliases") or {}
+                aliases = {
+                    str(term): tuple(str(item) for item in phrases)
+                    for term, phrases in _mapping(aliases_raw, "aliases").items()
+                }
+                evidence = tuple(_string_list(row.get("evidence_segments"), "evidence_segments"))
+                if evidence and not set(evidence) <= segment_ids:
+                    missing = set(evidence) - segment_ids
+                    raise ValueError(f"{day_name}: overlay evidence {sorted(missing)} is missing")
+                facts.append(
+                    GoldFact(
+                        id=str(row.get("id") or ""),
+                        deal_id=str(deal_id),
+                        slot=slot,
+                        required_terms=tuple(
+                            _string_list(row.get("required_terms"), "required_terms")
+                        ),
+                        aliases=aliases,
+                        evidence_segments=evidence,
+                        person_id=(str(row["person_id"]) if row.get("person_id") else None),
+                    )
+                )
+    return facts
+
+
 def _mapping(raw: Any, label: str) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError(f"{label} must be a mapping")
@@ -1631,31 +2122,43 @@ __all__ = [
     "PredictedSegment",
     "SummaryScore",
     "align_segments",
+    "asserts_relation",
     "baseline_all_none",
     "baseline_empty_summary",
     "baseline_group_by_app",
     "baseline_group_by_company",
+    "baseline_keyword_dump_comma_list",
+    "baseline_keyword_dump_extra_what",
+    "baseline_keyword_dump_need_to",
     "baseline_keyword_dump_over_cap",
+    "baseline_keyword_dump_will_prefix",
     "baseline_keyword_dump_within_cap",
     "baseline_one_deal_corpus",
     "baseline_one_deal_per_day",
     "baseline_one_deal_per_segment",
+    "collect_predicted_deals",
     "company_cluster",
     "content_tokens",
+    "contradicts",
     "corpus_guidance",
     "deal_gold_root",
     "deal_term_list",
+    "deal_vocab",
     "dump_windows",
     "extract_amounts",
     "extract_dates",
     "extract_slot_values",
     "has_phrase",
+    "honest_has_roster_name_and_deadline",
     "honest_prediction",
     "identity_prediction",
+    "is_bare_term_list",
     "load_deal_corpus",
     "load_deal_day",
     "load_failing_acme_1211",
     "load_honest_claims",
+    "load_v1_deal_corpus",
+    "load_v1_deal_day",
     "match_clusters",
     "person_entities_match",
     "privacy_bait_legal",
@@ -1664,6 +2167,7 @@ __all__ = [
     "score_deals",
     "score_grouping",
     "score_summary",
+    "stable_id",
     "validate_corpus",
     "validate_day",
 ]

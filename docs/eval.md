@@ -120,9 +120,9 @@ Slots are `what_happened` | `who_involved` | `next_step`. Gold rows are **atomic
 
 **Caps.** After normalize + stopword drop, a claim has at most **24 content tokens**. One claim covers **at most one** gold fact.
 
-**Contradiction.** A claim fails to cover F only when, in the **same slot** on the same day and deal, it asserts a **different** person, date, or amount than F. Extra people or dates that are correct for the deal and backed by the cited evidence do **not** reject (so "Priya Natarajan emailed about pricing" still covers).
+**Contradiction.** A claim fails to cover F when, in the **same slot** on the same day and deal, it asserts a person, date, or amount that is **not** F's value. Invented values count: `14 Nov` changed to `15 Nov` is a wrong claim even when no other gold fact mentions a date. Extra people or dates that are correct for the deal **and** backed by the cited evidence do **not** reject (so "Priya Natarajan emailed about pricing" still covers).
 
-**Cover.** Contiguous-phrase match of that one fact's required terms; no same-slot contradiction; slot modal rules; cited gold segments **overlap** `evidence_segments`.
+**Cover.** Contiguous-phrase match of that one fact's required terms; the claim **asserts a relation** (subject–verb–object, or a slot value tied to the deal); no same-slot contradiction; slot modal rules; cited gold segments **overlap** `evidence_segments`. A bare list of deal terms never matches a fact, with or without a `will` / `need to` / `going to` prefix.
 
 - **Modals.** `what_happened` rejects `will` / `should` / `need to` / `going to`. `next_step` accepts `will` / `should` / `need to` and rejects done forms (`sent` vs `send`), hedges (`might`, `may`, `could`), and negation. Will vs may, or done vs planned, does not match.
 - **Aliases.** Closed list: roster person forms; number forms of the same value; date forms of the same calendar date. **Weekday ≠ date** (`friday` ≠ `14 nov`). Per-fact aliases: ≤ 3 contiguous phrases, no stopwords, no **cross-deal** alias, no term exclusive to another fact. Fixture-checked.
@@ -131,9 +131,9 @@ Slots are `what_happened` | `who_involved` | `next_step`. Gold rows are **atomic
   1. Cite does not resolve to a fixture frame.
   2. **Matched deal:** no cited frame on that gold deal → unsupported. **Unmatched deal:** test (2) is **predicted-cluster membership only**. Cite on that cluster → precision miss, not unsupported. Cite off the cluster → unsupported. Never both.
   3. If paired: cited OCR lacks required terms, or cited segments miss `evidence_segments` → unsupported. Extra (unpaired) claims skip (3).
-- Mutants: polarity, number/date, weekday↔date, `what_happened`+will/should, `next_step`+may/sent, same-slot person/date/amount swap, both keyword dumps.
+- Mutants: polarity, number/date, weekday↔date, `what_happened`+will/should, `next_step`+may/sent, same-slot person/date/amount swap, both keyword dumps, will-prefix dump, extra-what dump.
 
-**Deal summary accuracy** = `min(precision, what_happened_recall, next_step_recall, who_involved_recall)` if unsupported is 0, else 0.
+**Deal summary accuracy** = `min(precision, what_happened_recall, next_step_recall, who_involved_recall)` if unsupported is 0, else 0. A `privacy_fail` hard-zeros both grouping and summary accuracy.
 
 ### Fixture-validation test (M3f, authoritative)
 
@@ -145,7 +145,10 @@ Compute these on the actual gold corpus (no model). The build **fails** if any n
 - **group by company:** roster/fixture `company` as a whole token in **`window_title` only** (never the gold deal name); no match → `none`; longest then lex-smaller if two match. The 12/1/1/1 synthetic gold has such titles.
 - empty summary
 - **keyword dump (over-cap):** all OCR tokens of the deal-day per gold fact (tests the 24-token cap)
-- **keyword dump (within-cap):** ≤24-token windows of the deal's required terms, no sentence wrapper, emitted in every slot
+- **keyword dump (within-cap):** ≤24-token windows of the deal's required terms, no sentence wrapper, emitted in every slot. Fails on the relation rule (bare list), not only the next-step modal.
+- **keyword dump (will-prefix):** the within-cap list with a leading `will` (QA score 0.833 before the relation rule). Must stay < 0.85.
+- **keyword dump (extra-what):** extra `what_happened` copies of those windows on multi-touch deals (QA score 0.914 before the relation rule). Must stay < 0.85.
+- **keyword dump (need-to / comma-list):** further adversarial dumps of the same terms. Must stay < 0.85.
 - **honest summary (positive):** hand-written, well-cited correct summary per fixture deal, ≥ 0.85
 
 The 12/1/1/1 Acme corpus (group-by-company F1 **0.905**) is a required **failing** input of this checker. Guidance counts do not replace it.
@@ -164,11 +167,13 @@ These pin the four QA follow-ups from #45 so the scorer and fixtures agree.
 | date | a weekday token (`friday`) **or** a canonical calendar date (`14 nov` / `14 november` / `2026-11-14` → `cal:11-14`). Weekday ≠ date. |
 | amount | an integer from digits or number-words (`2` / `two`). Quarters (`q4`) are not amounts. |
 
-A claim contradicts F only in the **same slot** on the same day and deal, and only when it asserts a value of one of those kinds that is **not** F's value and is **not** both (a) a slot value of some fact on this deal and (b) present in the cited evidence. A fact with no person/date/amount is not contradicted by extra deal-correct evidenced values. Person / date / amount mentioned in another slot do not contradict.
+A claim contradicts F only in the **same slot** on the same day and deal, and only when it asserts a value of one of those kinds that is **not** F's value and is **not** both (a) a slot value of some fact on this deal and (b) present in the cited evidence. Invented values that are neither F's value nor deal-correct-and-evidenced contradict (14 Nov → 15 Nov). Person / date / amount mentioned in another slot do not contradict.
 
-**Honest-control scoring.** The positive control is scored with the same scorer against **gold grouping**: each non-bait segment's predicted cluster id is that segment's gold deal id (bait stays `none`). Claims come from `honest_summary.yaml` next to the day fixture. The control must include at least one `what_happened` claim that names a full roster person and a deadline (weekday or calendar date). Gate: deal summary accuracy ≥ 0.85 (and unsupported = 0).
+**Relation.** After stripping `will` / `should` / `need` / `going` / `plan` / `to` and stopwords, leftover tokens that are only that deal's required terms, aliases, or roster names are a **bare list** and never cover a fact. `who_involved` may be the roster name alone (a slot value tied to the deal). Honest claims use a wrapper word (`revised`, `please`, `still`, `today`, a past verb) so they are not leftover-empty.
 
-**Fixture shape.** V1 gold lives under `tests/fixtures/deal_gold/{day_focused,day_fragmented,day_meeting,day_sensitive,day_near_empty}/` as `truth.yaml` plus `honest_summary.yaml`. The 12/1/1/1 failing shape is `tests/fixtures/deal_gold/failing_acme_1211/truth.yaml`. A day file has `deals`, `people`, `segments` (`id`, `frame_ids`, `deal`, `bundle_id`, `window_title`, `started_at`, `channel`, optional `privacy_bait`), `frames`, `skipped`, and `deal_summaries` (atomic facts with `required_terms` or `person_id`, optional `aliases`, `evidence_segments`). Some slot on the V1 corpus has **≥ 1.2 gold facts per deal-day** so a single within-cap window cannot cover every fact (recall ≤ 1/1.2 < 0.85).
+**Honest-control scoring.** The positive control is scored with the same scorer against **gold grouping**: each non-bait segment's predicted cluster id is that segment's gold deal id (bait stays `none`). Claims come from `honest_summary.yaml` next to the day fixture. The control must include at least one `what_happened` claim that names a **roster full name** (not any capitalized word) and a deadline (weekday or calendar date). Gate: deal summary accuracy ≥ 0.85 (and unsupported = 0).
+
+**Fixture shape.** V1 gold lives under `tests/fixtures/deal_gold/{day_focused,day_fragmented,day_meeting,day_sensitive,day_near_empty}/` as `truth.yaml` plus `honest_summary.yaml`. Local frame and segment ids expand on load to deterministic UUID v5 values so replay PNG/sidecar/manifest materialization and `score_deals` share ids. Existing pipeline days carry a `deals.yaml` overlay keyed by `expected_segments.start_frame`. The 12/1/1/1 failing shape is `tests/fixtures/deal_gold/failing_acme_1211/truth.yaml`. A day file has `deals`, `people`, `segments` (`id`, `frame_ids`, `deal`, `bundle_id`, `window_title`, `started_at`, `channel`, optional `privacy_bait`), `frames`, `skipped`, and `deal_summaries` (atomic facts with `required_terms` or `person_id`, optional `aliases`, `evidence_segments`). Some slot on the V1 corpus has **≥ 1.5 gold facts per deal-day** so a single within-cap window cannot cover every fact. After replay, bait text must be absent from stored deals, summaries, and logs.
 
 ## Thresholds
 

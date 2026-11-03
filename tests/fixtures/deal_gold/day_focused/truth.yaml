@@ -163,12 +163,15 @@ deal_summaries:
   acme-q4:
     what_happened:
       - id: fact-q4-call
-        required_terms: [pricing, call]
+        required_terms: [pricing, call, 14 nov]
         aliases: {pricing: [price, pricing]}
         evidence_segments: [s-call-q4]
       - id: fact-q4-deck
         required_terms: [q4, deck]
         evidence_segments: [s-doc-q4]
+      - id: fact-q4-demo
+        required_terms: [demo]
+        evidence_segments: [s-mail-q4, s-call-q4]
     who_involved:
       - id: fact-q4-priya
         person_id: priya-natarajan

@@ -93,6 +93,9 @@ deal_summaries:
       - id: fact-walk-keep
         required_terms: [walkthrough, thursday]
         evidence_segments: [s-call-walk, s-doc-walk]
+      - id: fact-walk-notes
+        required_terms: [walkthrough, notes]
+        evidence_segments: [s-doc-walk]
     who_involved:
       - id: fact-walk-ned
         person_id: ned-quinn
