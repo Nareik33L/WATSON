@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tests.replay_support import TEST_KEY
 from watson.intelligence.eval.run import run_eval
+from watson.memory.db import connect
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures"
@@ -19,15 +20,16 @@ def test_recordings_emit_v2_deals_for_acme_day() -> None:
     acme = next(
         row
         for row in rows
-        if "Acme Q4 proposal" in str(row.get("match") or "")
-        or "Acme Q4 proposal"
-        in json.dumps((row.get("response") or {}).get("deals") or [])
+        if str(row.get("match") or "").endswith("Acme Q4 proposal.")
+        or "Acme Q4 proposal" in json.dumps((row.get("response") or {}).get("deals") or [])
     )
     deals = (acme.get("response") or {}).get("deals") or []
     assert deals
     assert any(item.get("title") == "Acme Q4 proposal" for item in deals)
+    assert str(acme.get("match") or "").endswith(".")
     cluster = next(row for row in rows if str(row.get("match") or "").startswith("Cluster these"))
     assert (cluster.get("response") or {}).get("deals")
+    assert (cluster.get("response") or {}).get("deals")[0]["title"] == "Day work"
 
 
 def test_replay_acme_day_produces_v2_deals(tmp_path: Path, key_provider: object) -> None:
@@ -47,3 +49,20 @@ def test_replay_acme_day_produces_v2_deals(tmp_path: Path, key_provider: object)
     assert day.narrative_nonempty
     assert day.citation_count > 0
     assert day.metrics["citations_resolvable"] == 1.0
+    conn = connect(tmp_path / "eval" / "day_acme_q4" / "watson.db", TEST_KEY, load_vec=False)
+    try:
+        titles = [
+            str(row[0]) for row in conn.execute("SELECT title FROM deals ORDER BY created_at, id")
+        ]
+        assert titles == ["Acme Q4 proposal"]
+        n_none = int(
+            conn.execute("SELECT COUNT(*) FROM segments WHERE deal_id IS NULL").fetchone()[0]
+        )
+        n_assigned = int(
+            conn.execute("SELECT COUNT(*) FROM segments WHERE deal_id IS NOT NULL").fetchone()[0]
+        )
+        assert n_assigned == 8
+        assert n_none == 5
+        assert n_none + n_assigned == 13
+    finally:
+        conn.close()

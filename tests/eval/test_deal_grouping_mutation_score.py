@@ -1,6 +1,6 @@
 """Named-mutation score for deal grouping and per-deal summaries.
 
-Target ≥ 12 of 15 mutants. No-ops and collection errors count as SURVIVED.
+Target ≥ 13 of 16 mutants. No-ops and collection errors count as SURVIVED.
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-TARGET_MUTANTS = 15
-KILL_FLOOR = 12
+TARGET_MUTANTS = 16
+KILL_FLOOR = 13
 TEST_PATHS = (
     "tests/unit/test_deal_grouping.py",
     "tests/unit/test_daily_summary.py",
@@ -191,6 +191,18 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
             "    return title\n"
         ),
     ),
+    (
+        "groups-len-key",
+        CONSOLIDATION,
+        (
+            "            groups.append((_deal_group_key(index, cluster.title),"
+            " cluster.title, grouped))\n"
+        ),
+        (
+            "            groups.append((_deal_group_key(len(groups), cluster.title),"
+            " cluster.title, grouped))\n"
+        ),
+    ),
 )
 
 
@@ -250,7 +262,7 @@ def _classify(src_root: Path, *, changed: bool) -> str:
 
 
 @pytest.mark.timeout(300)
-def test_deal_grouping_kills_at_least_12_of_15(tmp_path: Path) -> None:
+def test_deal_grouping_kills_at_least_13_of_16(tmp_path: Path) -> None:
     assert len(MUTANTS) == TARGET_MUTANTS
     names = [row[0] for row in MUTANTS]
     assert len(names) == len(set(names))

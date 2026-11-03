@@ -931,6 +931,146 @@ def test_duplicate_titles_keep_separate_headings_and_slots(tmp_path: Path) -> No
         conn.close()
 
 
+def test_leading_none_cluster_keeps_later_deal_slots(tmp_path: Path) -> None:
+    from tests.unit.test_consolidation import _insert_day
+
+    conn = _open(tmp_path)
+    try:
+        day_id = _insert_day(conn)
+        noise_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T08:00:00Z")
+        acme_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T09:00:00Z")
+        globex_frame = _insert_frame(conn, day_id, captured_at="2026-10-31T10:00:00Z")
+        noise_seg = _insert_segment(
+            conn, day_id, noise_frame, started_at="2026-10-31T08:00:00Z", merged="Harbor news"
+        )
+        acme_seg = _insert_segment(
+            conn, day_id, acme_frame, started_at="2026-10-31T09:00:00Z", merged="Acme mail"
+        )
+        globex_seg = _insert_segment(
+            conn, day_id, globex_frame, started_at="2026-10-31T10:00:00Z", merged="Globex mail"
+        )
+        _insert_observation(conn, noise_seg, description="Reading civic news")
+        acme_obs = _insert_observation(conn, acme_seg, description="Emailing Acme")
+        globex_obs = _insert_observation(conn, globex_seg, description="Emailing Globex")
+        acme_claim = _insert_claim(
+            conn,
+            acme_obs,
+            day_id,
+            acme_seg,
+            acme_frame,
+            kind="commitment",
+            assertion="observed",
+            text="Send Acme pricing Friday",
+            created_at="2026-10-31T09:00:01Z",
+        )
+        globex_claim = _insert_claim(
+            conn,
+            globex_obs,
+            day_id,
+            globex_seg,
+            globex_frame,
+            kind="commitment",
+            assertion="observed",
+            text="Send Globex intro Monday",
+            created_at="2026-10-31T10:00:01Z",
+        )
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "none",
+                                    "summary": "noise",
+                                    "observation_indexes": [1],
+                                },
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "Acme thread",
+                                    "observation_indexes": [2],
+                                },
+                                {
+                                    "title": "Globex pilot",
+                                    "summary": "Globex thread",
+                                    "observation_indexes": [3],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": (
+                                        f"Next step: Send Acme pricing Friday [c:{acme_claim}]."
+                                    ),
+                                    "claim_ids": [acme_claim],
+                                    "slot": "next_step",
+                                },
+                                {
+                                    "text": (
+                                        f"Next step: Send Globex intro Monday [c:{globex_claim}]."
+                                    ),
+                                    "claim_ids": [globex_claim],
+                                    "slot": "next_step",
+                                },
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, day_id, runtime=runtime, embedding=runtime, now=NOW)
+        stored = {
+            str(row["title"]): str(row["id"])
+            for row in conn.execute(
+                "SELECT id, title FROM deals WHERE working_day_id = ?",
+                (day_id,),
+            )
+        }
+        assert set(stored) == {"Acme Q4 proposal", "Globex pilot"}
+        acme_id = stored["Acme Q4 proposal"]
+        globex_id = stored["Globex pilot"]
+        assert (
+            conn.execute("SELECT deal_id FROM segments WHERE id = ?", (noise_seg,)).fetchone()[0]
+            is None
+        )
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (day_id,),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        assert [item["title"] for item in sections["deals"]] == [
+            "Acme Q4 proposal",
+            "Globex pilot",
+        ]
+        acme_block = narrative.split("## Globex pilot")[0]
+        globex_block = narrative.split("## Globex pilot")[1]
+        assert f"[c:{acme_claim}]" in acme_block
+        assert f"[c:{globex_claim}]" not in acme_block
+        assert f"[c:{globex_claim}]" in globex_block
+        assert f"[c:{acme_claim}]" not in globex_block
+        by_deal = {item["deal_id"]: item for item in sections["slots"]}
+        assert by_deal[acme_id]["slot"] == "next_step"
+        assert by_deal[acme_id]["claim_ids"] == [acme_claim]
+        assert by_deal[globex_id]["slot"] == "next_step"
+        assert by_deal[globex_id]["claim_ids"] == [globex_claim]
+    finally:
+        conn.close()
+
+
 def test_deal_fallback_does_not_pull_the_other_deal(tmp_path: Path) -> None:
     from tests.unit.test_consolidation import _insert_day
 

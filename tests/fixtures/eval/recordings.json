@@ -15,7 +15,7 @@
       }
     },
     {
-      "match": "Reading mail about the Acme Q4 proposal",
+      "match": "Reading mail about the Acme Q4 proposal.",
       "response": {
         "deals": [
           {
