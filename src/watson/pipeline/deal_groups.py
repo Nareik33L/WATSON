@@ -123,7 +123,11 @@ def collect_deal_groups(
     narrative, sections = _summary(conn, working_day_id, pipeline_version)
     slots_by_deal = _slots_by_deal(sections)
     deals = _order_deals(deals, sections)
-    blocks_by_id = _blocks_by_deal_id(narrative, sections, slots_by_deal)
+    claimed = _deal_ids_with_claims(evidence, claim_segments)
+    stored = _stored_deal_ids(sections)
+    ordered_ids = stored or [row["id"] for row in deals]
+    claim_deal_ids = [deal_id for deal_id in ordered_ids if deal_id in claimed]
+    blocks_by_id = _blocks_by_deal_id(narrative, sections, claim_deal_ids)
     by_deal: dict[str, list[DealEvidence]] = {row["id"]: [] for row in deals}
     none: list[DealEvidence] = []
     for item in evidence:
@@ -348,24 +352,53 @@ def _order_deals(deals: list[dict[str, str]], sections: dict[str, Any]) -> list[
     return ordered + leftover
 
 
+def _deal_ids_with_claims(
+    evidence: list[tuple[str | None, DealEvidence]],
+    claim_segments: dict[str, str],
+) -> set[str]:
+    seg_to_deal = {item.id: deal_id for deal_id, item in evidence if deal_id}
+    return {seg_to_deal[seg] for seg in claim_segments.values() if seg in seg_to_deal}
+
+
+def _block_body(text: str) -> str:
+    blocks = _heading_blocks(text)
+    if not blocks:
+        return text.strip()
+    if len(blocks) == 1:
+        heading, body = blocks[0]
+        return body if heading else text.strip()
+    return "\n\n".join(body for _heading, body in blocks)
+
+
+def _tagged_paragraph_blocks(sections: dict[str, Any]) -> dict[str, str]:
+    items = sections.get("paragraphs")
+    if not isinstance(items, list):
+        return {}
+    tagged: dict[str, str] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        deal_id = str(item.get("deal_id") or "")
+        text = str(item.get("text") or "")
+        if not deal_id or not text:
+            continue
+        tagged[deal_id] = _block_body(text)
+    return tagged
+
+
 def _blocks_by_deal_id(
     narrative: str,
     sections: dict[str, Any],
-    slots_by_deal: dict[str, dict[str, tuple[str, ...]]],
+    claim_deal_ids: list[str],
 ) -> dict[str, str]:
-    """Bind heading bodies to deal_id via stored deal order. Never by title."""
+    """Bind heading bodies to deal_id. Tagged paragraphs win; never wipe everyone."""
+    tagged = _tagged_paragraph_blocks(sections)
+    if tagged:
+        return tagged
     blocks = _heading_blocks(narrative)
-    stored = _stored_deal_ids(sections)
-    if not blocks:
+    if not blocks or not claim_deal_ids:
         return {}
-    if stored and len(blocks) == len(stored):
-        return {deal_id: body for deal_id, (_heading, body) in zip(stored, blocks, strict=True)}
-    slotted = [deal_id for deal_id in stored if deal_id in slots_by_deal]
-    if slotted and len(blocks) == len(slotted):
-        return {deal_id: body for deal_id, (_heading, body) in zip(slotted, blocks, strict=True)}
-    if len(stored) == 1 and len(blocks) == 1:
-        return {stored[0]: blocks[0][1]}
-    return {}
+    return {deal_id: body for deal_id, (_heading, body) in zip(claim_deal_ids, blocks)}
 
 
 _HEADING = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)

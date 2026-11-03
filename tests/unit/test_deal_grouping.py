@@ -265,6 +265,11 @@ def test_multichannel_observations_assign_one_deal_and_none_stays_none(
         slots = {item["slot"] for item in sections["slots"]}
         assert slots == {"what_happened", "who_involved", "next_step"}
         assert all(item.get("deal_id") == deal_id for item in sections["slots"])
+        assert sections["paragraphs"]
+        assert all(
+            isinstance(item, dict) and item.get("deal_id") == deal_id
+            for item in sections["paragraphs"]
+        )
         assert all(
             not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
         )
@@ -669,6 +674,28 @@ def test_summary_deal_sections_keep_validated_slots_only() -> None:
     assert payload["slots"] == [
         {"slot": "next_step", "claim_ids": ["claim-uuid"], "deal_id": "deal-1"}
     ]
+    assert "paragraphs" not in payload
+
+
+def test_summary_deal_sections_store_paragraph_deal_ids() -> None:
+    payload = _summary_deal_sections(
+        [
+            {"id": "deal-1", "title": "Acme Q4", "index": 0},
+            {"id": "deal-2", "title": "Globex intro", "index": 1},
+            {"id": "deal-3", "title": "Initech renewal", "index": 2},
+        ],
+        [(0, "what_happened", ["claim-a"])],
+        {
+            0: ["What happened: Sent the pricing pack [c:claim-a]."],
+            2: ["Drafted the fallback cite [c:claim-c]."],
+        },
+    )
+    by_deal = {item["deal_id"]: item["text"] for item in payload["paragraphs"]}
+    assert set(by_deal) == {"deal-1", "deal-3"}
+    assert by_deal["deal-1"].startswith("## Acme Q4")
+    assert "Sent the pricing pack" in by_deal["deal-1"]
+    assert "fallback cite" in by_deal["deal-3"]
+    assert "Globex" not in " ".join(by_deal.values())
 
 
 def test_summary_deal_sections_duplicate_titles_keep_separate_deal_ids() -> None:

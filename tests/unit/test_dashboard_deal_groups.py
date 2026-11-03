@@ -102,6 +102,7 @@ def _insert_deal_summary(
     *,
     deals: list[dict[str, str]],
     slots: list[dict[str, object]],
+    paragraphs: list[object] | None = None,
 ) -> None:
     stamp = "2026-10-31T18:00:00Z"
     conn.execute(
@@ -119,7 +120,7 @@ def _insert_deal_summary(
             narrative,
             json.dumps(
                 {
-                    "paragraphs": [narrative],
+                    "paragraphs": paragraphs if paragraphs is not None else [narrative],
                     "unverified": [],
                     "claim_ids": claim_ids,
                     "deals": deals,
@@ -500,6 +501,141 @@ def test_duplicate_title_same_created_at_missing_block_stays_unswapped(
             ), round_no
             assert by_id[first_deal].emails[0].id == first_seg
             assert by_id[second_deal].emails[0].id == second_seg
+    finally:
+        conn.close()
+
+
+def _seed_claimless_and_fallback(conn: object, *, tagged: bool) -> dict[str, str]:
+    """Three deals: slotted model block, claimless, fallback-only (no slot)."""
+    day_id = _insert_day(conn, date="2026-10-31", state="consolidated")
+    acme_f = _frame(
+        conn,
+        day_id,
+        app_name="Lumen Mail",
+        window_title="Acme pricing",
+        captured_at="2026-10-31T09:00:00Z",
+    )
+    globex_f = _frame(
+        conn,
+        day_id,
+        app_name="Lumen Mail",
+        window_title="Globex intro",
+        captured_at="2026-10-31T10:00:00Z",
+    )
+    initech_f = _frame(
+        conn,
+        day_id,
+        app_name="Lumen Mail",
+        window_title="Initech renewal",
+        captured_at="2026-10-31T11:00:00Z",
+    )
+    acme_seg = _insert_segment(conn, day_id, acme_f, started_at="2026-10-31T09:00:00Z")
+    globex_seg = _insert_segment(conn, day_id, globex_f, started_at="2026-10-31T10:00:00Z")
+    initech_seg = _insert_segment(conn, day_id, initech_f, started_at="2026-10-31T11:00:00Z")
+    acme_obs = _insert_observation(conn, acme_seg, description="Emailing Acme")
+    initech_obs = _insert_observation(conn, initech_seg, description="Emailing Initech")
+    sent = _insert_claim(
+        conn,
+        acme_obs,
+        day_id,
+        acme_seg,
+        acme_f,
+        kind="activity",
+        assertion="observed",
+        text="Sent the pricing pack",
+    )
+    fallback = _insert_claim(
+        conn,
+        initech_obs,
+        day_id,
+        initech_seg,
+        initech_f,
+        kind="activity",
+        assertion="observed",
+        text="Drafted the fallback cite",
+    )
+    stamp = "2026-10-31T18:00:00Z"
+    acme_deal = _insert_deal(conn, day_id, "Acme Q4", stamp=stamp)
+    globex_deal = _insert_deal(conn, day_id, "Globex intro", stamp=stamp)
+    initech_deal = _insert_deal(conn, day_id, "Initech renewal", stamp=stamp)
+    _assign(conn, acme_seg, acme_deal)
+    _assign(conn, globex_seg, globex_deal)
+    _assign(conn, initech_seg, initech_deal)
+    acme_block = f"## Acme Q4\n\nWhat happened: Sent the pricing pack [c:{sent}]."
+    fallback_block = f"## Initech renewal\n\nDrafted the fallback cite [c:{fallback}]."
+    narrative = f"{acme_block}\n\n{fallback_block}"
+    paragraphs: list[object] = (
+        [
+            {"deal_id": acme_deal, "text": acme_block},
+            {"deal_id": initech_deal, "text": fallback_block},
+        ]
+        if tagged
+        else [narrative]
+    )
+    _insert_deal_summary(
+        conn,
+        day_id,
+        narrative,
+        [sent, fallback],
+        deals=[
+            {"id": acme_deal, "title": "Acme Q4"},
+            {"id": globex_deal, "title": "Globex intro"},
+            {"id": initech_deal, "title": "Initech renewal"},
+        ],
+        slots=[{"slot": "what_happened", "claim_ids": [sent], "deal_id": acme_deal}],
+        paragraphs=paragraphs,
+    )
+    return {
+        "day_id": day_id,
+        "acme": acme_deal,
+        "globex": globex_deal,
+        "initech": initech_deal,
+        "sent": sent,
+        "fallback": fallback,
+        "acme_seg": acme_seg,
+        "initech_seg": initech_seg,
+    }
+
+
+def _assert_claimless_and_fallback(groups, seeded: dict[str, str]) -> None:
+    by_id = {card.id: card for card in groups.deals}
+    assert set(by_id) == {seeded["acme"], seeded["globex"], seeded["initech"]}
+    acme = _slot_blob(by_id[seeded["acme"]])
+    globex = _slot_blob(by_id[seeded["globex"]])
+    initech = _slot_blob(by_id[seeded["initech"]])
+    assert "Sent the pricing pack" in acme
+    assert seeded["sent"] in acme
+    assert "fallback cite" not in acme
+    assert globex in {"", "—"}
+    assert "Sent the pricing pack" not in globex
+    assert "fallback cite" not in globex
+    assert "Drafted the fallback cite" in initech
+    assert seeded["fallback"] in initech
+    assert "pricing pack" not in initech
+    initech_cites = {span.segment_id for span in by_id[seeded["initech"]].slots[0].spans}
+    assert seeded["initech_seg"] in initech_cites
+
+
+def test_claimless_and_fallback_only_keeps_cited_summary(
+    data_dir: Path, key_provider: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        seeded = _seed_claimless_and_fallback(conn, tagged=True)
+        groups = collect_deal_groups(conn, working_day_id=seeded["day_id"])
+        _assert_claimless_and_fallback(groups, seeded)
+    finally:
+        conn.close()
+
+
+def test_legacy_rows_without_paragraph_deal_id_still_render(
+    data_dir: Path, key_provider: object
+) -> None:
+    conn = open_test_db(data_dir)
+    try:
+        seeded = _seed_claimless_and_fallback(conn, tagged=False)
+        groups = collect_deal_groups(conn, working_day_id=seeded["day_id"])
+        _assert_claimless_and_fallback(groups, seeded)
     finally:
         conn.close()
 
