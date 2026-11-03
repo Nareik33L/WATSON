@@ -6,10 +6,13 @@ sets ``merged_into_id`` and copies aliases; rename keeps the old name as
 an alias. Rows are never rewritten.
 
 Within the same ``pipeline_version``, overlay is by ``target_id`` only.
-Across versions, compute every old→new edge via the item key and the
-evidence key first (keys include project/person context), then keep only a
-strict bijection. Many-to-one, one-to-many, or text-vs-evidence disagreement
-orphans every involved correction. Existing rows are not updated.
+Across versions, each old ``pipeline_version`` V is mapped on its own to
+the current generation (strict 1:1 on item or evidence keys, counting every
+claim in V and every current claim). Those maps are stacked: V and V+1
+copies of the same claim do not compete. Two versions both landing on one
+current claim keep both histories only when they are the same lineage
+(V's target maps 1:1 onto V+1's target); otherwise both are orphaned.
+Existing rows are not updated.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -283,9 +287,9 @@ def match_claim_corrections(
 ) -> tuple[dict[str, tuple[Correction, ...]], tuple[Correction, ...]]:
     """Map current claims to correction histories; leftover rows are orphans.
 
-    Same-version rows match ``target_id`` only. Older rows rematch only after
-    the whole cross-version mapping is reduced to a strict bijection. Existing
-    rows are not updated.
+    Same-version rows match ``target_id`` only. Older rows rematch per
+    recorded version: a strict V→current bijection, then a lineage stack.
+    Existing rows are not updated.
     """
     stored = _claim_corrections(conn, working_day_id=working_day_id, pipeline_version=None)
     empty: dict[str, tuple[Correction, ...]] = {str(row["id"]): () for row in claims}
@@ -305,25 +309,47 @@ def match_claim_corrections(
     evidence_index = {
         version: _key_index(idents, "evidence_key") for version, idents in generations.items()
     }
-    rematch = _cross_version_bijection(
-        current_version=pipeline_version,
-        generations=generations,
-        item_index=item_index,
-        evidence_index=evidence_index,
-    )
+    bijections: dict[tuple[int, int], dict[str, str]] = {}
+
+    def bijection(source: int, dest: int) -> dict[str, str]:
+        cached = bijections.get((source, dest))
+        if cached is None:
+            cached = _bijection_between(
+                source,
+                dest,
+                generations=generations,
+                item_index=item_index,
+                evidence_index=evidence_index,
+            )
+            bijections[(source, dest)] = cached
+        return cached
+
+    to_current = {
+        version: bijection(version, pipeline_version)
+        for version in versions
+        if version < pipeline_version
+    }
     attached: dict[str, dict[str, Correction]] = {claim_id: {} for claim_id in current_ids}
     used: set[str] = set()
+    rematched: dict[str, list[Correction]] = defaultdict(list)
     for item in stored:
         if item.pipeline_version >= pipeline_version:
-            target = item.target_id if item.target_id in current_ids else None
-        else:
-            target = rematch.get((item.pipeline_version, item.target_id))
-            if target not in current_ids:
-                target = None
-        if target is None:
+            if item.target_id not in attached:
+                continue
+            attached[item.target_id][item.id] = item
+            used.add(item.id)
             continue
-        attached[target][item.id] = item
-        used.add(item.id)
+        target = to_current.get(item.pipeline_version, {}).get(item.target_id)
+        if target not in attached:
+            continue
+        rematched[target].append(item)
+    for target, items in rematched.items():
+        sources = sorted({(row.pipeline_version, row.target_id) for row in items})
+        if not _same_lineage(sources, bijection):
+            continue
+        for item in items:
+            attached[target][item.id] = item
+            used.add(item.id)
     matched = {
         claim_id: tuple(sorted(found.values(), key=lambda row: order[row.id]))
         for claim_id, found in attached.items()
@@ -393,44 +419,54 @@ def _key_index(idents: dict[str, _ClaimIdentity], field: str) -> dict[str, list[
     return grouped
 
 
-def _cross_version_bijection(
+def _bijection_between(
+    source_version: int,
+    dest_version: int,
     *,
-    current_version: int,
     generations: dict[int, dict[str, _ClaimIdentity]],
     item_index: dict[int, dict[str, list[str]]],
     evidence_index: dict[int, dict[str, list[str]]],
-) -> dict[tuple[int, str], str]:
-    """Map ``(old_version, old_claim_id)`` to a current claim id.
+) -> dict[str, str]:
+    """Strict 1:1 map from ``source_version`` claim ids to ``dest_version``.
 
-    Every old claim is considered, not only corrected ones. Text and evidence
-    paths are unioned first. If they disagree, or if more than one old claim
-    reaches the same new claim by either path, every involved old claim is
-    dropped. The remainder is a 1:1 mapping.
+    Every claim in both generations is counted, not only corrected ones. Text
+    and evidence paths are unioned first. Disagreement, many-to-one, or
+    one-to-many drops every involved source claim.
     """
-    current_items = item_index.get(current_version, {})
-    current_evidence = evidence_index.get(current_version, {})
-    provisional: dict[tuple[int, str], set[str]] = {}
-    incoming: dict[str, list[tuple[int, str]]] = defaultdict(list)
-    for version, idents in generations.items():
-        if version >= current_version:
-            continue
-        for old_id, ident in idents.items():
-            news = set(current_items.get(ident.item_key, ()))
-            if ident.evidence_key:
-                news.update(current_evidence.get(ident.evidence_key, ()))
-            old_key = (version, old_id)
-            provisional[old_key] = news
-            for claim_id in news:
-                incoming[claim_id].append(old_key)
-    mapping: dict[tuple[int, str], str] = {}
-    for old_key, news in provisional.items():
+    dest_items = item_index.get(dest_version, {})
+    dest_evidence = evidence_index.get(dest_version, {})
+    provisional: dict[str, set[str]] = {}
+    incoming: dict[str, list[str]] = defaultdict(list)
+    for old_id, ident in generations.get(source_version, {}).items():
+        news = set(dest_items.get(ident.item_key, ()))
+        if ident.evidence_key:
+            news.update(dest_evidence.get(ident.evidence_key, ()))
+        provisional[old_id] = news
+        for claim_id in news:
+            incoming[claim_id].append(old_id)
+    mapping: dict[str, str] = {}
+    for old_id, news in provisional.items():
         if len(news) != 1:
             continue
         claim_id = next(iter(news))
         if len(incoming[claim_id]) != 1:
             continue
-        mapping[old_key] = claim_id
+        mapping[old_id] = claim_id
     return mapping
+
+
+def _same_lineage(
+    sources: list[tuple[int, str]],
+    bijection: Callable[[int, int], dict[str, str]],
+) -> bool:
+    """True when each older target maps 1:1 onto the next version's target."""
+    if len(sources) <= 1:
+        return True
+    ordered = sorted(sources)
+    for (source_version, source_id), (dest_version, dest_id) in zip(ordered, ordered[1:]):
+        if bijection(source_version, dest_version).get(source_id) != dest_id:
+            return False
+    return True
 
 
 def _claim_corrections(
@@ -532,23 +568,42 @@ def _context_key(conn: sqlcipher.Connection, raw_json: str) -> str:
 
 
 def _resolve_entity(conn: sqlcipher.Connection, name: str, typ: str) -> str | None:
+    """Canonical live entity id for ``name``, following ``merged_into_id``.
+
+    Name order is ignored. Every canonical-name or alias hit is walked to its
+    surviving entity; if those walks disagree, the name is unresolved.
+    """
     needle = normalize_alias(name)
     if not needle:
         return None
-    row = conn.execute(
+    rows = conn.execute(
         """
-        SELECT e.id
+        SELECT DISTINCT e.id
         FROM entities e
         LEFT JOIN entity_aliases a ON a.entity_id = e.id
         WHERE e.type = ?
-          AND e.merged_into_id IS NULL
           AND (lower(e.canonical_name) = ? OR lower(a.alias) = ?)
-        ORDER BY e.provisional ASC, e.canonical_name, e.id
-        LIMIT 1
         """,
         (typ, needle, needle),
-    ).fetchone()
-    return None if row is None else str(row["id"])
+    ).fetchall()
+    roots = {_follow_merge(conn, str(row["id"])) for row in rows}
+    if len(roots) != 1:
+        return None
+    return next(iter(roots))
+
+
+def _follow_merge(conn: sqlcipher.Connection, entity_id: str) -> str:
+    seen: set[str] = set()
+    current = entity_id
+    while current not in seen:
+        seen.add(current)
+        row = conn.execute(
+            "SELECT merged_into_id FROM entities WHERE id = ?", (current,)
+        ).fetchone()
+        if row is None or row["merged_into_id"] is None:
+            return current
+        current = str(row["merged_into_id"])
+    return current
 
 
 def _orphaned_entity_corrections(conn: sqlcipher.Connection) -> tuple[Correction, ...]:

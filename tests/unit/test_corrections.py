@@ -916,14 +916,14 @@ def test_project_and_person_scope_keep_same_text_and_snippet_apart(tmp_path: Pat
         conn.close()
 
 
-def test_merged_entity_scope_still_rematches(tmp_path: Path) -> None:
+def _assert_merged_scope_rematch(tmp_path: Path, *, source_name: str, dest_name: str) -> None:
     newer = PIPELINE_VERSION + 1
     conn = _open(tmp_path)
     try:
-        dest = _insert_entity(conn, name="Acme")
-        source = _insert_entity(conn, name="Old Acme")
+        dest = _insert_entity(conn, name=dest_name)
+        source = _insert_entity(conn, name=source_name)
         old = _seed_scoped_claim(
-            conn, text="Wrote intro", snippet="Acme intro OCR", project="Old Acme"
+            conn, text="Wrote intro", snippet="Acme intro OCR", project=source_name
         )
         record_claim_correction(conn, old["claim_id"], "correct", new_text="Shipped intro")
         merge_entities(conn, source, dest)
@@ -933,7 +933,7 @@ def test_merged_entity_scope_still_rematches(tmp_path: Path) -> None:
             snippet="Acme intro OCR",
             day_id=old["day_id"],
             pipeline_version=newer,
-            project="Acme",
+            project=dest_name,
             captured_at="2026-10-31T11:00:00Z",
         )
         by_id = _overlay_by_id(conn, old["day_id"], newer)
@@ -943,6 +943,14 @@ def test_merged_entity_scope_still_rematches(tmp_path: Path) -> None:
         )
     finally:
         conn.close()
+
+
+def test_merged_entity_scope_still_rematches(tmp_path: Path) -> None:
+    _assert_merged_scope_rematch(tmp_path, source_name="Old Acme", dest_name="Acme")
+
+
+def test_merged_entity_scope_still_rematches_reversed_names(tmp_path: Path) -> None:
+    _assert_merged_scope_rematch(tmp_path, source_name="Acme", dest_name="Acme Ltd")
 
 
 def test_unresolved_scope_names_do_not_collapse(tmp_path: Path) -> None:
@@ -1281,6 +1289,142 @@ def test_case_folding_rematches_across_versions(tmp_path: Path) -> None:
         assert (
             orphaned_corrections(conn, working_day_id=old["day_id"], pipeline_version=newer) == ()
         )
+    finally:
+        conn.close()
+
+
+def _later_claim(
+    conn: object,
+    seeded: dict[str, str],
+    *,
+    text: str,
+    snippet: str,
+    pipeline_version: int,
+) -> str:
+    return _insert_claim(
+        conn,
+        seeded["observation_id"],
+        seeded["day_id"],
+        seeded["segment_id"],
+        seeded["frame_id"],
+        kind="outcome",
+        assertion="observed",
+        text=text,
+        pipeline_version=pipeline_version,
+        snippet=snippet,
+    )
+
+
+def test_s18_two_bumps_stack_same_lineage(tmp_path: Path) -> None:
+    mid = PIPELINE_VERSION + 1
+    newest = PIPELINE_VERSION + 2
+    snippet = "Still editing: Acme proposal appendix"
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        typo = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Fixed typo",
+            snippet="Typo OCR line",
+        )
+        record_claim_correction(conn, intro["claim_id"], "correct", new_text="Published intro")
+        record_claim_correction(conn, typo, "reject")
+        mid_intro = _later_claim(
+            conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=mid
+        )
+        _later_claim(conn, intro, text="Fixed typo", snippet="Typo OCR line", pipeline_version=mid)
+        record_claim_correction(conn, mid_intro, "confirm", pipeline_version=mid)
+        later_intro = _later_claim(
+            conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=newest
+        )
+        later_typo = _later_claim(
+            conn, intro, text="Fixed typo", snippet="Typo OCR line", pipeline_version=newest
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newest),
+            working_day_id=intro["day_id"],
+            pipeline_version=newest,
+        )
+        by_id = {str(row["id"]): row for row in overlayed}
+        assert later_intro in by_id
+        assert later_typo not in by_id
+        assert by_id[later_intro]["text"] == "Published intro"
+        assert by_id[later_intro]["assertion"] == "user_confirmed"
+        histories, orphans = match_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newest),
+            working_day_id=intro["day_id"],
+            pipeline_version=newest,
+        )
+        assert orphans == ()
+        assert [item.action for item in histories[later_intro]] == ["correct", "confirm"]
+        assert later_typo in rejected_claim_ids(
+            conn, working_day_id=intro["day_id"], pipeline_version=newest
+        )
+        stored = conn.execute(
+            "SELECT target_id, action, pipeline_version FROM corrections ORDER BY rowid"
+        ).fetchall()
+        assert [(str(row[0]), str(row[1]), int(row[2])) for row in stored] == [
+            (intro["claim_id"], "correct", PIPELINE_VERSION),
+            (typo, "reject", PIPELINE_VERSION),
+            (mid_intro, "confirm", mid),
+        ]
+    finally:
+        conn.close()
+
+
+def test_s18b_unrelated_mid_correction_does_not_orphan(tmp_path: Path) -> None:
+    mid = PIPELINE_VERSION + 1
+    newest = PIPELINE_VERSION + 2
+    snippet = "Still editing: Acme proposal appendix"
+    conn = _open(tmp_path)
+    try:
+        intro = _seed_claim(conn, text="Wrote intro")
+        record_claim_correction(conn, intro["claim_id"], "reject")
+        _later_claim(conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=mid)
+        other = _insert_claim(
+            conn,
+            intro["observation_id"],
+            intro["day_id"],
+            intro["segment_id"],
+            intro["frame_id"],
+            kind="outcome",
+            assertion="observed",
+            text="Unrelated note",
+            pipeline_version=mid,
+            snippet="Other OCR line",
+        )
+        record_claim_correction(conn, other, "confirm", pipeline_version=mid)
+        later_intro = _later_claim(
+            conn, intro, text="Wrote intro", snippet=snippet, pipeline_version=newest
+        )
+        later_other = _later_claim(
+            conn, intro, text="Unrelated note", snippet="Other OCR line", pipeline_version=newest
+        )
+        overlayed = apply_claim_corrections(
+            conn,
+            _load_claims(conn, intro["day_id"], newest),
+            working_day_id=intro["day_id"],
+            pipeline_version=newest,
+        )
+        assert [str(row["id"]) for row in overlayed] == [later_other]
+        assert overlayed[0]["text"] == "Unrelated note"
+        assert overlayed[0]["assertion"] == "user_confirmed"
+        assert later_intro in rejected_claim_ids(
+            conn, working_day_id=intro["day_id"], pipeline_version=newest
+        )
+        assert (
+            orphaned_corrections(conn, working_day_id=intro["day_id"], pipeline_version=newest)
+            == ()
+        )
+        assert conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] == 2
     finally:
         conn.close()
 
