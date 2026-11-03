@@ -5,6 +5,8 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-03, QA on #45):** §8 restores "Nothing else leaves the app"; deal-summary export is copy-as-Markdown or `.md` only. §11.2 metrics restated so they are computable and not gameable (segment alignment by fixture id / `frame_ids`; one greedy max-overlap deal match; pooled pairwise F1 + assignment + deal-segment recall; summary precision and recall; fixture minimums; trivial-output check). Parked `thresholds.json` rows become report-only at M3f; until then the committed file still selects the bake-off model. §3.5 understanding retrieval stays in V1. §14 / D8 / D10 / D11 unchanged.
+
 **Changelog (2026-11-03 10:38 UTC, Kieran via CoS):** Revision 3. V1 is screenshot capture → per-segment understanding → grouping the day's activity by sales opportunity/deal → a daily summary per deal (what happened, who was involved, next step; each claim cited to evidence). Emails, calls, docs and CRM screens about the same deal across the day link to **one** deal. Generic project, decision, commitment and achievement extraction and their reports move to §16 Parked after V1 (not deleted). §11.2 quality gate is **deal grouping accuracy ≥ 0.85** and **deal summary accuracy ≥ 0.85** (definitions in §11.2). Privacy, local-first, and §11.3 tests are unchanged. 8 GB min-spec rule is unchanged: must complete without an OOM kill; `consolidate_s` and understand p95 are recorded only; 7–9B timeout is 3600 s. 32 GB primary targets are unchanged. Default model is the largest model that completes on 8 GB and meets the §11.2 gate.
 
 **Changelog (2026-10-31):** M0-A bake-off (`docs/decisions/0001-m0a-8gb-runtime-and-models.md`) — §14 #1 is Ollama for V1.0 **dev**; llama.cpp-versus-MLX, per-model RSS and the 50 hand-scored frames move to M3 (Watson Lead); 16 GB fallback moves to V1.2 (§0.1). §7.1 package LLM class is ~3–4B on 8 GB (V1.0); ~7–9B is the V1.2 16 GB profile.
@@ -293,7 +295,7 @@ Runs every few minutes over newly extracted frames. Produces/extends `segments` 
 
 ### 3.5 Understanding (worker, incremental)
 
-A segment becomes eligible once it is closed (window changed) or exceeds 20 minutes. The LLM receives: app/window/URL, dwell, change statistics, merged text (trimmed), optional visual description, and **retrieved context**: top-k matching **deal** and people entries from memory (hybrid search over the segment text). It returns an **observation** with candidate claims, each tagged `observed`/`inferred`/`unconfirmed` and each pointing at the evidence snippet lines it relied on, plus a deal candidate or `none`.
+A segment becomes eligible once it is closed (window changed) or exceeds 20 minutes. The LLM receives: app/window/URL, dwell, change statistics, merged text (trimmed), optional visual description, and **retrieved context**: top-k matching **deal** and people entries from memory (hybrid search over the segment text). **§3.5 retrieval stays in V1** — it is how a later email is recognised as the same deal. It is not Ask W.A.T.S.O.N (§7.3 / §16). The LLM returns an **observation** with candidate claims, each tagged `observed`/`inferred`/`unconfirmed` and each pointing at the evidence snippet lines it relied on, plus a deal candidate or `none`.
 
 Entity linking: the model proposes `deal_candidates` and `people_candidates` as free text; a resolver maps them to existing entities by alias table + embedding similarity, creating new entities only above a threshold and marking them `provisional` for user review. The model never emits database IDs. Generic `project_candidates` remain in the schema for parked work (§16) and are not a V1 output.
 
@@ -429,7 +431,9 @@ The table names the current defaults from the M0-A bake-off (ADR 0001). Identifi
 
 ### 7.3 Retrieval (Ask W.A.T.S.O.N, reports)
 
-**Parked after V1 (§16).** V1 does not ship Ask W.A.T.S.O.N or weekly/monthly/project/achievement reports. The retrieval design is kept here so it is not redesigned later.
+**Understanding-time retrieval (§3.5) stays in V1.** The same hybrid index (aliases, FTS5, sqlite-vec) feeds the understanding prompt so later segments can attach to a deal already seen that day.
+
+**Parked after V1 (§16):** Ask W.A.T.S.O.N and weekly/monthly/project/achievement reports. That Q&A path is kept here so it is not redesigned later.
 
 Hybrid: query → (date range parser; entity resolver over aliases; FTS5 BM25; sqlite-vec kNN) → reciprocal-rank fusion → top-k claims and summaries with their evidence snippets → LLM answer with citations. The context budget is fixed (e.g. 6k tokens); nothing outside the retrieved set is given to the model. Answers show "Based on N records from dates X–Y" and link each citation to its day.
 
@@ -451,6 +455,7 @@ Sections as v1.1 §10.2, scoped to V1 deals:
 
 - **Today** shows the live segment timeline (app, window, dwell) even before any LLM output exists, so the user sees what W.A.T.S.O.N saw within minutes, then the day's deal groups and each deal's summary once consolidation has run.
 - **Memory** exposes claims with their assertion badges and evidence snippets; one-click confirm / correct / reject / "not work"; deal and person merge/rename.
+- Deal-summary export is "copy as Markdown" and "export .md". Nothing else leaves the app.
 - **Privacy** shows: permission state, spool depth and oldest frame age, tier-2 text volume and next purge, exclusion lists, work hours, and the deletion controls with confirmation and audit trail.
 - **Status bar** on every page: capturing / paused / blocked, worker health, model health.
 
@@ -522,7 +527,7 @@ watson/
 
 ### 11.1 Synthetic golden dataset
 
-`tools/fixture_gen` renders fictional applications from templates (mail client, document editor, chat, spreadsheet, browser with fake intranet / CRM, IDE, video call placeholder) into frame sequences with sidecars. Each V1 day fixture ships a `truth.yaml` that names **deals**, assigns every segment to a deal or to `none`, and lists gold summary claims per deal:
+`tools/fixture_gen` renders fictional applications from templates (mail client, document editor, chat, spreadsheet, browser with fake intranet / CRM, IDE, video call placeholder) into frame sequences with sidecars. Each V1 day fixture ships a `truth.yaml` that names **deals**, defines every gold segment by a fixture `id` and its `frame_ids`, assigns that segment to a deal or to `none`, and lists gold summary claims per deal. Every gold claim has non-empty `evidence_segments` whose ids exist on that day.
 
 ```yaml
 deals:
@@ -532,97 +537,193 @@ deals:
   - id: acme-renewal
     name: Acme Renewal          # look-alike name; must not merge with acme-q4
     lookalike_of: acme-q4
-people: [Priya Natarajan (Acme), Tom Ashworth (Delivery)]
+people:
+  - id: priya-natarajan
+    name: Priya Natarajan
+    company: Acme
+  - id: priya-chen
+    name: Priya Chen            # confusable contact (shared first name)
+    company: Globex
+  - id: tom-ashworth
+    name: Tom Ashworth
+    company: Delivery
 segments:
   - id: s-mail-priya-am
+    frame_ids: [f0410, f0411, f0412]
     deal: acme-q4               # email about the Q4 proposal
   - id: s-call-priya
+    frame_ids: [f0500, f0501]
     deal: acme-q4               # same deal, different channel
   - id: s-doc-pricing
+    frame_ids: [f0600]
     deal: acme-q4               # doc / CRM screen about the same deal
   - id: s-mail-renewal
+    frame_ids: [f0700, f0701]
     deal: acme-renewal          # look-alike deal name
   - id: s-news
+    frame_ids: [f0800]
     deal: none                  # non-deal noise
+  - id: s-1password
+    frame_ids: [f0900]
+    deal: none                  # deal-like text in an excluded app
 deal_summaries:
   acme-q4:
     what_happened:
       - text: Priya emailed twice and a pricing call happened; the Q4 deck was edited
         evidence_segments: [s-mail-priya-am, s-call-priya, s-doc-pricing]
-    who_involved: [Priya Natarajan (Acme)]
+    who_involved:
+      - person_id: priya-natarajan
+        evidence_segments: [s-mail-priya-am, s-call-priya]
     next_step:
       - text: Send revised pricing to Priya by Friday
         evidence_segments: [s-mail-priya-am]
 noise: [news site 10:42–10:49, personal calendar glance]
 ```
 
-V1 gold fixtures **must** include all three shapes (one fixture may combine them):
+**Corpus minimums** (chosen numbers; M3f fixtures must meet all of them):
 
-1. **Multi-touch deals** — the same deal appears in at least three channels in one day (email, call, document or CRM). Those segments are one gold cluster.
-2. **Look-alike deal names** — two distinct gold deals whose names share a token (e.g. "Acme Q4 Proposal" vs "Acme Renewal"). Merging them is a miss.
-3. **Non-deal noise** — mail, browsing or docs that are not about any deal. Gold label is `none`.
+| Floor | Value |
+|---|---|
+| Days | **5** (the existing five, all relabelled with deals: focused, fragmented, meeting-heavy, sensitive-trap, near-empty) |
+| Distinct gold deals | **≥ 8** across the corpus |
+| Multi-touch deals | **≥ 3**, each with email **and** call **and** doc/CRM segments on the same day |
+| Look-alike name pairs | **≥ 2** (shared company or token; must stay distinct gold deals) |
+| Non-deal noise | **≥ 20 %** of gold segments, pooled |
+| Interleaved deals | **≥ 2** gold deals on every non-empty day (the near-empty day may have 0–1) |
+| Confusable people | **≥ 1** pair of roster people who share a first name or company |
+| Excluded-app bait | **≥ 1** segment whose OCR looks like a deal but lives in an excluded app; gold `none`, and §11.3 still forbids a `frame_text` row |
+| Evidence | every gold claim has `evidence_segments`; every listed segment id exists |
 
-Existing fixtures that still carry `projects` / `decisions` / `commitments` / `completed` fields keep those keys for parked work (§16). They are not the V1 quality gate. At least five day fixtures remain the corpus floor (focused day, fragmented day, meeting-heavy day, sensitive-trap day, near-empty day), with the three deal shapes above overlaid on that set.
+Existing fixtures that still carry `projects` / `decisions` / `commitments` / `completed` fields keep those keys for parked work (§16). They are not the V1 quality gate.
 
 ### 11.2 Metrics and thresholds (gate in CI on fixtures)
 
-V1 quality gate (Kieran, 2026-11-03 10:38 UTC via CoS). Both numbers are computed; both must hold on the fixture corpus with `--strict` / `--mode record`. Replay CI remains a pipeline-only gate (`docs/eval.md`).
+V1 quality gate (Kieran, 2026-11-03 10:38 UTC via CoS; computable restatement after #45 QA). The numbers below are computed; both must hold on the fixture corpus with `--strict` / `--mode record`. Replay CI remains a pipeline-only gate (`docs/eval.md`).
 
 | Metric | Target |
 |---|---|
 | **Deal grouping accuracy** | **≥ 0.85** |
 | **Deal summary accuracy** | **≥ 0.85** |
-| Unsupported summary claims (no resolvable evidence on the predicted deal) | **0** (structural; part of deal summary accuracy) |
+| Strict claim precision | ≥ 0.85 (constituent of deal summary accuracy) |
+| Recall of gold **what happened** | ≥ 0.85 (constituent) |
+| Recall of gold **next step** | ≥ 0.85 (constituent) |
+| Recall of gold **who involved** | ≥ 0.85 (constituent; reported per slot) |
+| Unsupported summary claims | **0** |
 | Claims with ≥ 1 evidence row | 100 % (structural) |
 | Summary citations resolvable | 100 % (structural) |
 
 Parked after V1 (measured if present, **not** a V1 gate): project identification F1 ≥ 0.80; people identification F1 ≥ 0.75; completed vs. not-completed accuracy ≥ 0.90; decisions recall / precision ≥ 0.70 / ≥ 0.85; commitments recall / precision ≥ 0.70 / ≥ 0.85; unsupported achievement claims = 0; duplicate observations < 5 %; noise classified `non_work` ≥ 0.90. Those definitions stay in §16.
 
-Thresholds are targets for the chosen model; they are adjusted with evidence, not quietly. The 8 GB min-spec hardware rule in §11.4 is unchanged.
+The committed `thresholds.json` still encodes the parked Revision 2 rows. **Until M3f lands**, the bake-off / default-model rule uses that file (strict decisions/commitments precision ≥ 0.85 and the other current rows, plus the 8 GB min-spec rule). **At M3f** those parked rows become **report-only**; the default model is then the largest that completes on 8 GB and meets the deal grouping / deal summary gate. Do not lower the committed file in this docs change.
+
+Thresholds are targets for the chosen model; they are adjusted with evidence, not quietly. The 8 GB min-spec hardware rule in §11.4 is unchanged. **Scoring is pooled** over the whole corpus (one set of counts, then one ratio). Per-day values are written to `report.json` → `days` and are not the gate.
+
+#### Segment alignment (predicted → gold, keyed by fixture segment ID)
+
+Gold segments are the scoring units. Each gold row has a fixture `id` and a `frame_ids` set. Every fixture frame id appears in exactly one gold segment.
+
+After the pipeline runs, each predicted segment still carries those fixture frame ids.
+
+1. For each gold segment G, collect every predicted segment that contains at least one frame in `G.frame_ids`.
+2. G's **covering prediction** is the predicted segment that contains the most frames of G. Tie-break: earlier `started_at`, then lexicographically smaller predicted segment `id`.
+3. If no predicted segment covers any frame of G, G is **uncovered**: predicted deal = `missing` (not `none`). `missing` is always incorrect.
+4. G's predicted deal is the covering prediction's deal cluster id, or `none`.
+
+No other joining key is used. Pipeline-internal UUIDs are ignored.
+
+#### Deal-cluster matching (one algorithm)
+
+`none` and `missing` are **not** clusters. They are their own class and never enter this matching.
+
+Predicted deal clusters are paired **1:1** with gold deals by **greedy maximum overlap**:
+
+1. Overlap(P, G) = number of gold segments whose predicted deal is P and whose gold deal is G.
+2. List every (P, G) with overlap > 0. Sort by overlap descending, then gold deal `id` ascending, then predicted cluster `id` ascending.
+3. Walk the list. Take a pair if neither P nor G is already matched.
+4. Unmatched predicted clusters and unmatched gold deals stay unmatched.
+
+There is no second algorithm (no Hungarian step, no alternate greedy).
 
 #### Deal grouping accuracy (computable)
 
-Gold labels every **closed segment** with a deal id or `none`. The system emits a predicted cluster id per segment, or `none`. Predicted cluster ids are arbitrary; they are aligned to gold deals by a **1:1 matching** that maximises the number of gold-deal segments placed in the matched cluster (Hungarian / greedy-by-overlap). Unmatched predicted clusters and unmatched gold deals stay unmatched.
+Treat `none` as its own class. Counts below are **pooled** across every gold segment / pair in the corpus.
 
-**Assignment accuracy.** Over every gold-labeled segment:
+**Assignment accuracy.** One score per gold segment:
 
-| Gold | Predicted | Score |
+| Gold | Predicted (after cluster match) | Score |
 |---|---|---|
 | deal D | cluster matched to D | correct |
 | `none` | `none` | correct |
-| deal D | `none` | incorrect |
-| `none` | any deal cluster | incorrect |
+| deal D | `none` or `missing` | incorrect |
+| `none` | any deal cluster or `missing` | incorrect |
 | deal D | cluster matched to a different gold deal | incorrect |
 | deal D | unmatched predicted cluster | incorrect |
 
-`assignment_accuracy = correct / scored_segments`. Segments with no gold label are excluded.
+`assignment_accuracy = correct / gold_segments`.
 
-**Pairwise precision on gold deal clusters.** Consider unordered pairs of distinct segments that the system puts in the **same predicted deal cluster**. Predicted `none` never forms a pair. A pair is a true positive if gold also places both segments on the **same** deal. A pair is a false positive if gold places them on different deals, **or** if either segment is gold `none`.
+**Deal-segment recall.** Of gold segments whose gold deal ≠ `none`: fraction whose predicted cluster is matched to that same gold deal. All-`none` scores 0 here.
 
-`pairwise_precision = TP / (TP + FP)`. If there are no predicted pairs: score **1.0** when every gold deal that has two or more segments is empty on the predicted side (the system predicted no deal clusters); otherwise **0.0**.
+**Pairwise F1** on unordered pairs of distinct gold segments:
 
-**Non-deal rule.** Gold `none` must be predicted `none`. Attaching a non-deal segment to a real deal is an assignment miss and, if it shares a predicted cluster with any other segment, a pairwise false positive. Two non-deal segments must not form a predicted deal. Non-deal segments do not form gold pairs.
+- A **gold pair** is two segments with the same gold deal and that deal ≠ `none`.
+- A **predicted pair** is two segments with the same predicted deal cluster and that cluster ≠ `none` and ≠ `missing`.
+- TP: pair is both a gold pair and a predicted pair.
+- FP: predicted pair that is not a gold pair (different gold deals, or either gold `none`).
+- FN: gold pair that is not a predicted pair.
 
-**Deal grouping accuracy** is `min(assignment_accuracy, pairwise_precision)`. The gate is that number ≥ 0.85 (equivalently: both constituents ≥ 0.85).
+`pairwise_precision = TP / (TP + FP)`. `pairwise_recall = TP / (TP + FN)`. `pairwise_F1 = 2PR / (P + R)` when P+R > 0, else 0.
+
+Vacuous 1.0 is allowed **only** when there are **no predicted pairs and no gold deal has two or more segments** (then P = 1 and R = 1). All-`none` on this corpus (which has multi-touch deals) therefore has TP = 0, FN > 0, F1 = 0 — not 1.0. One giant predicted deal on a multi-deal corpus has high recall and low precision, so F1 is far below 0.85.
+
+**Deal grouping accuracy** = `min(assignment_accuracy, deal_segment_recall, pairwise_F1)`. Gate: ≥ 0.85. All-`none`, one-deal-for-the-whole-day, one-deal-per-segment, group-by-app, and group-by-company each fail this on the §11.1 corpus (see trivial-output check).
 
 #### Deal summary accuracy (computable)
 
-Score only gold deals that have a matched predicted cluster (from the grouping alignment above). Unmatched gold deals contribute no summary pairs; they already punish grouping. For each matched deal, the system emits summary claims in three slots: **what happened**, **who was involved**, **next step**.
+**Slots.** Every predicted summary claim must carry `slot` ∈ {`what_happened`, `who_involved`, `next_step`}. A claim with a missing or unknown slot is unsupported and false. Gold claims use the same three slots in `truth.yaml`.
 
-A predicted claim is **supported** only when **both** are true:
+**Who matcher (`person_entities_match`).** Do **not** use `names_match` (two-way substring: `Acme` or `a` would match). Resolve each side to a roster `person_id` from `truth.yaml` `people`:
 
-1. It has ≥ 1 resolvable evidence citation whose segment is assigned to that predicted cluster (and therefore to the matched gold deal).
-2. It **strict-matches** a gold claim in the same slot for that gold deal.
+1. `normalize()` the predicted string and each roster `name` (casefold, strip parentheticals, punctuation to space, collapse whitespace — the existing `metrics.normalize`).
+2. A predicted string resolves to `person_id` only on **exact** normalized equality with that person's `name`, or with `"{name} {company}"` / `"{name} ({company})"` after normalize.
+3. First name only, company only, or any substring is **not** a resolution. Unresolved predictions do not match.
 
-**Strict match** is 1:1, greedy by best score, gold consumed once. A pair matches when the normalised strings are identical, **or** (for "who") `names_match` as in `docs/eval.md`. Extra predicted claims that do not take a gold item do not match. Predicted claims with citations but no gold match are unmatched, not "supported".
+Two who-claims match iff they resolve to the same `person_id`.
 
-`claim_precision = supported_predicted_claims / all_predicted_summary_claims` over the matched deals. If there are no predicted summary claims on a day that has at least one gold deal-summary claim, precision is **0.0**. If both sides are empty (near-empty day, gold deals all `none`), precision is **1.0**.
+**What-happened / next-step matcher.** `normalize()` both sides. They match iff the normalized strings are **identical**. No Jaccard, no "best score". Pairing inside a (aligned deal, slot) is 1:1: walk gold claims in file order; take the first unused predicted claim in emission order whose normalized text is identical. A gold claim is consumed once.
 
-**Unsupported count** is the number of predicted summary claims that fail test (1) — no resolvable evidence on the predicted deal. The gate requires this count **= 0**.
+**Alignment for summaries.** Use the deal-cluster matching above. Claims on a predicted cluster that matches **no** gold deal are **never skipped**: each one is false and unsupported, and counts in the precision denominator and the unsupported count. Gold claims on unmatched gold deals count as recall misses.
 
-**Deal summary accuracy** is `claim_precision` when unsupported count is 0, and **0.0** when unsupported count > 0. The gate is that number ≥ 0.85.
+**Supported.** A predicted claim is supported only when all of these hold:
 
-Together: a model that invents a next step with no evidence fails even if grouping is perfect; a model that merges look-alike deals fails grouping even if the merged prose is fluent.
+1. It has a valid slot.
+2. It has ≥ 1 resolvable evidence citation.
+3. Every cited frame maps (via §11.2 segment alignment) to a gold segment assigned to this predicted cluster.
+4. It is 1:1 paired with a gold claim in the same slot on the **matched** gold deal, **and** the cited gold-segment ids **intersect** that gold claim's `evidence_segments`.
+
+A citation that is merely "somewhere on the same deal" is not enough.
+
+**Strict claim precision** = (predicted claims that are supported) / (all predicted summary claims, including unmatched-deal claims). If there are no predicted claims and the corpus has at least one gold deal-summary claim, precision is **0.0**. If both sides are empty, precision is **1.0**.
+
+**Slot recall** for `what_happened`, `next_step`, and `who_involved` = (gold claims in that slot that are paired with a supported prediction) / (gold claims in that slot). If a slot has zero gold claims in the corpus, omit that slot from the min below.
+
+**Unsupported count** = predicted claims that fail any of supported-tests (1)–(4). Gate: **0**.
+
+**Deal summary accuracy** = `min(claim_precision, what_happened_recall, next_step_recall, who_involved_recall)` when unsupported count is 0, else **0.0**. Gate: ≥ 0.85. An empty-summary baseline therefore scores 0 when gold key facts exist.
+
+#### Trivial-output check (required at M3f)
+
+Once M3f lands, a unit/eval test must run these baselines on the §11.1 fixtures and assert **each** scores deal grouping accuracy < 0.85 and/or deal summary accuracy < 0.85 as applicable:
+
+| Baseline | Grouping | Summary |
+|---|---|---|
+| All-`none` (every segment `none`) | < 0.85 | — |
+| One deal for the whole day (and, separately, one deal for the whole corpus) | < 0.85 | — |
+| One deal per gold segment | < 0.85 | — |
+| Group by `bundle_id` / app | < 0.85 | — |
+| Group by company token in the window title | < 0.85 | — |
+| Empty summary (no claims) | — | < 0.85 |
+
+If a baseline ever scores ≥ 0.85, the fixtures are too weak and must be thickened before the model gate is trusted.
 
 ### 11.3 Privacy tests
 
@@ -642,7 +743,7 @@ Two hardware profiles, **same default model** on both (§14 #9). Helper < 2 % CP
 - **Primary** (32 GB target laptop): understanding p95 < 20 s/segment; peak memory (worker plus model server, Darwin `phys_footprint`) < 3 GB; consolidation < 15 min. Unchanged (Kieran 21:53).
 - **Minimum-spec** (8 GB development / testing Mac): understand p95 is **recorded, not gated**. Memory gate is **completed without crash or OOM kill** (every fixture day processed, worker exit 0, no runtime connection loss or kill). Peak worker+model and `consolidate_s` are reported but not gated. Deal grouping accuracy ≥ 0.85 and deal summary accuracy ≥ 0.85 stay gating on both profiles. 7–9B Q4 models are allowed; timeout/num_ctx are per-model (3600 s for 7–9B / unknown models; 300 s for 3B). Engineering headroom (p95 < 30 s, peak < 3.3 GiB) is recorded in `report.json` → `headroom` and does not fail the gate.
 
-**Default-model rule:** the V1 default is the largest model that completes on 8 GB (no OOM kill) **and** meets the §11.2 gate. Candidates remain biggest first: `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4; go smaller only if a bigger one crashes or misses the gate. Code default stays `qwen2.5:3b` until the bake-off winner is sent.
+**Default-model rule:** the V1 default is the largest model that completes on 8 GB (no OOM kill) **and** meets the active quality gate. Candidates remain biggest first: `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4; go smaller only if a bigger one crashes or misses the gate. Code default stays `qwen2.5:3b` until the bake-off winner is sent. **Until M3f**, that quality gate is the committed `thresholds.json` (parked Revision 2 rows, including strict decisions/commitments precision ≥ 0.85). **From M3f**, those rows are report-only and the gate is deal grouping accuracy ≥ 0.85 and deal summary accuracy ≥ 0.85.
 
 Targets for the **16 GB V1.2 profile** (commercialisation, not the M3 eval profiles above): as the original 8 GB line plus VLM < 15 s/frame when used; consolidation < 10 min; worker peak RSS < 6 GB.
 
@@ -713,7 +814,7 @@ Runtime adapters, understanding prompt and schema, claims/evidence, entity resol
 
 Retarget consolidation so the day's segments cluster by **sales opportunity / deal**, then emit one daily summary per deal (what happened, who was involved, next step; every claim cited). Add gold fixtures for multi-touch deals (email + call + doc/CRM in one day), look-alike deal names, and non-deal noise. Score the §11.2 gate as defined above. Markdown export of that day's deal summaries is enough; weekly/project/achievement reports stay parked.
 
-*Acceptance:* deal grouping accuracy ≥ 0.85 and deal summary accuracy ≥ 0.85 on the fixture corpus with the bake-off model; unsupported summary claims = 0; re-running consolidation twice yields identical deal clusters and row counts; each gold deal has a visible cited summary; look-alike deals are not merged; gold `none` segments are not attached to a deal; §11.3 privacy tests still pass. Parked extractors (§16) are not required.
+*Acceptance:* deal grouping accuracy ≥ 0.85 and deal summary accuracy ≥ 0.85 on the fixture corpus with the bake-off model (the 0.85 gate is the allowance; there is no extra zero-tolerance merge rule); unsupported summary claims = 0; re-running consolidation twice yields identical deal clusters and row counts; each matched gold deal has a visible cited summary; the §11.2 trivial-output baselines each score below 0.85; fixtures meet the §11.1 minimums; parked `thresholds.json` rows are report-only; §11.3 privacy tests still pass. Parked extractors (§16) are not required. §3.5 retrieval stays.
 
 *Tagged build:* `v0.3.1-m3f`.
 
@@ -877,4 +978,4 @@ Kept so they can be restored without rewriting the gate:
 | Duplicate observations for the same activity | < 5 % | Over-segmentation; still measured by the current harness |
 | Noise correctly classified `non_work` | ≥ 0.90 | Distinct from gold `none` (not-a-deal). A news-site segment can be `non_work` *and* `none` |
 
-Structural 100 % evidence / 100 % citations and the §11.3 privacy tests were **not** parked.
+Until M3f, these rows (as committed in `thresholds.json`) still select the bake-off model. **At M3f they become report-only**; the model gate switches to deal grouping / deal summary. Structural 100 % evidence / 100 % citations, the §11.3 privacy tests, and **§3.5 understanding retrieval** were **not** parked.
