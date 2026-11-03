@@ -32,6 +32,12 @@
 </section>
 
 {% if day is not none and day.date is not none %}
+  {% with groups = day.groups, day_label = none %}
+    {% include "deal_groups.html" %}
+  {% endwith %}
+{% endif %}
+
+{% if day is not none and day.date is not none %}
 <section>
   <h2>Daily summary</h2>
   {% if not day.spans %}

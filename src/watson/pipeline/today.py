@@ -11,6 +11,7 @@ from typing import Any
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from watson.pipeline.day_page import DayPage, collect_day_page
+from watson.pipeline.deal_groups import DealGroups
 from watson.pipeline.frames import PIPELINE_VERSION
 
 
@@ -55,6 +56,7 @@ class TodayReport:
     segments: tuple[TodaySegment, ...]
     state: str = "none"
     day: DayPage | None = None
+    groups: DealGroups = DealGroups()
 
     def as_dict(self) -> dict[str, Any]:
         segments: list[dict[str, Any]] = []
@@ -75,12 +77,14 @@ class TodayReport:
                     "confidence": item.observation.confidence,
                 }
             segments.append(row)
-        return {
+        payload = {
             "date": self.date,
             "state": self.state,
             "segments": segments,
             "summary_present": bool(self.day is not None and self.day.spans),
         }
+        payload.update(self.groups.as_dict())
+        return payload
 
 
 def collect_today(
@@ -112,13 +116,14 @@ def collect_today(
         LEFT JOIN observations o
             ON o.segment_id = s.id AND o.pipeline_version = ?
         WHERE d.date = ?
+          AND (f.state IS NULL OR f.state != 'skipped')
         ORDER BY s.started_at ASC, s.id ASC
         """,
         (pipeline_version, chosen),
     ).fetchall()
     segments = tuple(_segment_from_row(row) for row in rows)
     day = collect_day_page(conn, date=chosen, pipeline_version=pipeline_version)
-    return TodayReport(date=chosen, segments=segments, state=day.state, day=day)
+    return TodayReport(date=chosen, segments=segments, state=day.state, day=day, groups=day.groups)
 
 
 def _segment_from_row(row: Any) -> TodaySegment:
