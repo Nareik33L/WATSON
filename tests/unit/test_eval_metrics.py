@@ -11,6 +11,8 @@ from watson.intelligence.eval.metrics import (
     completed_accuracy,
     duplicate_rate,
     f1_score,
+    names_match,
+    pair_matches,
     precision,
     recall,
     token_jaccard,
@@ -81,6 +83,43 @@ def test_five_day_aggregate_fails_when_one_day_predicts_nothing() -> None:
     gate = gate_metrics(aggregate, load_thresholds())
     assert gate["passed"] is False
     assert "commitments_precision" in gate["failures"]
+
+
+def test_pair_matches_dedup_one_gold_per_prediction() -> None:
+    """Two copies of the same prediction consume one gold (1:1), not two TPs."""
+    predicted = [
+        "Send revised pricing to Priya by Friday",
+        "Send revised pricing to Priya by Friday",
+    ]
+    truth = ["Send revised pricing to Priya by Friday"]
+    assert pair_matches(predicted, truth) == 1
+    assert precision(predicted, truth) == 0.5
+    assert recall(predicted, truth) == 1.0
+
+
+def test_matching_tolerance_normalizes_case_and_punctuation() -> None:
+    """Surviving mutant: drop normalize() and only exact raw strings match."""
+    gold = "Send revised pricing to Priya by Friday"
+    assert names_match("SEND REVISED PRICING TO PRIYA BY FRIDAY!", gold)
+    assert names_match("Send revised pricing, to Priya, by Friday.", gold)
+    assert precision(["SEND REVISED PRICING TO PRIYA BY FRIDAY!"], [gold]) == 1.0
+
+
+def test_matching_tolerance_rejects_different_person_day_object() -> None:
+    """Surviving mutant: any token overlap or always-true match."""
+    gold = "Send the Harbor checklist to Ellis Voss by Wednesday"
+    assert names_match(gold, gold)
+    assert not names_match("Send the Harbor checklist to Mina Okonkwo by Wednesday", gold)
+    assert not names_match("Send the Harbor checklist to Ellis Voss by Friday", gold)
+    assert not names_match("Send the Harbor hours grid to Ellis Voss by Wednesday", gold)
+    assert precision(
+        [
+            "Send the Harbor checklist to Mina Okonkwo by Wednesday",
+            "Send the Harbor checklist to Ellis Voss by Friday",
+            "Send the Harbor hours grid to Ellis Voss by Wednesday",
+        ],
+        [gold],
+    ) == 0.0
 
 
 def test_f1_is_not_accuracy() -> None:
