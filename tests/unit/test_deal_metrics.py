@@ -399,6 +399,67 @@ def test_validate_rejects_weekday_date_alias() -> None:
         validate_day(day)
 
 
+def test_validate_rejects_more_than_three_aliases() -> None:
+    day = _day(
+        deals=[Deal("a", "A")],
+        segments=[_seg("s1", "a", "f1")],
+        frames={"f1": Frame("f1", "pricing call")},
+        facts=[
+            GoldFact(
+                "f",
+                "a",
+                "what_happened",
+                ("pricing",),
+                {"pricing": ("quote", "rate", "ask", "bid")},
+                ("s1",),
+            )
+        ],
+    )
+    with pytest.raises(ValueError, match="more than 3 aliases"):
+        validate_day(day)
+
+
+def test_validate_rejects_stopword_aliases() -> None:
+    day = _day(
+        deals=[Deal("a", "A")],
+        segments=[_seg("s1", "a", "f1")],
+        frames={"f1": Frame("f1", "pricing call")},
+        facts=[
+            GoldFact(
+                "f",
+                "a",
+                "what_happened",
+                ("pricing",),
+                {"pricing": ("the of",)},
+                ("s1",),
+            )
+        ],
+    )
+    with pytest.raises(ValueError, match="stopwords-only"):
+        validate_day(day)
+
+
+def test_validate_rejects_cross_deal_aliases() -> None:
+    day = _day(
+        deals=[Deal("a", "A"), Deal("b", "B")],
+        segments=[_seg("s1", "a", "f1"), _seg("s2", "b", "f2")],
+        frames={"f1": Frame("f1", "pricing call"), "f2": Frame("f2", "globex deck")},
+        facts=[
+            GoldFact("f-a", "a", "what_happened", ("pricing",), {}, ("s1",)),
+            GoldFact(
+                "f-b",
+                "b",
+                "what_happened",
+                ("deck",),
+                {"deck": ("pricing",)},
+                ("s2",),
+            ),
+        ],
+    )
+    with pytest.raises(ValueError, match="cross-deal"):
+        validate_day(day)
+
+
 def test_one_claim_covers_at_most_one_fact() -> None:
     people = [Person("p", "Ada Lovelace", "Acme")]
     frames = {"f1": Frame("f1", "pricing call q4 deck Ada Lovelace")}
@@ -459,3 +520,12 @@ def test_extract_amounts_currency_and_comma_groups() -> None:
     assert "amt:14" not in extract_amounts("14 Nov")
     assert "amt:14" not in extract_amounts("before the 14 Nov demo about $90k")
     assert "amt:90000:usd" in extract_amounts("before the 14 Nov demo about $90k")
+    assert "amt:95000:usd" in extract_amounts("USD 95k")
+    assert "amt:95000:usd" not in extract_amounts("95k")
+    assert "amt:5000000" not in extract_amounts("5m walk")
+    assert "amt:4000" not in extract_amounts("4k monitor")
+    assert "amt:1" not in extract_amounts("v1.2")
+    assert "amt:2" not in extract_amounts("v1.2")
+    assert extract_amounts("v1.2") == set()
+    assert "amt:40000" in extract_amounts("40k")
+    assert "amt:1200000" in extract_amounts("1.2m")

@@ -49,6 +49,9 @@ WHAT_FUTURE = frozenset({"will", "should"})
 WHAT_FUTURE_PHRASES = ("need to", "going to", "plan to")
 NEXT_HEDGES = frozenset({"might", "may", "could"})
 NEXT_NEGATION = frozenset({"not", "never", "wont"})
+_NEAR_FILLERS = frozenset({"please", "still", "revised", "discussed"})
+_NOT_MONEY_UNITS = frozenset({"walk", "run", "monitor", "display", "screen", "video", "ram"})
+_VERSION = re.compile(r"\bv\d+(?:\.\d+)+\b", re.IGNORECASE)
 ACTION_VERBS = frozenset(
     {
         "send",
@@ -764,6 +767,13 @@ def _add_amount(out: set[str], value: int | float, currency: str | None) -> None
         out.add(f"amt:{value}:{currency}")
 
 
+def _amount_false_unit(text: str, end: int) -> bool:
+    """True when a suffix amount is a unit like ``5m walk`` or ``4k monitor``."""
+    rest = text[end:]
+    nxt = re.match(r"[^A-Za-z]*([A-Za-z]+)", rest)
+    return bool(nxt and nxt.group(1).casefold() in _NOT_MONEY_UNITS)
+
+
 def extract_amounts(text: str) -> set[str]:
     """Typed amounts, including currency, suffix, comma-group, and range forms.
 
@@ -771,11 +781,12 @@ def extract_amounts(text: str) -> set[str]:
     ``90,000`` / ``£40k`` become ``amt:<int>`` plus ``amt:<int>:<ccy>`` when a
     currency is present. Ranges (``$9–12k``, ``$9k–12k``, ``90k-120k``) emit
     both ends. Comma groups are one number. Bare digits and number-words stay
-    ``amt:<int>``.
+    ``amt:<int>``. Versions (``v1.2``) and unit phrases (``5m walk``,
+    ``4k monitor``) are not amounts.
     """
     out: set[str] = set()
-    leftover = text
-    for match in reversed(list(_AMOUNT_RANGE.finditer(text))):
+    leftover = _VERSION.sub(" ", text)
+    for match in reversed(list(_AMOUNT_RANGE.finditer(leftover))):
         if not (
             match.group("sym1")
             or match.group("sym2")
@@ -801,6 +812,8 @@ def extract_amounts(text: str) -> set[str]:
         ccy_word = (match.group("ccy") or "").lower()
         currency = _CURRENCY_CODE.get(sym or "") or _CURRENCY_WORD.get(ccy_word)
         if not currency and not suf and "," not in num:
+            continue
+        if not currency and suf and _amount_false_unit(leftover, match.end()):
             continue
         _add_amount(out, _amount_value(num, suf), currency)
         leftover = leftover[: match.start()] + " " + leftover[match.end() :]
@@ -1046,6 +1059,63 @@ def baseline_keyword_dump_please(gold: DealCorpus) -> PredictedCorpus:
         gold,
         lambda _day, segment: segment.deal,
         claims_of=lambda day: _packed_dump_claims(day, suffix=" please"),
+    )
+
+
+def baseline_keyword_dump_duplicate_what(gold: DealCorpus) -> PredictedCorpus:
+    """Each dump window twice in what_happened, will-window in next_step, once in who."""
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_duplicate_what_claims,
+    )
+
+
+def baseline_keyword_dump_duplicate_need_to(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, next_prefix="need to"),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_3ch(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, three_channel_only=True),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_2ch(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, min_channels=2),
+    )
+
+
+def baseline_keyword_dump_duplicate_what_filled(gold: DealCorpus, filler: str) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=lambda day: _duplicate_what_claims(day, filler=filler),
+    )
+
+
+def baseline_keyword_dump_within_cap_will_next(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_within_cap_will_next_claims,
+    )
+
+
+def baseline_keyword_dump_extra_what_will_next(gold: DealCorpus) -> PredictedCorpus:
+    return identity_prediction(
+        gold,
+        lambda _day, segment: segment.deal,
+        claims_of=_extra_what_will_next_claims,
     )
 
 
@@ -1558,6 +1628,25 @@ def _deal_non_bait_count(day: DayGold, deal_id: str) -> int:
     )
 
 
+def _claim_near_key(claim: PredictedClaim) -> tuple[str, str, frozenset[str]]:
+    """Same-deal, same-slot identity after dropping please/still/revised/discussed."""
+    tokens = frozenset(token for token in content_tokens(claim.text) if token not in _NEAR_FILLERS)
+    return (claim.deal, claim.slot, tokens)
+
+
+def _collapse_duplicate_claims(claims: Sequence[PredictedClaim]) -> list[PredictedClaim]:
+    """Keep the first of identical or near-identical claims in one deal+slot."""
+    seen: set[tuple[str, str, frozenset[str]]] = set()
+    out: list[PredictedClaim] = []
+    for claim in claims:
+        key = _claim_near_key(claim)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(claim)
+    return out
+
+
 def _pair_claims(
     day: DayGold,
     pred: PredictedDay,
@@ -1565,18 +1654,21 @@ def _pair_claims(
 ) -> list[tuple[PredictedClaim, GoldFact]]:
     """1:1 inside (day, matched deal, slot).
 
-    Walk gold facts in file order; assign the first unused covering claim.
-    ``used`` credits each claim (and therefore each fact) once, so a claim
-    with terms from several facts is paired with a single fact.
+    Collapse identical / near-identical claims in the same predicted deal and
+    slot first. Then walk gold facts in file order and assign the first unused
+    covering claim. ``used`` credits each remaining claim (and therefore each
+    fact) once, so a claim with terms from several facts is paired with a
+    single fact.
     """
     used: set[str] = set()
     paired: list[tuple[PredictedClaim, GoldFact]] = []
     inverse = {gold_id: pred_id for pred_id, gold_id in mapping.items()}
+    claims = _collapse_duplicate_claims(pred.claims)
     for fact in day.facts:
         pred_id = inverse.get(fact.deal_id)
         if pred_id is None:
             continue
-        for claim in pred.claims:
+        for claim in claims:
             if claim.id in used or claim.deal != pred_id or claim.slot != fact.slot:
                 continue
             if _claim_covers(day, pred, mapping, claim, fact):
@@ -1864,6 +1956,111 @@ def _extra_what_claims(day: DayGold) -> list[PredictedClaim]:
                 )
             )
     return claims + extras
+
+
+def _window_slot_text(window: str, slot: str, *, next_prefix: str = "") -> str:
+    if slot == "next_step" and next_prefix:
+        return f"{next_prefix} {window}".strip()
+    return window
+
+
+def _within_cap_will_next_claims(day: DayGold) -> list[PredictedClaim]:
+    """Within-cap dump with ``will <window>`` in next_step only."""
+    claims: list[PredictedClaim] = []
+    for deal in day.deals:
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        windows = dump_windows(deal_term_list(day, deal.id))
+        for window_index, window in enumerate(windows):
+            for slot in SLOTS:
+                claims.append(
+                    PredictedClaim(
+                        id=f"dump-will-next-{day.name}-{deal.id}-{window_index}-{slot}",
+                        deal=deal.id,
+                        slot=slot,
+                        text=_window_slot_text(window, slot, next_prefix="will"),
+                        evidence=list(evidence),
+                    )
+                )
+    return claims
+
+
+def _extra_what_will_next_claims(day: DayGold) -> list[PredictedClaim]:
+    claims = _within_cap_will_next_claims(day)
+    extras: list[PredictedClaim] = []
+    for deal in day.deals:
+        channels = {segment.channel for segment in _deal_segments(day, deal.id)}
+        if not {"email", "call", "doc"} <= channels:
+            continue
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        windows = dump_windows(deal_term_list(day, deal.id))
+        for window_index, window in enumerate(windows):
+            extras.append(
+                PredictedClaim(
+                    id=f"dump-extra-will-what-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="what_happened",
+                    text=window,
+                    evidence=list(evidence),
+                )
+            )
+    return claims + extras
+
+
+def _duplicate_what_claims(
+    day: DayGold,
+    *,
+    next_prefix: str = "will",
+    min_channels: int = 0,
+    three_channel_only: bool = False,
+    filler: str = "",
+) -> list[PredictedClaim]:
+    """Gold-free dump: window×2 in what, prefixed window in next_step, window in who."""
+    claims: list[PredictedClaim] = []
+    suffix = f" {filler}".rstrip()
+    for deal in day.deals:
+        segs = _deal_segments(day, deal.id)
+        evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
+        windows = dump_windows(deal_term_list(day, deal.id))
+        channels = {segment.channel for segment in segs}
+        duplicate = True
+        if three_channel_only and not {"email", "call", "doc"} <= channels:
+            duplicate = False
+        if min_channels and len(channels) < min_channels:
+            duplicate = False
+        copies = 2 if duplicate else 1
+        for window_index, window in enumerate(windows):
+            what_text = f"{window}{suffix}".strip()
+            for copy in range(copies):
+                claims.append(
+                    PredictedClaim(
+                        id=f"dump-dup-what-{day.name}-{deal.id}-{window_index}-{copy}",
+                        deal=deal.id,
+                        slot="what_happened",
+                        text=what_text,
+                        evidence=list(evidence),
+                    )
+                )
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-dup-next-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="next_step",
+                    text=f"{next_prefix} {window}{suffix}".strip(),
+                    evidence=list(evidence),
+                )
+            )
+            claims.append(
+                PredictedClaim(
+                    id=f"dump-dup-who-{day.name}-{deal.id}-{window_index}",
+                    deal=deal.id,
+                    slot="who_involved",
+                    text=f"{window}{suffix}".strip(),
+                    evidence=list(evidence),
+                )
+            )
+    return claims
 
 
 def _packed_dump_claims(day: DayGold, *, suffix: str = "") -> list[PredictedClaim]:
@@ -2267,13 +2464,20 @@ __all__ = [
     "baseline_group_by_app",
     "baseline_group_by_company",
     "baseline_keyword_dump_comma_list",
+    "baseline_keyword_dump_duplicate_need_to",
+    "baseline_keyword_dump_duplicate_what",
+    "baseline_keyword_dump_duplicate_what_2ch",
+    "baseline_keyword_dump_duplicate_what_3ch",
+    "baseline_keyword_dump_duplicate_what_filled",
     "baseline_keyword_dump_extra_what",
+    "baseline_keyword_dump_extra_what_will_next",
     "baseline_keyword_dump_need_to",
     "baseline_keyword_dump_over_cap",
     "baseline_keyword_dump_packed",
     "baseline_keyword_dump_please",
     "baseline_keyword_dump_will_prefix",
     "baseline_keyword_dump_within_cap",
+    "baseline_keyword_dump_within_cap_will_next",
     "baseline_one_deal_corpus",
     "baseline_one_deal_per_day",
     "baseline_one_deal_per_segment",

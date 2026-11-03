@@ -14,13 +14,20 @@ from watson.intelligence.eval.deals import (
     baseline_group_by_app,
     baseline_group_by_company,
     baseline_keyword_dump_comma_list,
+    baseline_keyword_dump_duplicate_need_to,
+    baseline_keyword_dump_duplicate_what,
+    baseline_keyword_dump_duplicate_what_2ch,
+    baseline_keyword_dump_duplicate_what_3ch,
+    baseline_keyword_dump_duplicate_what_filled,
     baseline_keyword_dump_extra_what,
+    baseline_keyword_dump_extra_what_will_next,
     baseline_keyword_dump_need_to,
     baseline_keyword_dump_over_cap,
     baseline_keyword_dump_packed,
     baseline_keyword_dump_please,
     baseline_keyword_dump_will_prefix,
     baseline_keyword_dump_within_cap,
+    baseline_keyword_dump_within_cap_will_next,
     baseline_one_deal_corpus,
     baseline_one_deal_per_day,
     baseline_one_deal_per_segment,
@@ -106,7 +113,29 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-comma-list": score_deals(
             gold, baseline_keyword_dump_comma_list(gold)
         ).summary.accuracy,
+        "keyword-dump-duplicate-what": score_deals(
+            gold, baseline_keyword_dump_duplicate_what(gold)
+        ).summary.accuracy,
+        "keyword-dump-duplicate-need-to": score_deals(
+            gold, baseline_keyword_dump_duplicate_need_to(gold)
+        ).summary.accuracy,
+        "keyword-dump-duplicate-what-3ch": score_deals(
+            gold, baseline_keyword_dump_duplicate_what_3ch(gold)
+        ).summary.accuracy,
+        "keyword-dump-duplicate-what-2ch": score_deals(
+            gold, baseline_keyword_dump_duplicate_what_2ch(gold)
+        ).summary.accuracy,
+        "keyword-dump-within-cap-will-next": score_deals(
+            gold, baseline_keyword_dump_within_cap_will_next(gold)
+        ).summary.accuracy,
+        "keyword-dump-extra-what-will-next": score_deals(
+            gold, baseline_keyword_dump_extra_what_will_next(gold)
+        ).summary.accuracy,
     }
+    for filler in ("please", "still", "revised", "discussed"):
+        rows[f"keyword-dump-duplicate-{filler}"] = score_deals(
+            gold, baseline_keyword_dump_duplicate_what_filled(gold, filler)
+        ).summary.accuracy
     for name, score in rows.items():
         assert score < GATE, f"{name} summary {score:.3f} must be < {GATE}"
 
@@ -118,7 +147,9 @@ def test_honest_summary_meets_gate_without_and_with_fillers(gold) -> None:
         score = score_deals(gold, predicted)
         assert score.grouping.accuracy == 1.0, name
         assert score.summary.unsupported == 0, name
-        assert score.summary.accuracy >= GATE, f"{name} summary {score.summary.accuracy:.3f}"
+        assert score.summary.accuracy == pytest.approx(1.0), (
+            f"{name} summary {score.summary.accuracy:.3f}"
+        )
         assert not score.privacy_fail, name
         assert honest_has_roster_name_and_deadline(gold, predicted)
     assert any(
@@ -150,6 +181,8 @@ def test_privacy_bait_absent_from_stored_outputs(gold) -> None:
         baseline_keyword_dump_please(gold),
         baseline_keyword_dump_will_prefix(gold),
         baseline_keyword_dump_extra_what(gold),
+        baseline_keyword_dump_duplicate_what(gold),
+        baseline_keyword_dump_within_cap_will_next(gold),
         honest_prediction(gold, DEAL_GOLD),
         honest_prediction_filled(gold, DEAL_GOLD),
     ]
@@ -247,6 +280,22 @@ def test_baseline_score_table(gold) -> None:
         (
             "keyword-dump-comma-list",
             score_deals(gold, baseline_keyword_dump_comma_list(gold)).summary,
+        ),
+        (
+            "keyword-dump-duplicate-what",
+            score_deals(gold, baseline_keyword_dump_duplicate_what(gold)).summary,
+        ),
+        (
+            "keyword-dump-duplicate-need-to",
+            score_deals(gold, baseline_keyword_dump_duplicate_need_to(gold)).summary,
+        ),
+        (
+            "keyword-dump-within-cap-will-next",
+            score_deals(gold, baseline_keyword_dump_within_cap_will_next(gold)).summary,
+        ),
+        (
+            "keyword-dump-extra-what-will-next",
+            score_deals(gold, baseline_keyword_dump_extra_what_will_next(gold)).summary,
         ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
         (

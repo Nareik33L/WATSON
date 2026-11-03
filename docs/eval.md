@@ -147,6 +147,7 @@ Compute these on the actual gold corpus (no model). The build **fails** if any n
 - **keyword dump (over-cap):** all OCR tokens of the deal-day per gold fact (tests the 24-token cap)
 - **keyword dump (within-cap):** for each deal-day, join that deal's required terms and emit each ≤24-token window **in every slot**
 - **keyword dump (will / need-to / comma-list / extra-what):** the plan window dump with a `will` prefix, a `need to` prefix, comma-joined tokens, or extra `what_happened` copies on multi-touch deals. Must stay < 0.85
+- **keyword dump (duplicate-what):** each ≤24-token window twice in `what_happened`, as `will <window>` (or `need to <window>`) in `next_step`, and once in `who_involved`. Variants duplicate only on 3-channel or ≥2-channel deals, add please/still/revised/discussed fillers, or put `will <window>` on the within-cap / extra-what next_step. Must stay < 0.85
 - **keyword dump (packed / please):** one or a few claims that each pack terms from several same-slot facts, with and without a trailing `please`. 1:1 pairing covers one fact; recall of the unpacked facts stays below the gate
 - **honest summary (positive):** hand-written, well-cited correct summary per fixture deal, ≥ 0.85 **with and without** filler words. The filler-free control is the default; a filled copy only appends `please` to `next_step` claims. Natural paraphrases that mention another fact's term (for example `…before the 14 Nov demo`) still cover the matched fact.
 
@@ -164,11 +165,11 @@ These pin the four QA follow-ups from #45 so the scorer and fixtures agree.
 |---|---|
 | person | `person_id`, plus any required term or alias that is a roster full name |
 | date | a weekday token (`friday`) **or** a canonical calendar date (`14 nov` / `14 november` / `2026-11-14` → `cal:11-14`). Weekday ≠ date. |
-| amount | an integer from digits or number-words (`2` / `two`); currency (`$90k` / `USD 95k` / `£40k`); suffix (`40k` / `1.2m`); comma groups (`$40,000` / `90,000`); ranges (`$9–12k`, `$9k–12k`, `90k-120k`, `90k–120k`) emit both ends. Quarters (`q4`) are not amounts. |
+| amount | an integer from digits or number-words (`2` / `two`); currency (`$90k` / `USD 95k` / `£40k`); suffix (`40k` / `1.2m`); comma groups (`$40,000` / `90,000`); ranges (`$9–12k`, `$9k–12k`, `90k-120k`, `90k–120k`) emit both ends. Quarters (`q4`), versions (`v1.2`), and unit phrases (`5m walk`, `4k monitor`) are not amounts. |
 
 A claim contradicts F only in the **same slot** on the same day and deal, and only when it asserts a value of one of those kinds that is **not** F's value and is **not** both (a) a slot value of some fact on this deal and (b) present in the cited evidence. Invented values that are neither F's value nor deal-correct-and-evidenced contradict (14 Nov → 15 Nov). Person / date / amount mentioned in another slot do not contradict.
 
-**One-claim-one-fact.** Pairing is 1:1 inside `(day, matched deal, slot)`: walk gold facts in file order; take the first unused predicted claim that covers it. A packed claim therefore covers **one** fact (not none). Extra terms from another fact are allowed on a natural paraphrase. Two identical covering claims still consume the gold fact once (`used` set).
+**One-claim-one-fact.** Pairing is 1:1 inside `(day, matched deal, slot)`: first collapse identical or near-identical claims (same predicted deal and slot; please/still/revised/discussed fillers do not distinguish copies), then walk gold facts in file order and take the first unused predicted claim that covers it. A packed claim therefore covers **one** fact (not none). Extra terms from another fact are allowed on a natural paraphrase. Two identical covering claims count as one claim for pairing.
 
 **Honest-control scoring.** The positive control is scored with the same scorer against **gold grouping**: each non-bait segment's predicted cluster id is that segment's gold deal id (bait stays `none`). Claims come from `honest_summary.yaml` next to the day fixture. The control must include at least one `what_happened` claim that names a **roster full name** (not any capitalized word) and a deadline (weekday or calendar date). Gate: deal summary accuracy ≥ 0.85 (and unsupported = 0) for both the filler-free control and the filled (`please`) copy.
 

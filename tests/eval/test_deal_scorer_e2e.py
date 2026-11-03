@@ -23,9 +23,14 @@ from watson.intelligence.eval.deals import (
     PredictedEvidence,
     PredictedSegment,
     _claim_covers,
+    _pair_claims,
+    _stored_pipeline_texts,
     _unsupported,
+    collect_predicted_deals,
+    company_cluster,
     content_tokens,
     contradicts,
+    deal_term_list,
     extract_amounts,
     fact_terms_satisfied,
     honest_has_roster_name_and_deadline,
@@ -33,10 +38,12 @@ from watson.intelligence.eval.deals import (
     honest_prediction_filled,
     load_deal_corpus,
     matching_slot_facts,
+    privacy_bait_legal,
     required_terms_present,
     resolve_person_id,
     score_deals,
     slot_modal_ok,
+    validate_day,
 )
 
 PRIYA = Person("priya-natarajan", "Priya Natarajan", "Acme")
@@ -481,9 +488,22 @@ def test_score_deals_one_claim_covers_at_most_one_fact() -> None:
         ],
     )
     twin_score = score_deals(gold, twins)
-    assert twin_score.summary.correct == 2
+    assert twin_score.summary.correct == 1
     assert twin_score.summary.claims == 2
-    assert twin_score.summary.what_happened_recall == pytest.approx(2 / 3)
+    assert twin_score.summary.what_happened_recall == pytest.approx(1 / 3)
+    assert twin_score.summary.precision == pytest.approx(0.5)
+    near = _pred(
+        day,
+        claims=[
+            _claim("joined the pricing call q4 deck", claim_id="n1"),
+            _claim("joined the pricing call q4 deck please", claim_id="n2"),
+            _claim("still joined the pricing call q4 deck", claim_id="n3"),
+        ],
+    )
+    near_score = score_deals(gold, near)
+    assert near_score.summary.correct == 1
+    assert near_score.summary.claims == 3
+    assert near_score.summary.what_happened_recall == pytest.approx(1 / 3)
 
 
 def test_score_deals_natural_paraphrase_keeps_date_and_extra_term() -> None:
@@ -577,6 +597,9 @@ def test_score_deals_next_step_may_and_sent_rejected() -> None:
     could = _pred(day, claims=[_claim("could send pricing", slot="next_step")])
     assert score_deals(gold, might).summary.correct == 0
     assert score_deals(gold, could).summary.correct == 0
+    hedge_tail = _pred(day, claims=[_claim("send pricing might", slot="next_step")])
+    assert score_deals(gold, hedge_tail).summary.correct == 0
+    assert slot_modal_ok(_claim("send pricing might", slot="next_step"), fact) is False
 
 
 def test_score_deals_privacy_fail_zeros_accuracy() -> None:
@@ -685,6 +708,10 @@ def test_extract_amounts_currency_forms() -> None:
     assert "amt:40000" in extract_amounts("40k")
     assert "amt:95000" in extract_amounts("95k")
     assert "amt:95000:usd" in extract_amounts("USD 95k")
+    assert "amt:95000:usd" not in extract_amounts("95k")
+    assert "amt:5000000" not in extract_amounts("5m walk")
+    assert "amt:4000" not in extract_amounts("4k monitor")
+    assert extract_amounts("v1.2") == set()
     assert extract_amounts("90,000") == {"amt:90000"}
     assert "amt:90" not in extract_amounts("90,000")
     assert "amt:0" not in extract_amounts("90,000")
@@ -1112,6 +1139,16 @@ def test_honest_control_without_roster_and_deadline_is_false() -> None:
         ]
     )
     assert honest_has_roster_name_and_deadline(gold, no_date) is False
+    capital = PredictedCorpus(
+        days=[
+            PredictedDay(
+                name=gold.days[0].name,
+                segments=[],
+                claims=[_claim("Jordan published Friday")],
+            )
+        ]
+    )
+    assert honest_has_roster_name_and_deadline(gold, capital) is False
 
 
 def test_slot_modal_unknown_and_negated_will() -> None:
@@ -1207,3 +1244,175 @@ def test_claim_covers_and_unsupported_helpers() -> None:
         frames={"f1": Frame("f1", "no roster here"), "f2": Frame("f2", "x")},
     )
     assert _unsupported(day_who, who_pred, mapping, who_pred.claims[0], who) is True
+
+
+def test_pair_claims_one_claim_one_fact_keeps_the_break() -> None:
+    day = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call q4 deck")},
+        facts=[
+            GoldFact("f-call", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact("f-deck", "acme-q4", "what_happened", ("q4", "deck"), {}, ("s1",)),
+        ],
+    )
+    packed = _pred(day, claims=[_claim("joined the pricing call q4 deck")]).days[0]
+    mapping = {"acme-q4": "acme-q4"}
+    packed_pairs = _pair_claims(day, packed, mapping)
+    assert len(packed_pairs) == 1
+    assert packed_pairs[0][1].id == "f-call"
+    two_cover = _pred(
+        day,
+        claims=[
+            _claim("joined the pricing call", claim_id="c1"),
+            _claim("attended the pricing call", claim_id="c2"),
+        ],
+    )
+    two_pairs = _pair_claims(day, two_cover.days[0], mapping)
+    assert len(two_pairs) == 1
+    assert two_pairs[0][0].id == "c1"
+    two_score = score_deals(DealCorpus(days=[day]), two_cover)
+    assert two_score.summary.correct == 1
+    assert two_score.summary.slot_tp["what_happened"] == 1
+
+
+def test_pair_claims_ignores_the_wrong_deal() -> None:
+    day = _day(
+        deals=[Deal("acme-q4", "Acme Q4", "Acme"), Deal("globex-pilot", "Globex", "Globex")],
+        segments=[_seg("s1", "acme-q4", "f1"), _seg("s2", "globex-pilot", "f2")],
+        frames={"f1": Frame("f1", "pricing call"), "f2": Frame("f2", "q4 deck")},
+        facts=[
+            GoldFact("f-acme", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+            GoldFact("f-globex", "globex-pilot", "what_happened", ("q4", "deck"), {}, ("s2",)),
+        ],
+    )
+    gold = DealCorpus(days=[day])
+    wrong = _pred(
+        day,
+        claims=[_claim("joined the pricing call", deal="globex-pilot", evidence="s2")],
+    )
+    score = score_deals(gold, wrong)
+    assert score.summary.correct == 0
+    pred = wrong.days[0]
+    mapping = {"acme-q4": "acme-q4", "globex-pilot": "globex-pilot"}
+    paired = _pair_claims(day, pred, mapping)
+    assert paired == []
+    assert _claim_covers(day, pred, mapping, pred.claims[0], day.facts[0]) is False
+    split = _pred(day, claims=[_claim("joined the pricing call", deal="pred-a")])
+    split.days[0].claims[0].deal = "pred-a"
+    split_map = {"pred-a": "acme-q4", "pred-b": "acme-q4"}
+    assert _pair_claims(day, split.days[0], split_map) == []
+
+
+def test_contradicts_gates_on_slot_and_deal_evidence() -> None:
+    people = [PRIYA, CHEN]
+    what = GoldFact("f1", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))
+    who = GoldFact("f2", "acme-q4", "who_involved", (), {}, ("s1",), person_id="priya-natarajan")
+    day = _day(
+        people=people,
+        facts=[what, who],
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "Priya Natarajan pricing call")},
+    )
+    who_claim = _claim("Priya Chen", slot="who_involved")
+    assert contradicts(who_claim, what, day, "Priya Natarajan pricing call") is False
+    extra = _claim("Priya Natarajan joined the pricing call")
+    assert contradicts(extra, what, day, "pricing call") is True
+    assert contradicts(extra, what, day, "Priya Natarajan pricing call") is False
+
+
+def test_company_cluster_does_not_read_deal_name() -> None:
+    day = _day(
+        deals=[Deal("northwind", "Northwind Renewal", "Globex")],
+        people=[Person("ada", "Ada Lovelace", "Globex")],
+        segments=[_seg("s1", "northwind", "f1", title="Northwind Renewal")],
+        frames={"f1": Frame("f1", "notes")},
+    )
+    assert company_cluster(day.segments[0], day) == NONE
+    titled = replace(day.segments[0], window_title="Globex inbox")
+    assert company_cluster(titled, day) == "globex"
+
+
+def test_deal_term_list_includes_roster_names() -> None:
+    day = _day(
+        facts=[
+            GoldFact(
+                "w",
+                "acme-q4",
+                "who_involved",
+                (),
+                {},
+                ("s1",),
+                person_id="priya-natarajan",
+            ),
+            GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",)),
+        ]
+    )
+    terms = deal_term_list(day, "acme-q4")
+    assert "Priya Natarajan" in terms
+    assert "pricing" in terms
+
+
+def test_stored_pipeline_texts_reads_frame_text() -> None:
+    class _Rows(list[object]):
+        def fetchall(self) -> list[object]:
+            return list(self)
+
+    class _Conn:
+        def execute(self, sql: str, params: object = None) -> object:
+            if "FROM segments" in sql and "ORDER BY started_at" in sql:
+                return []
+            if "FROM segment_frames" in sql:
+                return []
+            if "text_redacted FROM frame_text" in sql:
+                return _Rows([("secret privacybait vault",)])
+            return _Rows([])
+
+    conn = _Conn()
+    texts = _stored_pipeline_texts(conn)
+    assert any("privacybait" in text for text in texts)
+    predicted = collect_predicted_deals(conn, "day_x")
+    assert any("privacybait" in text for text in predicted.stored_texts)
+
+
+def test_validate_privacy_bait_legality_and_completeness() -> None:
+    missing_skip = _day(
+        segments=[_seg("s-bait", NONE, "f-bait", bait=True)],
+        frames={"f-bait": Frame("f-bait", "secret privacybait vault")},
+    )
+    with pytest.raises(ValueError, match="not skipped"):
+        validate_day(missing_skip)
+    with pytest.raises(ValueError, match="not skipped"):
+        privacy_bait_legal(DealCorpus(days=[missing_skip]))
+    leftover = Frame("f-skip", "secret privacybait vault", skipped=True, skip_reason="excluded_app")
+    incomplete = _day(
+        segments=[_seg("s1", "acme-q4", "f1")],
+        frames={"f1": Frame("f1", "pricing call"), "f-skip": leftover},
+        skipped={"f-skip": leftover},
+        facts=[GoldFact("g", "acme-q4", "what_happened", ("pricing", "call"), {}, ("s1",))],
+    )
+    with pytest.raises(ValueError, match="not on a gold segment"):
+        validate_day(incomplete)
+    excluded = Frame("f-ex", "vault", skipped=True, skip_reason="excluded_app")
+    unlabeled = _day(
+        segments=[_seg("s-ex", NONE, "f-ex")],
+        frames={"f-ex": excluded},
+        skipped={"f-ex": excluded},
+    )
+    with pytest.raises(ValueError, match="must set privacy_bait"):
+        validate_day(unlabeled)
+    empty_bait = _day(
+        segments=[
+            GoldSegment(id="s-bait", frame_ids=(), deal=NONE, privacy_bait=True),
+        ]
+    )
+    with pytest.raises(ValueError, match="has no frames"):
+        validate_day(empty_bait)
+
+
+def test_extract_amounts_rejects_units_and_versions() -> None:
+    assert "amt:5000000" not in extract_amounts("5m walk")
+    assert "amt:4000" not in extract_amounts("4k monitor")
+    assert extract_amounts("v1.2") == set()
+    assert "amt:40000" in extract_amounts("40k")
+    assert "amt:95000:usd" in extract_amounts("USD 95k")
+    assert "amt:5000000:usd" in extract_amounts("$5m walk")

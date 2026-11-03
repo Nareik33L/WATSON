@@ -5,6 +5,8 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-03, QA on #47 @089ee2a):** Identical or near-identical claims in the same deal and slot count once before 1:1 pairing. Keyword dump (duplicate-what) is a required negative baseline. §14 / D8 / D10 / D11 unchanged.
+
 **Changelog (2026-11-03, QA on #47 @03e3124):** Per-fact `aliases` may use `date:` / `amount:` keys for a slot value that is not a required term. §14 / D8 / D10 / D11 unchanged.
 
 **Changelog (2026-11-03, QA on #49 @a217ae6):** Each stored summary paragraph carries `deal_id`. Today cards bind blocks from that id, per deal; a count mismatch no longer blanks every card. Legacy rows without paragraph `deal_id` still render. Claimless deals stay empty; fallback-only deals keep their cited text.
@@ -810,6 +812,7 @@ The test **computes every trivial baseline on the actual gold corpus**. The buil
 | Empty summary | no claims | summary < 0.85 |
 | **Keyword dump (over-cap)** | for each gold fact, one claim whose text is the unique OCR tokens of **all** segments of that deal that day, cited to all those segments (always > 24 content tokens). Tests the length cap. | summary < 0.85 |
 | **Keyword dump (within-cap)** | for each deal-day, join that deal's required terms (no verbs or sentence wrapper added) and emit each ≤24-content-token window **in every slot**, cited to that deal's segments. Lists terms without being true claims. | summary < 0.85 |
+| **Keyword dump (duplicate-what)** | for each deal-day, emit each ≤24-content-token window of that deal's required terms **twice** in `what_happened`, as `will <window>` (or `need to <window>`) in `next_step`, and once in `who_involved`. Gold-free: dump windows only, no gold fact pairing. | summary < 0.85 |
 | **Honest summary (positive)** | a hand-written, well-cited correct summary for **each fixture deal** (committed next to the fixture, e.g. `honest_summary.yaml`): full names, deadlines, one claim per gold fact, cites overlapping `evidence_segments`. | summary **≥ 0.85** |
 
 The 12/1/1/1 Acme shape (60 segments, 12 noise, Acme 12/1/1/1, others 8/8/8/9, group-by-company F1 **0.905**, titles containing the roster company) is a **required failing fixture** of the group-by-company check: pytest must load that synthetic gold under `tests/fixtures` and assert group-by-company ≥ 0.85 so the validator is proven to catch it. The committed V1 corpus must then be a different shape that the same checker accepts (every negative baseline < 0.85, honest summary ≥ 0.85).
