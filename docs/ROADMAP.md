@@ -19,7 +19,7 @@ Each release has one question it must answer. Scope that does not help answer th
 5. Evidence-based: every statement W.A.T.S.O.N repeats cites a claim with evidence.
 6. Nothing in a later release weakens a privacy guarantee made in an earlier one.
 7. Personal is bought once and never depends on a server to run or to read its own data.
-8. **8 GB min-spec is the testing laptop for every release** (Kieran, 2026-11-02 21:53 via CoS). W.A.T.S.O.N must complete eval on it without crash or OOM kill. Understand p95 is recorded, not gated. Primary (32 GB) keeps p95 < 20 s, worker+model < 3 GB, consolidation < 15 min. Strict precision ≥ 0.85 on both. 7–9B Q4 models are allowed in V1; the default is the largest model that completes on 8 GB with precision ≥ 0.85 (bake-off, biggest first: `gemma2:9b`, `llama3.1:8b`, `qwen2.5:7b`, then smaller). Baseline until bake-off: `qwen2.5:3b`.
+8. **8 GB min-spec is the testing laptop for every release** (Kieran, 2026-11-02 21:53 via CoS). W.A.T.S.O.N must complete eval on it without crash or OOM kill. Understand p95 and `consolidate_s` are recorded, not gated. Primary (32 GB) keeps p95 < 20 s, worker+model < 3 GB, consolidation < 15 min. Strict precision ≥ 0.85 on both. 7–9B Q4 models are allowed in V1; the default is the largest model that completes on 8 GB with precision ≥ 0.85 (bake-off, biggest first: `gemma2:9b`, `llama3.1:8b`, `qwen2.5:7b`, then smaller). Baseline until bake-off: `qwen2.5:3b`.
 
 ## V1 model bake-off (in POC)
 

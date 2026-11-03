@@ -345,6 +345,50 @@ def test_min_spec_passes_slow_consolidation_and_fails_on_kill() -> None:
     assert "completed_without_kill" in dead["failures"]
 
 
+@pytest.mark.parametrize("metric", ["decisions_precision", "commitments_precision"])
+def test_strict_min_spec_fails_precision_0_84_and_passes_0_85(metric: str) -> None:
+    """§11.2 precision stays a min-spec gate. 0.84 fails; 0.85 passes.
+
+    A mutant that skips decisions/commitments precision for min-spec only
+    (EvalReport.passed, or gate_metrics when profile is min-spec) dies here.
+    """
+    profile_gate = gate_profile(
+        understand_p95_s=120.0,
+        worker_plus_model_peak_bytes=8 * GIB,
+        consolidate_s=10_000.0,
+        completed_without_kill=1.0,
+        profile="min-spec",
+    )
+    assert profile_gate["passed"] is True
+
+    def report_for(value: float) -> EvalReport:
+        metrics = _metrics()
+        metrics[metric] = value
+        return EvalReport(
+            mode="record",
+            runtime="ollama",
+            days=[_day(metrics)],
+            aggregate=metrics,
+            gate=gate_metrics(metrics),
+            profile="min-spec",
+            profile_gate=profile_gate,
+            measure_model=True,
+        )
+
+    miss = report_for(0.84)
+    hit = report_for(0.85)
+    assert miss.profile == "min-spec"
+    assert miss.aggregate[metric] == 0.84
+    assert miss.gate["passed"] is False
+    assert metric in miss.gate["failures"]
+    assert miss.pipeline_passed is True
+    assert miss.passed is False
+    assert hit.aggregate[metric] == 0.85
+    assert hit.gate["passed"] is True
+    assert metric not in (hit.gate.get("failures") or [])
+    assert hit.passed is True
+
+
 def test_primary_still_fails_on_consolidate_s_at_900() -> None:
     under = gate_profile(
         understand_p95_s=10.0,

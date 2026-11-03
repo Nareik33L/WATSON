@@ -398,6 +398,78 @@ def test_eval_cli_strict_exits_1_on_threshold_miss(
     set_key_provider(None)
 
 
+@pytest.mark.parametrize("value,code", [(0.84, 1), (0.85, 0)])
+def test_eval_cli_strict_min_spec_gates_precision(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    value: float,
+    code: int,
+) -> None:
+    """--strict --profile min-spec must still fail at precision 0.84 and pass at 0.85."""
+    from watson.intelligence.eval.run import DayEval, EvalReport
+    from watson.intelligence.eval.thresholds import gate_metrics, gate_profile, load_thresholds
+
+    _eval_key(monkeypatch)
+    metrics = {name: 1.0 for name in load_thresholds()}
+    metrics["unsupported_achievements"] = 0.0
+    metrics["duplicate_observation_rate"] = 0.0
+    metrics["decisions_precision"] = value
+
+    def fake_run_eval(**kwargs: object) -> EvalReport:
+        assert kwargs.get("profile") == "min-spec"
+        out_dir = Path(str(kwargs["out_dir"]))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "report.json").write_text("{}\n", encoding="utf-8")
+        (out_dir / "report.md").write_text("# ok\n", encoding="utf-8")
+        return EvalReport(
+            mode="replay",
+            runtime="replay",
+            days=[
+                DayEval(
+                    name="day_acme_q4",
+                    date="2026-10-31",
+                    metrics=metrics,
+                    derived_first={"summaries": 1},
+                    derived_second={"summaries": 1},
+                    summary_present=True,
+                    identical_counts=True,
+                    narrative_nonempty=True,
+                    citation_count=1,
+                    claims=1,
+                )
+            ],
+            aggregate=metrics,
+            gate=gate_metrics(metrics),
+            profile="min-spec",
+            profile_gate=gate_profile(
+                understand_p95_s=120.0,
+                worker_plus_model_peak_bytes=8 * 1024**3,
+                consolidate_s=10_000.0,
+                completed_without_kill=1.0,
+                profile="min-spec",
+            ),
+        )
+
+    monkeypatch.setattr("watson.intelligence.eval.run.run_eval", fake_run_eval)
+    assert (
+        cli.main(
+            [
+                "eval",
+                "--mode",
+                "replay",
+                "--strict",
+                "--profile",
+                "min-spec",
+                "--out",
+                str(tmp_path / f"strict-min-spec-{value}"),
+            ]
+        )
+        == code
+    )
+    set_key_provider(None)
+
+
 @pytest.mark.parametrize("command", ["run", "models"])
 def test_stub_commands_not_implemented(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main([command]) == 1

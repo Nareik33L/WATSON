@@ -11,6 +11,8 @@
 
 **Changelog (2026-11-02 21:53/21:55 via CoS):** Kieran 2026-11-02 21:53 via CoS: maximise accuracy; default chosen by strict precision ≥ 0.85; 7–8B allowed in V1; min-spec p95 recorded, not gated; min-spec memory gate = completes without crash or kill; primary targets unchanged. **21:55:** the default model is the largest model that runs to completion on the 8 GB Mac with strict precision ≥ 0.85, however slow. Candidates, biggest first: `gemma2:9b` Q4, `llama3.1:8b` Q4, `qwen2.5:7b` Q4; go smaller only if a bigger one crashes or misses 0.85. Code default stays `qwen2.5:3b` until the bake-off winner is sent. Larger models are no longer parked post-POC.
 
+**Changelog (2026-11-03 02:59 via CoS):** min-spec `consolidate_s` is recorded, not gated (timing is not a min-spec issue). Primary still gates consolidation < 15 min. 7–9B / unknown-model timeout preset is 3600 s.
+
 This document keeps the product definition, principles and non-goals of v1.1 unchanged. It revises *how* W.A.T.S.O.N is built. The changes fall into four groups:
 
 1. **Privacy exposure is reduced by an order of magnitude** — frames are deleted minutes after capture rather than at end of day, only the frontmost window is captured by default, and extracted text is itself tiered and expiring.
@@ -547,7 +549,7 @@ Thresholds are targets for the chosen model at M3; they are adjusted with eviden
 
 Per frame: OCR time, VLM time; per day: consolidation time, peak RSS of worker, database growth; capture helper CPU over an hour.
 
-Two hardware profiles, **same default model** on both (§14 #9). Helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled in V1.0; one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day; consolidation < 15 min.
+Two hardware profiles, **same default model** on both (§14 #9). Helper < 2 % CPU average; OCR < 1 s/frame; VLM disabled in V1.0; one model resident at a time; the machine remains usable for normal work while the worker runs; database growth < 20 MB/day; consolidation < 15 min on primary (recorded, not gated on the 8 GB min-spec).
 
 - **Primary** (32 GB target laptop): understanding p95 < 20 s/segment; peak memory (worker plus model server, Darwin `phys_footprint`) < 3 GB; consolidation < 15 min. Unchanged (Kieran 21:53).
 - **Minimum-spec** (8 GB development / testing Mac): understand p95 is **recorded, not gated**. Memory gate is **completed without crash or OOM kill** (every fixture day processed, worker exit 0, no runtime connection loss or kill). Peak worker+model and `consolidate_s` are reported but not gated. Strict precision ≥ 0.85 and the other §11.2 metrics stay gating on both profiles. 7–9B Q4 models are allowed; timeout/num_ctx are per-model (3600 s for 7–9B / unknown models; 300 s for 3B). Engineering headroom (p95 < 30 s, peak < 3.3 GiB) is recorded in `report.json` → `headroom` and does not fail the gate.
