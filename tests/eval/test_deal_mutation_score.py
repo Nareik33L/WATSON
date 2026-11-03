@@ -27,9 +27,17 @@ _RAN = re.compile(r"(\d+) (passed|failed)")
 # QA's remaining survivors first, then the rest of the 78-mutant set.
 MUTANTS: tuple[tuple[str, str, str], ...] = (
     (
-        "collapse-drop-slot",
-        "                and slot == claim.slot\n",
-        "                and False\n",
+        "collapse-ge2",
+        (
+            "            if covered != kept_cover:\n"
+            "                continue\n"
+            "            if not (kept_cited & cited):\n"
+        ),
+        (
+            "            if len(covered) < 2:\n"
+            "                continue\n"
+            "            if not (kept_cited & cited):\n"
+        ),
     ),
     (
         "contradict-evidence-only",
@@ -73,9 +81,13 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
         "    pairs.sort(key=lambda item: (-item[0], item[2]))\n",
     ),
     (
-        "collapse-drop-deal",
-        "                deal == claim.deal\n",
-        "                False\n",
+        "collapse-jaccard",
+        "            if not (kept_cited & cited):\n                continue\n",
+        (
+            "            if not (kept_cited & cited)"
+            " or _token_jaccard(kept_text, claim.text) < 0.7:\n"
+            "                continue\n"
+        ),
     ),
     (
         "align-max",
@@ -84,8 +96,8 @@ MUTANTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "collapse-ignore-best",
-        "            if covered != kept_cover:\n",
-        "            if False and covered != kept_cover:\n",
+        "            if covered != kept_cover:\n                continue\n",
+        "            if False and covered != kept_cover:\n                continue\n",
     ),
     (
         "stored-empty",

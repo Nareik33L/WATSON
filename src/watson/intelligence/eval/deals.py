@@ -1125,12 +1125,13 @@ def baseline_keyword_dump_sliding(
     *,
     width: int = 6,
     stride: int = 2,
+    unique: bool = True,
 ) -> PredictedCorpus:
     """Sliding term windows in what_happened, ``will <window>`` in next_step, window in who."""
     return identity_prediction(
         gold,
         lambda _day, segment: segment.deal,
-        claims_of=lambda day: _sliding_dump_claims(day, width=width, stride=stride),
+        claims_of=lambda day: _sliding_dump_claims(day, width=width, stride=stride, unique=unique),
     )
 
 
@@ -1772,67 +1773,6 @@ def _claim_covered_facts(
     return tuple(fact for fact in day.facts if _claim_covers(day, pred, mapping, claim, fact))
 
 
-def _collapse_duplicate_claims(
-    claims: Sequence[PredictedClaim],
-    day: DayGold,
-    pred: PredictedDay,
-    mapping: dict[str, str],
-    *,
-    matched: Sequence[PredictedClaim] = (),
-    cover_of: dict[str, frozenset[str]] | None = None,
-    cited_of: dict[str, frozenset[str]] | None = None,
-) -> list[PredictedClaim]:
-    """Drop unmatched leftovers that copy a matched claim's covered facts.
-
-    A leftover is a duplicate when it shares deal and slot with a matched
-    claim, its covered-fact set is a subset of that claim's set, and their
-    cited segments overlap. Text and file order are ignored. Claims that
-    cover nothing stay as separate precision misses.
-    """
-    cover_of = cover_of or {}
-    cited_of = cited_of or {}
-    matched_rows: list[tuple[str, str, frozenset[str], frozenset[str]]] = []
-    for claim in matched:
-        covered = cover_of.get(claim.id)
-        cited = cited_of.get(claim.id)
-        if covered is None:
-            covered = frozenset(fact.id for fact in _claim_covered_facts(day, pred, mapping, claim))
-        if cited is None:
-            cited = _claim_cited_segments(day, pred, claim)
-        if not covered or not cited:
-            continue
-        matched_rows.append((claim.deal, claim.slot, covered, cited))
-    matched_ids = {claim.id for claim in matched}
-    out: list[PredictedClaim] = []
-    for claim in claims:
-        if claim.id in matched_ids:
-            out.append(claim)
-            continue
-        covered = cover_of.get(claim.id)
-        cited = cited_of.get(claim.id)
-        if covered is None:
-            covered = frozenset(fact.id for fact in _claim_covered_facts(day, pred, mapping, claim))
-        if cited is None:
-            cited = _claim_cited_segments(day, pred, claim)
-        if not covered or not cited:
-            out.append(claim)
-            continue
-        duplicate = False
-        for deal, slot, kept_cover, kept_cited in matched_rows:
-            if (
-                deal == claim.deal
-                and slot == claim.slot
-                and covered <= kept_cover
-                and kept_cited & cited
-            ):
-                duplicate = True
-                break
-        if duplicate:
-            continue
-        out.append(claim)
-    return out
-
-
 def _maximum_claim_fact_matching(
     claims: Sequence[PredictedClaim],
     cover_of: dict[str, tuple[GoldFact, ...]],
@@ -1931,10 +1871,8 @@ def _matching_representatives(
 ) -> list[PredictedClaim]:
     """Same covered-fact set with overlapping citations counts once.
 
-    Text is ignored for equal cover sets. Nested dump windows (proper subset
-    of covered facts, overlapping citations, token Jaccard ≥ 0.7) also count
-    once. Atomic paraphrases stay, so maximum matching can assign each its
-    own fact. File order is not used.
+    Claim text is ignored. Distinct fact sets stay distinct, so near-identical
+    Priya→Acme and Acme→Priya sentences can both match. File order is not used.
     """
     kept: list[PredictedClaim] = []
     rows: list[tuple[str, str, frozenset[str], frozenset[str], str]] = []
@@ -1949,9 +1887,10 @@ def _matching_representatives(
             if deal != claim.deal or slot != claim.slot:
                 continue
             if covered != kept_cover:
-                if not (covered < kept_cover and _token_jaccard(kept_text, claim.text) >= 0.7):
-                    continue
+                continue
             if not (kept_cited & cited):
+                continue
+            if not kept_text:
                 continue
             duplicate = True
             break
@@ -2386,13 +2325,16 @@ def _sliding_dump_claims(
     *,
     width: int = 6,
     stride: int = 2,
+    unique: bool = True,
 ) -> list[PredictedClaim]:
     """Gold-free sliding windows: what holds the window, next is will-window, who the window."""
     claims: list[PredictedClaim] = []
     for deal in day.deals:
         segs = _deal_segments(day, deal.id)
         evidence = [PredictedEvidence(segment_id=segment.id) for segment in segs]
-        windows = sliding_term_windows(deal_term_list(day, deal.id), width=width, stride=stride)
+        windows = sliding_term_windows(
+            deal_term_list(day, deal.id), width=width, stride=stride, unique=unique
+        )
         for window_index, window in enumerate(windows):
             claims.append(
                 PredictedClaim(

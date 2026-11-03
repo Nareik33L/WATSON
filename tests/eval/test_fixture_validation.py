@@ -160,8 +160,8 @@ def test_negative_summary_baselines_below_gate(gold) -> None:
         "keyword-dump-sliding-6-2": score_deals(
             gold, baseline_keyword_dump_sliding(gold, width=6, stride=2)
         ).summary.accuracy,
-        "keyword-dump-sliding-what": score_deals(
-            gold, baseline_keyword_dump_sliding_what(gold, width=6, stride=2)
+        "keyword-dump-sliding-raw-6-2": score_deals(
+            gold, baseline_keyword_dump_sliding(gold, width=6, stride=2, unique=False)
         ).summary.accuracy,
     }
     for filler in ("please", "still", "revised", "discussed"):
@@ -339,8 +339,10 @@ def test_baseline_score_table(gold) -> None:
             score_deals(gold, baseline_keyword_dump_sliding(gold, width=6, stride=2)).summary,
         ),
         (
-            "keyword-dump-sliding-what",
-            score_deals(gold, baseline_keyword_dump_sliding_what(gold, width=6, stride=2)).summary,
+            "keyword-dump-sliding-raw-6-2",
+            score_deals(
+                gold, baseline_keyword_dump_sliding(gold, width=6, stride=2, unique=False)
+            ).summary,
         ),
         ("honest-summary", score_deals(gold, honest_prediction(gold, DEAL_GOLD)).summary),
         (
@@ -444,36 +446,44 @@ def test_v1_pipeline_overlays_use_fixture_frame_ids() -> None:
 
 
 def test_sliding_6_2_dump_stays_below_gate(gold) -> None:
-    predicted = baseline_keyword_dump_sliding(gold, width=6, stride=2)
-    saw = False
-    for day in predicted.days:
-        what = [claim for claim in day.claims if claim.slot == "what_happened"]
-        nxt = [claim for claim in day.claims if claim.slot == "next_step"]
-        who = [claim for claim in day.claims if claim.slot == "who_involved"]
-        if not what:
-            continue
-        saw = True
-        assert len(what) == len(nxt) == len(who)
-        for claim in nxt:
-            assert claim.text.startswith("will ")
-        for left, right in zip(what, who, strict=True):
-            assert left.text == right.text
-    assert saw
-    score = score_deals(gold, predicted).summary
-    assert score.accuracy < GATE, f"sliding 6/2 summary {score.accuracy:.3f} must be < {GATE}"
+    for unique in (True, False):
+        predicted = baseline_keyword_dump_sliding(gold, width=6, stride=2, unique=unique)
+        saw = False
+        for day in predicted.days:
+            what = [claim for claim in day.claims if claim.slot == "what_happened"]
+            nxt = [claim for claim in day.claims if claim.slot == "next_step"]
+            who = [claim for claim in day.claims if claim.slot == "who_involved"]
+            if not what:
+                continue
+            saw = True
+            assert len(what) == len(nxt) == len(who)
+            for claim in nxt:
+                assert claim.text.startswith("will ")
+            for left, right in zip(what, who, strict=True):
+                assert left.text == right.text
+        assert saw
+        score = score_deals(gold, predicted).summary
+        kind = "unique" if unique else "raw"
+        assert score.accuracy < GATE, (
+            f"sliding 6/2 {kind} summary {score.accuracy:.3f} must be < {GATE}"
+        )
 
 
 def test_sliding_window_nearby_settings_stay_below_gate(gold) -> None:
     scores: list[float] = []
-    for width in (5, 6, 7):
-        for stride in (1, 2, 3):
-            accuracy = score_deals(
-                gold, baseline_keyword_dump_sliding(gold, width=width, stride=stride)
-            ).summary.accuracy
-            scores.append(accuracy)
-            assert accuracy < GATE, (
-                f"sliding width={width} stride={stride} summary {accuracy:.3f} must be < {GATE}"
-            )
+    for unique in (True, False):
+        for width in (5, 6, 7):
+            for stride in (1, 2, 3):
+                accuracy = score_deals(
+                    gold,
+                    baseline_keyword_dump_sliding(gold, width=width, stride=stride, unique=unique),
+                ).summary.accuracy
+                scores.append(accuracy)
+                kind = "unique" if unique else "raw"
+                assert accuracy < GATE, (
+                    f"sliding {kind} width={width} stride={stride} "
+                    f"summary {accuracy:.3f} must be < {GATE}"
+                )
     assert max(scores) < GATE
     assert sliding_term_windows(
         ["pricing", "call", "q4", "deck", "demo", "priya", "send"],
@@ -482,7 +492,7 @@ def test_sliding_window_nearby_settings_stay_below_gate(gold) -> None:
     ) == ["pricing call q4 deck demo priya", "q4 deck demo priya send"]
 
 
-def test_sliding_what_full_next_who_stays_below_gate(gold) -> None:
+def test_sliding_what_full_next_who_shape(gold) -> None:
     predicted = baseline_keyword_dump_sliding_what(gold, width=6, stride=2)
     saw_what = False
     saw_full = False
@@ -501,8 +511,6 @@ def test_sliding_what_full_next_who_stays_below_gate(gold) -> None:
             for left, right in zip(who, nxt, strict=True):
                 assert right.text == f"will {left.text}"
     assert saw_what and saw_full
-    score = score_deals(gold, predicted).summary
-    assert score.accuracy < GATE, f"sliding-what summary {score.accuracy:.3f} must be < {GATE}"
 
 
 def test_padded_duplicate_what_stays_below_gate(gold) -> None:
