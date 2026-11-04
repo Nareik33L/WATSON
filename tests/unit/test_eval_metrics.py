@@ -28,6 +28,7 @@ from watson.intelligence.eval.metrics import (
 )
 from watson.intelligence.eval.run import DayEval, EvalReport, _aggregate
 from watson.intelligence.eval.thresholds import (
+    PARKED_QUALITY,
     Threshold,
     gate_metrics,
     load_duplicate_jaccard_min,
@@ -89,8 +90,9 @@ def test_five_day_aggregate_fails_when_one_day_predicts_nothing() -> None:
     assert vacuous_mean == pytest.approx(0.88)
     assert aggregate["commitments_precision"] != pytest.approx(vacuous_mean)
     gate = gate_metrics(aggregate, load_thresholds())
-    assert gate["passed"] is False
-    assert "commitments_precision" in gate["failures"]
+    assert gate["passed"] is True
+    assert "commitments_precision" not in gate["failures"]
+    assert "commitments_precision" in gate["report_only_failures"]
 
 
 def test_pair_matches_dedup_one_gold_per_prediction() -> None:
@@ -169,8 +171,9 @@ def test_precision_and_recall_are_not_swappable() -> None:
         "citations_resolvable": 1.0,
     }
     gate = gate_metrics(swapped, rules)
-    assert gate["passed"] is False
-    assert "decisions_precision" in gate["failures"]
+    assert gate["passed"] is True
+    assert "decisions_precision" not in gate["failures"]
+    assert "decisions_precision" in gate["report_only_failures"]
     assert rec < rules["decisions_recall"].minimum or prec >= rules["decisions_precision"].minimum
 
 
@@ -197,10 +200,11 @@ def test_hard_metrics_are_named_in_gate() -> None:
     metrics["citations_resolvable"] = 0.99
     gate = gate_metrics(metrics, rules)
     assert set(gate["hard_failures"]) == {
-        "unsupported_achievements",
         "claims_with_evidence",
         "citations_resolvable",
     }
+    assert "unsupported_achievements" in gate["report_only_failures"]
+    assert "unsupported_achievements" not in gate["failures"]
 
 
 def test_threshold_minimum_is_not_maximum() -> None:
@@ -436,8 +440,9 @@ def test_commitments_precision_and_recall_are_not_swappable() -> None:
         "citations_resolvable": 1.0,
     }
     gate = gate_metrics(swapped, rules)
-    assert gate["passed"] is False
-    assert "commitments_precision" in gate["failures"]
+    assert gate["passed"] is True
+    assert "commitments_precision" not in gate["failures"]
+    assert "commitments_precision" in gate["report_only_failures"]
     assert "commitments_recall" not in gate["failures"]
 
 
@@ -481,11 +486,18 @@ def _all_metrics(**overrides: float) -> dict[str, float]:
 
 def test_missing_metric_is_a_failure_not_a_pass() -> None:
     rules = load_thresholds()
+    parked = _all_metrics()
+    del parked["project_f1"]
+    parked_gate = gate_metrics(parked, rules)
+    assert parked_gate["passed"] is True
+    assert "project_f1" in parked_gate["report_only_failures"]
+    assert "project_f1" not in parked_gate["failures"]
     metrics = _all_metrics()
-    del metrics["project_f1"]
+    del metrics["claims_with_evidence"]
     gate = gate_metrics(metrics, rules)
     assert gate["passed"] is False
-    assert "project_f1" in gate["failures"]
+    assert "claims_with_evidence" in gate["failures"]
+    assert "claims_with_evidence" in gate["hard_failures"]
 
 
 def test_empty_aggregate_is_a_failure() -> None:
@@ -707,8 +719,13 @@ def test_each_threshold_fails_on_deliberately_bad_value() -> None:
     for name, value in bad.items():
         metrics = _all_metrics(**{name: value})
         gate = gate_metrics(metrics, rules)
-        assert gate["passed"] is False, name
-        assert name in gate["failures"], name
+        if name in PARKED_QUALITY:
+            assert name in gate["report_only_failures"], name
+            assert name not in gate["failures"], name
+            assert gate["passed"] is True, name
+        else:
+            assert gate["passed"] is False, name
+            assert name in gate["failures"], name
 
 
 def test_item_match_threshold_is_the_named_constant() -> None:

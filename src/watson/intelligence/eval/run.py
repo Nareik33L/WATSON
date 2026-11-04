@@ -16,10 +16,23 @@ from typing import Any
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from watson.config.schema import DEFAULT_SEGMENT_CLOSE_AFTER_SECONDS
+from watson.intelligence.eval.deals import (
+    V1_DEAL_DAYS,
+    PredictedCorpus,
+    PredictedDay,
+    deal_gold_root,
+    deal_score_report,
+    empty_deal_blocks,
+    gold_for_eval_run,
+    load_deal_day,
+    materialize_deal_day,
+    predicted_day_from_collect,
+)
 from watson.intelligence.eval.footprint import FootprintSampler
 from watson.intelligence.eval.recordings import DEFAULT_RECORDINGS, RecordingRuntime
 from watson.intelligence.eval.score import collect_predicted, load_truth, score_day
 from watson.intelligence.eval.thresholds import (
+    deal_quality_passed,
     gate_metrics,
     gate_profile,
     headroom_status,
@@ -81,6 +94,7 @@ class DayEval:
     consolidate_s: float = 0.0
     skipped_understand: int = 0
     error: str | None = None
+    predicted: PredictedDay | None = None
 
     @property
     def narrative_ok(self) -> bool:
@@ -109,6 +123,9 @@ class EvalReport:
     measure_model: bool = False
     completed_without_kill: float = 0.0
     model: str | None = None
+    deal_grouping: dict[str, Any] = field(default_factory=dict)
+    deal_summary: dict[str, Any] = field(default_factory=dict)
+    privacy_fail: bool = False
 
     @property
     def pipeline_passed(self) -> bool:
@@ -137,6 +154,8 @@ class EvalReport:
         if not self.gate.get("passed"):
             return False
         if self.measure_model and not self.profile_gate.get("passed"):
+            return False
+        if not deal_quality_passed(self.deal_grouping, self.deal_summary, self.privacy_fail):
             return False
         return self.pipeline_passed
 
@@ -182,6 +201,19 @@ def build_eval_runtime(
     return RecordingRuntime(path=recordings, inner=bundle.language, mode="record")
 
 
+def eval_fixture_names(mode: str, names: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    """Default record runs add every deal_gold day so Device Ops gets the gate.
+
+    ``day_near_empty`` exists in both lists; record keeps the deal_gold copy
+    (materialized) so cluster/summary calls for that gold day are recorded.
+    """
+    chosen = tuple(names) if names is not None else V1_DAY_FIXTURES
+    if mode == "record" and names is None:
+        pipeline = tuple(name for name in V1_DAY_FIXTURES if name not in V1_DEAL_DAYS)
+        return pipeline + V1_DEAL_DAYS
+    return chosen
+
+
 def run_eval(
     *,
     fixtures_root: Path,
@@ -196,6 +228,7 @@ def run_eval(
     measure_model: bool = False,
     profile: str | None = None,
     now_fn: Callable[[], datetime] | None = None,
+    prefer_deal_gold: bool = False,
 ) -> EvalReport:
     started = time.perf_counter()
     active_profile = select_eval_profile(profile)
@@ -214,7 +247,12 @@ def run_eval(
         )
         runtime = TimingRuntime(runtime, stats)
         for name in names:
-            fixture = fixtures_root / name
+            fixture = _resolve_fixture(
+                name,
+                fixtures_root=fixtures_root,
+                out_dir=out_dir,
+                prefer_deal_gold=prefer_deal_gold,
+            )
             try:
                 days.append(
                     _eval_one(
@@ -251,6 +289,21 @@ def run_eval(
         reset_stats(stats_token)
         scored = [day.metrics for day in days if not day.error and day.metrics]
         aggregate = _aggregate(scored)
+        predicted_days = [
+            day.predicted
+            if day.predicted is not None
+            else PredictedDay(name=day.name, segments=[], claims=[])
+            for day in days
+            if not day.error
+        ]
+        gold = gold_for_eval_run([day.name for day in predicted_days], fixtures_root)
+        if gold.days:
+            deal_grouping, deal_summary, privacy_fail = deal_score_report(
+                gold, PredictedCorpus(days=predicted_days)
+            )
+        else:
+            deal_grouping, deal_summary = empty_deal_blocks()
+            privacy_fail = False
         latency = stats.summary()
         understand = latency.get("understand_segment") if isinstance(latency, dict) else None
         understand_p95 = understand.get("p95_s") if isinstance(understand, dict) else None
@@ -290,6 +343,9 @@ def run_eval(
             ),
             measure_model=measure_model,
             model=recorded_model or None,
+            deal_grouping=deal_grouping,
+            deal_summary=deal_summary,
+            privacy_fail=privacy_fail,
         )
         _write_reports(out_dir, report)
     return report
@@ -311,6 +367,10 @@ def render_markdown(report: EvalReport) -> str:
         f"passed: **{report.passed}**  ",
         f"pipeline_passed: **{report.pipeline_passed}**  ",
         "replay is a pipeline-only gate; quality F1 is measured, not a model claim.",
+        "",
+        f"deal_grouping_accuracy: {(report.deal_grouping or {}).get('accuracy')}  ",
+        f"deal_summary_accuracy: {(report.deal_summary or {}).get('accuracy')}  ",
+        f"privacy_fail: **{report.privacy_fail}**  ",
         "",
         "| Metric | Value |",
         "|---|---:|",
@@ -436,6 +496,7 @@ def _eval_one(
             claims=int(predicted["claims"]),
             consolidate_s=first[1] + second[1],
             skipped_understand=len(skipped),
+            predicted=predicted_day_from_collect(fixture.name, predicted),
         )
     finally:
         conn.close()
@@ -601,6 +662,31 @@ def _format_failure(exc: BaseException) -> str:
     return name
 
 
+def _resolve_fixture(
+    name: str,
+    *,
+    fixtures_root: Path,
+    out_dir: Path,
+    prefer_deal_gold: bool = False,
+) -> Path:
+    """Pipeline fixtures stay in-repo; deal_gold days are materialized under out_dir.
+
+    ``prefer_deal_gold`` (record default) uses the materialized gold copy even
+    when a same-named pipeline day exists (``day_near_empty``). Replay keeps
+    the committed pipeline fixture so recordings still match.
+    """
+    pipeline = fixtures_root / name
+    use_gold = name in V1_DEAL_DAYS and (
+        prefer_deal_gold or not (pipeline / "manifest.json").is_file()
+    )
+    if use_gold:
+        dest = out_dir / "deal_gold" / name
+        if not (dest / "manifest.json").is_file():
+            materialize_deal_day(load_deal_day(deal_gold_root() / name), dest)
+        return dest
+    return pipeline
+
+
 def _failed_day(name: str, exc: BaseException) -> DayEval:
     return DayEval(
         name=name,
@@ -634,6 +720,9 @@ def _write_reports(out_dir: Path, report: EvalReport) -> None:
         "profile_gate": report.profile_gate,
         "headroom": report.headroom,
         "completed_without_kill": report.completed_without_kill,
+        "deal_grouping": report.deal_grouping,
+        "deal_summary": report.deal_summary,
+        "privacy_fail": report.privacy_fail,
         "days": [
             {
                 "name": day.name,

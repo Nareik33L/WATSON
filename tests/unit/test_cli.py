@@ -107,6 +107,74 @@ def test_eval_cli_replays_and_writes_report(
     assert "eval_pipeline_passed: True" in out
     assert captured["mode"] == "replay"
     assert captured["runtime_name"] == "replay"
+    assert captured["names"] == (
+        "day_acme_q4",
+        "day_fragmented_multi",
+        "day_meeting_heavy",
+        "day_sensitive_traps",
+        "day_near_empty",
+    )
+    set_key_provider(None)
+
+
+def test_eval_cli_record_includes_every_deal_gold_day(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from watson.intelligence.eval.deals import V1_DEAL_DAYS
+    from watson.intelligence.eval.run import V1_DAY_FIXTURES, DayEval, EvalReport
+
+    _eval_key(monkeypatch)
+    captured: dict[str, object] = {}
+
+    def fake_run_eval(**kwargs: object) -> EvalReport:
+        captured.update(kwargs)
+        out_dir = Path(str(kwargs["out_dir"]))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "report.json").write_text("{}\n", encoding="utf-8")
+        (out_dir / "report.md").write_text("# ok\n", encoding="utf-8")
+        return EvalReport(
+            mode="record",
+            runtime="ollama",
+            days=[
+                DayEval(
+                    name="day_focused",
+                    date="2026-10-31",
+                    metrics={},
+                    derived_first={},
+                    derived_second={},
+                    summary_present=True,
+                    identical_counts=True,
+                )
+            ],
+            aggregate={},
+            gate={"passed": False, "failures": [], "hard_failures": []},
+        )
+
+    monkeypatch.setattr("watson.intelligence.eval.run.run_eval", fake_run_eval)
+    assert (
+        cli.main(
+            [
+                "eval",
+                "--mode",
+                "record",
+                "--runtime",
+                "ollama",
+                "--strict",
+                "--measure-model",
+                "--out",
+                str(tmp_path / "record"),
+            ]
+        )
+        == 1
+    )
+    names = tuple(captured["names"])  # type: ignore[arg-type]
+    pipeline = tuple(name for name in V1_DAY_FIXTURES if name not in V1_DEAL_DAYS)
+    assert names[: len(pipeline)] == pipeline
+    assert names[len(pipeline) :] == V1_DEAL_DAYS
+    assert set(V1_DEAL_DAYS) <= set(names)
+    assert captured.get("prefer_deal_gold") is True
     set_key_provider(None)
 
 
@@ -399,22 +467,29 @@ def test_eval_cli_strict_exits_1_on_threshold_miss(
 
 
 @pytest.mark.parametrize("value,code", [(0.84, 1), (0.85, 0)])
-def test_eval_cli_strict_min_spec_gates_precision(
+def test_eval_cli_strict_min_spec_gates_deal_accuracy(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     value: float,
     code: int,
 ) -> None:
-    """--strict --profile min-spec must still fail at precision 0.84 and pass at 0.85."""
+    """--strict --profile min-spec fails deal accuracy 0.84 and passes at 0.85."""
     from watson.intelligence.eval.run import DayEval, EvalReport
-    from watson.intelligence.eval.thresholds import gate_metrics, gate_profile, load_thresholds
+    from watson.intelligence.eval.thresholds import (
+        gate_metrics,
+        gate_profile,
+        load_thresholds,
+        passing_deal_blocks,
+    )
 
     _eval_key(monkeypatch)
     metrics = {name: 1.0 for name in load_thresholds()}
     metrics["unsupported_achievements"] = 0.0
     metrics["duplicate_observation_rate"] = 0.0
-    metrics["decisions_precision"] = value
+    metrics["decisions_precision"] = 0.84
+    grouping, summary = passing_deal_blocks()
+    grouping = {**grouping, "accuracy": value}
 
     def fake_run_eval(**kwargs: object) -> EvalReport:
         assert kwargs.get("profile") == "min-spec"
@@ -449,6 +524,8 @@ def test_eval_cli_strict_min_spec_gates_precision(
                 completed_without_kill=1.0,
                 profile="min-spec",
             ),
+            deal_grouping=grouping,
+            deal_summary=summary,
         )
 
     monkeypatch.setattr("watson.intelligence.eval.run.run_eval", fake_run_eval)

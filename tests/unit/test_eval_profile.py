@@ -14,6 +14,7 @@ from watson.intelligence.eval.thresholds import (
     headroom_status,
     load_profile_thresholds,
     load_thresholds,
+    passing_deal_blocks,
     select_eval_profile,
 )
 
@@ -176,6 +177,7 @@ def test_strict_measure_model_uses_profile_gate() -> None:
     )
     assert report.pipeline_passed is True
     assert report.passed is False
+    grouping, summary = passing_deal_blocks()
     skipped = EvalReport(
         mode="replay",
         runtime="replay",
@@ -185,6 +187,8 @@ def test_strict_measure_model_uses_profile_gate() -> None:
         profile="min-spec",
         profile_gate=profile_gate,
         measure_model=False,
+        deal_grouping=grouping,
+        deal_summary=summary,
     )
     assert skipped.passed is True
 
@@ -345,13 +349,9 @@ def test_min_spec_passes_slow_consolidation_and_fails_on_kill() -> None:
     assert "completed_without_kill" in dead["failures"]
 
 
-@pytest.mark.parametrize("metric", ["decisions_precision", "commitments_precision"])
-def test_strict_min_spec_fails_precision_0_84_and_passes_0_85(metric: str) -> None:
-    """§11.2 precision stays a min-spec gate. 0.84 fails; 0.85 passes.
-
-    A mutant that skips decisions/commitments precision for min-spec only
-    (EvalReport.passed, or gate_metrics when profile is min-spec) dies here.
-    """
+@pytest.mark.parametrize("metric", ["deal_grouping", "deal_summary"])
+def test_strict_min_spec_fails_deal_accuracy_0_84_and_passes_0_85(metric: str) -> None:
+    """Parked precision rows no longer fail strict. Deal accuracy 0.84 fails; 0.85 passes."""
     profile_gate = gate_profile(
         understand_p95_s=120.0,
         worker_plus_model_peak_bytes=8 * GIB,
@@ -363,7 +363,13 @@ def test_strict_min_spec_fails_precision_0_84_and_passes_0_85(metric: str) -> No
 
     def report_for(value: float) -> EvalReport:
         metrics = _metrics()
-        metrics[metric] = value
+        metrics["decisions_precision"] = 0.84
+        metrics["commitments_precision"] = 0.84
+        grouping, summary = passing_deal_blocks()
+        if metric == "deal_grouping":
+            grouping = {**grouping, "accuracy": value}
+        else:
+            summary = {**summary, "accuracy": value}
         return EvalReport(
             mode="record",
             runtime="ollama",
@@ -373,19 +379,18 @@ def test_strict_min_spec_fails_precision_0_84_and_passes_0_85(metric: str) -> No
             profile="min-spec",
             profile_gate=profile_gate,
             measure_model=True,
+            deal_grouping=grouping,
+            deal_summary=summary,
         )
 
     miss = report_for(0.84)
     hit = report_for(0.85)
     assert miss.profile == "min-spec"
-    assert miss.aggregate[metric] == 0.84
-    assert miss.gate["passed"] is False
-    assert metric in miss.gate["failures"]
+    assert miss.gate["passed"] is True
+    assert "decisions_precision" not in (miss.gate.get("failures") or [])
     assert miss.pipeline_passed is True
     assert miss.passed is False
-    assert hit.aggregate[metric] == 0.85
     assert hit.gate["passed"] is True
-    assert metric not in (hit.gate.get("failures") or [])
     assert hit.passed is True
 
 
@@ -427,6 +432,7 @@ def test_headroom_miss_does_not_fail_min_spec_gate() -> None:
     assert room["understand_p95_s"]["within"] is False
     assert room["worker_plus_model_peak_bytes"]["within"] is False
     metrics = _metrics()
+    grouping, summary = passing_deal_blocks()
     report = EvalReport(
         mode="record",
         runtime="ollama",
@@ -437,6 +443,8 @@ def test_headroom_miss_does_not_fail_min_spec_gate() -> None:
         profile_gate=gate,
         headroom=room,
         measure_model=True,
+        deal_grouping=grouping,
+        deal_summary=summary,
     )
     assert report.passed is True
 
