@@ -296,7 +296,9 @@ def run_eval(
             for day in days
             if not day.error
         ]
-        gold = gold_for_eval_run([day.name for day in predicted_days], fixtures_root)
+        gold = gold_for_eval_run(
+            [day.name for day in predicted_days], fixtures_root, mode=mode
+        )
         if gold.days:
             deal_grouping, deal_summary, privacy_fail = deal_score_report(
                 gold, PredictedCorpus(days=predicted_days)

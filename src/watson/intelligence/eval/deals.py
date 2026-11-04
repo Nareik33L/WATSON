@@ -1440,16 +1440,24 @@ def predicted_day_from_collect(name: str, collected: dict[str, Any]) -> Predicte
     return PredictedDay(name=name, segments=segments, claims=claims)
 
 
-def gold_for_eval_run(names: Sequence[str], fixtures_root: Path | None = None) -> DealCorpus:
-    """Gold used for the eval deal gate.
+def gold_for_eval_run(
+    names: Sequence[str],
+    fixtures_root: Path | None = None,
+    *,
+    mode: str = "replay",
+) -> DealCorpus:
+    """Gold used for the eval deal gate, resolved per run mode.
 
-    When any ``V1_DEAL_DAYS`` ran, score those against ``deal_gold``. Otherwise
-    score pipeline days against the ``deals.yaml`` overlays so replay can report
-    deal metrics from committed recordings.
+    Replay always scores the pipeline days' ``deals.yaml`` overlays, including
+    ``day_near_empty``'s own overlay — never ``deal_gold/day_near_empty``.
+    Record scores the materialized ``V1_DEAL_DAYS`` gold corpus.
+    Days are returned in canonical list order, including the last name.
     """
     wanted = set(names)
-    deal_names = [name for name in V1_DEAL_DAYS if name in wanted]
-    if deal_names:
+    if mode == "record":
+        deal_names = [name for name in V1_DEAL_DAYS if name in wanted]
+        if not deal_names:
+            return DealCorpus(days=[])
         by_name = {day.name: day for day in load_deal_corpus().days}
         return DealCorpus(days=[by_name[name] for name in deal_names if name in by_name])
     pipeline_names = [name for name in V1_PIPELINE_DAYS if name in wanted]

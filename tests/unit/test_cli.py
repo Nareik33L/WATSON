@@ -466,6 +466,72 @@ def test_eval_cli_strict_exits_1_on_threshold_miss(
     set_key_provider(None)
 
 
+def test_eval_cli_record_without_strict_exits_1_on_deal_miss(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Record mode gates deal metrics even without --strict (docs/eval.md)."""
+    from watson.intelligence.eval.run import DayEval, EvalReport
+    from watson.intelligence.eval.thresholds import (
+        gate_metrics,
+        load_thresholds,
+        passing_deal_blocks,
+    )
+
+    _eval_key(monkeypatch)
+    metrics = {name: 1.0 for name in load_thresholds()}
+    metrics["unsupported_achievements"] = 0.0
+    metrics["duplicate_observation_rate"] = 0.0
+    grouping, summary = passing_deal_blocks()
+    grouping = {**grouping, "accuracy": 0.84}
+
+    def fake_run_eval(**kwargs: object) -> EvalReport:
+        out_dir = Path(str(kwargs["out_dir"]))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "report.json").write_text("{}\n", encoding="utf-8")
+        (out_dir / "report.md").write_text("# ok\n", encoding="utf-8")
+        return EvalReport(
+            mode="record",
+            runtime="ollama",
+            days=[
+                DayEval(
+                    name="day_focused",
+                    date="2026-10-31",
+                    metrics=metrics,
+                    derived_first={"summaries": 1},
+                    derived_second={"summaries": 1},
+                    summary_present=True,
+                    identical_counts=True,
+                    narrative_nonempty=True,
+                    citation_count=1,
+                    claims=1,
+                )
+            ],
+            aggregate=metrics,
+            gate=gate_metrics(metrics),
+            deal_grouping=grouping,
+            deal_summary=summary,
+        )
+
+    monkeypatch.setattr("watson.intelligence.eval.run.run_eval", fake_run_eval)
+    assert (
+        cli.main(
+            [
+                "eval",
+                "--mode",
+                "record",
+                "--runtime",
+                "ollama",
+                "--out",
+                str(tmp_path / "record-deal-miss"),
+            ]
+        )
+        == 1
+    )
+    set_key_provider(None)
+
+
 @pytest.mark.parametrize("value,code", [(0.84, 1), (0.85, 0)])
 def test_eval_cli_strict_min_spec_gates_deal_accuracy(
     data_dir: Path,

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from watson.intelligence.eval.deals import (
     NONE,
+    V1_DEAL_DAYS,
+    V1_PIPELINE_DAYS,
     DayGold,
     DealCorpus,
     Frame,
@@ -13,11 +18,14 @@ from watson.intelligence.eval.deals import (
     PredictedSegment,
     baseline_all_none,
     deal_score_report,
+    empty_deal_blocks,
+    gold_for_eval_run,
     honest_prediction,
     load_deal_corpus,
+    predicted_day_from_collect,
     score_deals,
 )
-from watson.intelligence.eval.run import DayEval, EvalReport
+from watson.intelligence.eval.run import DayEval, EvalReport, _write_reports
 from watson.intelligence.eval.thresholds import (
     DEAL_ACCURACY_MIN,
     deal_quality_passed,
@@ -25,6 +33,9 @@ from watson.intelligence.eval.thresholds import (
     load_thresholds,
     passing_deal_blocks,
 )
+
+REPO = Path(__file__).resolve().parents[2]
+FIXTURES = REPO / "tests" / "fixtures"
 
 
 def _metrics() -> dict[str, float]:
@@ -176,3 +187,105 @@ def test_deal_blocks_omit_titles_ocr_and_prompts() -> None:
     assert "what_happened_recall" in summary
     assert "days" in summary
     assert set(grouping["days"]) == {day.name for day in gold.days}
+
+
+def test_predicted_day_from_collect_carries_frames_and_evidence() -> None:
+    collected = {
+        "segment_deals": [
+            {
+                "segment_id": "seg-1",
+                "deal_id": "deal-a",
+                "frame_ids": ["f-1", "f-2"],
+                "started_at": "2026-10-31T09:00:00Z",
+            }
+        ],
+        "summary_slots": [
+            {"deal_id": "deal-a", "slot": "what_happened", "claim_ids": ["c-1"]}
+        ],
+        "deal_claims": {
+            "c-1": {
+                "text": "Priya emailed Acme",
+                "evidence": [{"frame_id": "f-1", "segment_id": "seg-1"}],
+            }
+        },
+    }
+    day = predicted_day_from_collect("day_acme_q4", collected)
+    assert day.name == "day_acme_q4"
+    assert len(day.segments) == 1
+    assert day.segments[0].id == "seg-1"
+    assert day.segments[0].frame_ids == ("f-1", "f-2")
+    assert day.segments[0].deal == "deal-a"
+    assert day.segments[0].started_at == "2026-10-31T09:00:00Z"
+    assert len(day.claims) == 1
+    assert day.claims[0].id == "c-1"
+    assert day.claims[0].text == "Priya emailed Acme"
+    assert day.claims[0].deal == "deal-a"
+    assert day.claims[0].slot == "what_happened"
+    assert len(day.claims[0].evidence) == 1
+    assert day.claims[0].evidence[0].frame_id == "f-1"
+    assert day.claims[0].evidence[0].segment_id == "seg-1"
+
+
+def test_gold_for_eval_run_returns_all_days_including_last() -> None:
+    replay = gold_for_eval_run(V1_PIPELINE_DAYS, FIXTURES, mode="replay")
+    assert [day.name for day in replay.days] == list(V1_PIPELINE_DAYS)
+    assert replay.days[-1].name == V1_PIPELINE_DAYS[-1]
+    record = gold_for_eval_run(V1_DEAL_DAYS, FIXTURES, mode="record")
+    assert [day.name for day in record.days] == list(V1_DEAL_DAYS)
+    assert record.days[-1].name == V1_DEAL_DAYS[-1]
+
+
+def test_structural_failure_fails_strict_with_passing_deal_metrics() -> None:
+    grouping, summary = passing_deal_blocks()
+    report = _report(grouping=grouping, summary=summary)
+    assert deal_quality_passed(report.deal_grouping, report.deal_summary, False) is True
+    assert report.pipeline_passed is True
+    report.days[0].identical_counts = False
+    assert report.pipeline_passed is False
+    assert report.passed is False
+
+    narrative = _report(grouping=grouping, summary=summary)
+    narrative.days[0].narrative_nonempty = False
+    assert narrative.pipeline_passed is False
+    assert narrative.passed is False
+
+
+def test_empty_deal_blocks_fail_closed() -> None:
+    grouping, summary = empty_deal_blocks()
+    assert grouping["accuracy"] == 0.0
+    assert summary["accuracy"] == 0.0
+    assert grouping["days"] == {}
+    assert summary["days"] == {}
+    assert deal_quality_passed(grouping, summary, False) is False
+    scored = deal_score_report(DealCorpus(days=[]), PredictedCorpus(days=[]))
+    assert scored[0]["accuracy"] == 0.0
+    assert scored[1]["accuracy"] == 0.0
+    assert scored[2] is False
+    report = _report(grouping=scored[0], summary=scored[1], privacy_fail=scored[2])
+    assert report.pipeline_passed is True
+    assert report.passed is False
+
+
+def test_deal_quality_passed_privacy_fail_true_and_report_json(tmp_path: Path) -> None:
+    grouping, summary = passing_deal_blocks()
+    assert deal_quality_passed(grouping, summary, True) is False
+    assert deal_quality_passed(grouping, summary, False) is True
+    report = _report(grouping=grouping, summary=summary, privacy_fail=True)
+    assert report.privacy_fail is True
+    assert report.passed is False
+    _write_reports(tmp_path, report)
+    payload = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert payload["privacy_fail"] is True
+    markdown = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert "privacy_fail: **True**" in markdown
+
+
+def test_deal_quality_passed_missing_or_malformed_blocks() -> None:
+    grouping, summary = passing_deal_blocks()
+    assert deal_quality_passed(None, summary, False) is False
+    assert deal_quality_passed(grouping, None, False) is False
+    assert deal_quality_passed({}, {}, False) is False
+    assert deal_quality_passed({"accuracy": "nope"}, summary, False) is False
+    assert deal_quality_passed(grouping, {"wrong": 1.0}, False) is False
+    assert deal_quality_passed({"accuracy": None}, {"accuracy": 1.0}, False) is False
+    assert deal_quality_passed(grouping, summary, False) is True

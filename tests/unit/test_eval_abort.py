@@ -357,8 +357,8 @@ def test_run_eval_min_spec_fails_deal_accuracy_below_gate(
         return run_eval(
             fixtures_root=FIXTURES,
             names=V1_DEAL_DAYS,
-            mode="replay",
-            runtime_name="replay",
+            mode="record",
+            runtime_name="fake",
             recordings=RECORDINGS,
             out_dir=tmp_path / out_name,
             key=TEST_KEY,
@@ -378,6 +378,37 @@ def test_run_eval_min_spec_fails_deal_accuracy_below_gate(
     assert hit.deal_summary["accuracy"] >= 0.85
     assert hit.pipeline_passed is True
     assert hit.passed is True
+    assert set(hit.deal_grouping["days"]) == set(V1_DEAL_DAYS)
+
+
+def test_no_gold_run_fails_closed_empty_deal_blocks(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """Record of a pipeline-only day scores no deal_gold and closed-fails."""
+    from watson.intelligence.eval import run as run_mod
+
+    def fake_one(fixture: Path, **_kwargs: object) -> DayEval:
+        return _day_with_metrics(fixture.name)
+
+    monkeypatch.setattr(run_mod, "_eval_one", fake_one)
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_acme_q4",),
+        mode="record",
+        runtime_name="fake",
+        recordings=RECORDINGS,
+        out_dir=tmp_path / "no-gold",
+        key=TEST_KEY,
+        prefer_deal_gold=True,
+    )
+    payload = json.loads((tmp_path / "no-gold" / "report.json").read_text(encoding="utf-8"))
+    assert report.deal_grouping["accuracy"] == 0.0
+    assert report.deal_summary["accuracy"] == 0.0
+    assert report.deal_grouping["days"] == {}
+    assert report.pipeline_passed is True
+    assert report.passed is False
+    assert payload["privacy_fail"] is False
+    assert payload["deal_grouping"]["accuracy"] == 0.0
 
 
 def test_run_eval_min_spec_gate_fails_when_runtime_aborts(
