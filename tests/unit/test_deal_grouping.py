@@ -537,6 +537,76 @@ def test_duplicate_observation_index_first_deal_wins(
         conn.close()
 
 
+def test_duplicate_observation_call_claim_cited_only_under_first_deal(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Northwind Renewal",
+                                    "summary": "first",
+                                    "observation_indexes": [1, 2],
+                                },
+                                {
+                                    "title": "Expansion Seats",
+                                    "summary": "duplicate index 2",
+                                    "observation_indexes": [2, 3],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "Invented wrap-up",
+                                    "claim_ids": [],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        narrative = str(
+            conn.execute(
+                "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+                (seeded["day_id"],),
+            ).fetchone()[0]
+        )
+        call_cite = f"[c:{seeded['who']}]"
+        by_title: dict[str, str] = {}
+        for part in narrative.split("## "):
+            title, sep, body = part.partition("\n")
+            if not sep:
+                continue
+            by_title[title.strip()] = body
+        assert "Northwind Renewal" in by_title
+        assert call_cite in by_title["Northwind Renewal"]
+        for title, body in by_title.items():
+            if title != "Northwind Renewal":
+                assert call_cite not in body, f"{call_cite} leaked into {title!r}"
+    finally:
+        conn.close()
+
+
 def test_duplicate_observation_drop_logs_ids_not_titles(tmp_path: Path) -> None:
     confidential = "Project Bluebird acquisition of Contoso (confidential)"
     conn = _open(tmp_path)
