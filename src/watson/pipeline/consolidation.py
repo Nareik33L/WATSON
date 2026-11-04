@@ -113,6 +113,7 @@ _PROMPT_LIST_MAX = 3000
 _UNDERSTAND_FAILED_RE = re.compile(r"understand_failed=\d+")
 _GROUND_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
 _GROUND_OVERLAP_MIN = 0.4
+_ROSTER_CAP = 12
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
 )
@@ -710,11 +711,7 @@ def _replace_derived(
     )
     deal_groups = _group_claims_by_deal(clustering, observations, claims)
     cite_claims = [row for _key, _title, grouped in deal_groups for row in grouped]
-    roster = [
-        str(row["canonical_name"])
-        for row in entities
-        if str(row.get("type") or "") == "person" and str(row.get("canonical_name") or "").strip()
-    ]
+    roster = _day_roster(entities, observations)
     raw_summary = (
         _summarize_day(
             language,
@@ -757,9 +754,9 @@ def _replace_derived(
             stamp=stamp,
         )
         verified = _narrative_from_stored_deals(inserted_deals, buckets, cited, unverified)
-        if not verified.narrative_md.strip() and cite_claims:
-            # Empty body + deal claims scores citations_resolvable 0.
-            verified = _cited_fallback(cite_claims)
+        if not verified.narrative_md.strip() and claims:
+            # Claims with no stored deal group still need a cited body.
+            verified = _cited_fallback(claims)
         if skipped:
             note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
             paragraphs = (note, *verified.paragraphs)
@@ -1016,9 +1013,7 @@ def _insert_deals(
     for index, cluster in enumerate(clustering.deals):
         if _is_none_deal_title(cluster.title):
             continue
-        chosen = _unique_observation_ids(
-            cluster.observation_indexes, obs_ids, assigned_obs, title=cluster.title
-        )
+        chosen = _unique_observation_ids(cluster.observation_indexes, obs_ids, assigned_obs)
         if not chosen:
             continue
         assigned_obs.update(chosen)
@@ -1744,9 +1739,65 @@ def _is_none_deal_title(title: str) -> bool:
     return " ".join(title.casefold().split()) in _NONE_DEAL_TITLES
 
 
+def _day_roster(
+    entities: list[dict[str, Any]],
+    observations: list[dict[str, Any]],
+    *,
+    cap: int = _ROSTER_CAP,
+) -> list[str]:
+    """Person names for the summary prompt: day's people only, never projects."""
+    day_people: set[str] = set()
+    for row in observations:
+        for name in _people_candidates_from_raw(str(row.get("raw_json") or "")):
+            folded = " ".join(name.casefold().split())
+            if folded:
+                day_people.add(folded)
+    names: list[str] = []
+    seen: set[str] = set()
+    for row in entities:
+        if str(row.get("type") or "") != "person":
+            continue
+        name = str(row.get("canonical_name") or "").strip()
+        folded = " ".join(name.casefold().split())
+        if not name or folded in seen:
+            continue
+        if day_people and folded not in day_people:
+            continue
+        seen.add(folded)
+        names.append(name)
+        if len(names) >= cap:
+            break
+    return names
+
+
 def _deal_group_key(index: int, title: str) -> int | str:
     """Identity for a deal cluster. Title is not unique across look-alike deals."""
     return index
+
+
+def _people_candidates_from_raw(raw_json: str) -> list[str]:
+    """Understanding people_candidates on the day's observations."""
+    try:
+        payload = json.loads(raw_json) if raw_json else {}
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    values = payload.get("people_candidates")
+    if not isinstance(values, list):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        name = " ".join(item.split())
+        folded = name.casefold()
+        if not name or folded in seen:
+            continue
+        seen.add(folded)
+        names.append(name)
+    return names
 
 
 def _deal_candidates_from_raw(raw_json: str) -> list[str]:
@@ -1794,9 +1845,7 @@ def _group_claims_by_deal(
     for index, cluster in enumerate(clustering.deals):
         if _is_none_deal_title(cluster.title):
             continue
-        chosen = _unique_observation_ids(
-            cluster.observation_indexes, obs_ids, assigned, title=cluster.title
-        )
+        chosen = _unique_observation_ids(cluster.observation_indexes, obs_ids, assigned)
         if not chosen:
             continue
         assigned.update(chosen)
@@ -1855,10 +1904,7 @@ def _bucket_deal_paragraphs(
         )
         if not verified.paragraphs:
             continue
-        cited_bodies = [body for body in verified.paragraphs if CITATION_RE.search(body)]
-        if not cited_bodies:
-            continue
-        buckets[key].extend(_strip_leading_headings(body) for body in cited_bodies)
+        buckets[key].extend(_strip_leading_headings(body) for body in verified.paragraphs)
         cited_by_key[key].update(verified.claim_ids)
         if para.slot:
             slot_drafts.append((key, para.slot, list(verified.claim_ids)))
@@ -2041,17 +2087,25 @@ def _unique_observation_ids(
     indexes: list[int],
     obs_ids: list[str],
     assigned: set[str],
-    *,
-    title: str,
 ) -> list[str]:
     """First deal wins. Later copies of the same observation index are dropped."""
     picked = _pick_indexes(indexes, obs_ids)
     unique = [item for item in picked if item not in assigned]
-    dropped = len(picked) - len(unique)
-    if dropped:
+    dropped_ids = [item for item in picked if item in assigned]
+    if dropped_ids:
+        dropped_indexes = [
+            int(raw)
+            for raw in indexes
+            if 1 <= int(raw) <= len(obs_ids) and obs_ids[int(raw) - 1] in assigned
+        ]
         log.warning(
             "duplicate observation index dropped",
-            extra={"deal": title, "dropped": dropped, "kept": len(unique)},
+            extra={
+                "dropped_count": len(dropped_ids),
+                "kept_count": len(unique),
+                "dropped_ids": dropped_ids,
+                "dropped_indexes": dropped_indexes,
+            },
         )
     return unique
 
