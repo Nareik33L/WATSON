@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -112,6 +113,7 @@ _PROMPT_LIST_MAX = 3000
 _UNDERSTAND_FAILED_RE = re.compile(r"understand_failed=\d+")
 _GROUND_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
 _GROUND_OVERLAP_MIN = 0.4
+_ROSTER_CAP = 12
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
 )
@@ -124,7 +126,19 @@ _DERIVED_TABLES = (
     "entity_history",
     "daily_summaries",
 )
-_NONE_DEAL_TITLES = frozenset({"none", "n/a", "no deal", "non-deal", "no-deal", "not a deal"})
+_NONE_DEAL_TITLES = frozenset(
+    {
+        "none",
+        "none deal",
+        "n/a",
+        "na",
+        "no deal",
+        "non-deal",
+        "no-deal",
+        "not a deal",
+        "unassigned",
+    }
+)
 
 
 class ConsolidationWait(Exception):
@@ -689,19 +703,22 @@ def _replace_derived(
         if observations
         else ClusteringOutput()
     )
+    entities = _load_entities(conn)
     extract = (
-        _extract_day(language, claims, _load_entities(conn), extract_prompt.text)
+        _extract_day(language, claims, entities, extract_prompt.text)
         if claims
         else DayExtractOutput(entity_deltas=[], decisions=[], commitments=[])
     )
     deal_groups = _group_claims_by_deal(clustering, observations, claims)
     cite_claims = [row for _key, _title, grouped in deal_groups for row in grouped]
+    roster = _day_roster(entities, observations)
     raw_summary = (
         _summarize_day(
             language,
             cite_claims,
             summary_prompt.text,
             deal_groups=deal_groups,
+            roster=roster,
         )
         if deal_groups and cite_claims
         else DailySummaryOutput(paragraphs=[])
@@ -737,6 +754,9 @@ def _replace_derived(
             stamp=stamp,
         )
         verified = _narrative_from_stored_deals(inserted_deals, buckets, cited, unverified)
+        if not verified.narrative_md.strip() and claims:
+            # Claims with no stored deal group still need a cited body.
+            verified = _cited_fallback(claims)
         if skipped:
             note = f"Note: {len(skipped)} segment(s) were excluded after understanding failed."
             paragraphs = (note, *verified.paragraphs)
@@ -856,7 +876,10 @@ def _summarize_day(
     system: str,
     *,
     deal_groups: list[tuple[object, str, list[dict[str, Any]]]] | None = None,
+    roster: Sequence[str] | None = None,
 ) -> DailySummaryOutput:
+    names = [name.strip() for name in (roster or ()) if str(name).strip()]
+    roster_line = "Roster names: " + (", ".join(names) if names else "(none)")
     if deal_groups:
         blocks: list[str] = []
         for _key, title, grouped in deal_groups:
@@ -868,7 +891,7 @@ def _summarize_day(
                 item_max=_SUMMARY_CLAIM_MAX,
                 list_max=_PROMPT_LIST_MAX,
             )
-            blocks.append(f"Deal: {title}\nClaims:\n{lines}")
+            blocks.append(f"Deal: {title}\n{roster_line}\nClaims:\n{lines}")
         claim_block = "\n\n".join(blocks)
     else:
         claim_lines = _trim_numbered(
@@ -876,7 +899,7 @@ def _summarize_day(
             item_max=_SUMMARY_CLAIM_MAX,
             list_max=_PROMPT_LIST_MAX,
         )
-        claim_block = f"Claims:\n{claim_lines}"
+        claim_block = f"{roster_line}\nClaims:\n{claim_lines}"
     messages: list[Message] = [
         {"role": "system", "content": system},
         {
@@ -990,11 +1013,7 @@ def _insert_deals(
     for index, cluster in enumerate(clustering.deals):
         if _is_none_deal_title(cluster.title):
             continue
-        chosen = [
-            item
-            for item in _pick_indexes(cluster.observation_indexes, obs_ids)
-            if item not in assigned_obs
-        ]
+        chosen = _unique_observation_ids(cluster.observation_indexes, obs_ids, assigned_obs)
         if not chosen:
             continue
         assigned_obs.update(chosen)
@@ -1716,12 +1735,69 @@ def _deal_created_at(stamp: str, index: int) -> str:
 
 
 def _is_none_deal_title(title: str) -> bool:
+    """Unassigned cluster titles: strip, casefold, collapse space."""
     return " ".join(title.casefold().split()) in _NONE_DEAL_TITLES
+
+
+def _day_roster(
+    entities: list[dict[str, Any]],
+    observations: list[dict[str, Any]],
+    *,
+    cap: int = _ROSTER_CAP,
+) -> list[str]:
+    """Person names for the summary prompt: day's people only, never projects."""
+    day_people: set[str] = set()
+    for row in observations:
+        for name in _people_candidates_from_raw(str(row.get("raw_json") or "")):
+            folded = " ".join(name.casefold().split())
+            if folded:
+                day_people.add(folded)
+    names: list[str] = []
+    seen: set[str] = set()
+    for row in entities:
+        if str(row.get("type") or "") != "person":
+            continue
+        name = str(row.get("canonical_name") or "").strip()
+        folded = " ".join(name.casefold().split())
+        if not name or folded in seen:
+            continue
+        if day_people and folded not in day_people:
+            continue
+        seen.add(folded)
+        names.append(name)
+        if len(names) >= cap:
+            break
+    return names
 
 
 def _deal_group_key(index: int, title: str) -> int | str:
     """Identity for a deal cluster. Title is not unique across look-alike deals."""
     return index
+
+
+def _people_candidates_from_raw(raw_json: str) -> list[str]:
+    """Understanding people_candidates on the day's observations."""
+    try:
+        payload = json.loads(raw_json) if raw_json else {}
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    values = payload.get("people_candidates")
+    if not isinstance(values, list):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        name = " ".join(item.split())
+        folded = name.casefold()
+        if not name or folded in seen:
+            continue
+        seen.add(folded)
+        names.append(name)
+    return names
 
 
 def _deal_candidates_from_raw(raw_json: str) -> list[str]:
@@ -1769,11 +1845,7 @@ def _group_claims_by_deal(
     for index, cluster in enumerate(clustering.deals):
         if _is_none_deal_title(cluster.title):
             continue
-        chosen = [
-            item
-            for item in _pick_indexes(cluster.observation_indexes, obs_ids)
-            if item not in assigned
-        ]
+        chosen = _unique_observation_ids(cluster.observation_indexes, obs_ids, assigned)
         if not chosen:
             continue
         assigned.update(chosen)
@@ -2009,6 +2081,33 @@ def _pick_indexes(indexes: list[int], items: list[str]) -> list[str]:
                 seen.add(item)
                 chosen.append(item)
     return chosen
+
+
+def _unique_observation_ids(
+    indexes: list[int],
+    obs_ids: list[str],
+    assigned: set[str],
+) -> list[str]:
+    """First deal wins. Later copies of the same observation index are dropped."""
+    picked = _pick_indexes(indexes, obs_ids)
+    unique = [item for item in picked if item not in assigned]
+    dropped_ids = [item for item in picked if item in assigned]
+    if dropped_ids:
+        dropped_indexes = [
+            int(raw)
+            for raw in indexes
+            if 1 <= int(raw) <= len(obs_ids) and obs_ids[int(raw) - 1] in assigned
+        ]
+        log.warning(
+            "duplicate observation index dropped",
+            extra={
+                "dropped_count": len(dropped_ids),
+                "kept_count": len(unique),
+                "dropped_ids": dropped_ids,
+                "dropped_indexes": dropped_indexes,
+            },
+        )
+    return unique
 
 
 def _resolve_adapters(

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import json
+import logging
 from pathlib import Path
+
+import pytest
 
 from tests.unit.test_consolidation import (
     NOW,
     _insert_claim,
+    _insert_entity,
     _insert_frame,
     _insert_observation,
     _insert_segment,
@@ -24,6 +29,7 @@ from watson.pipeline.consolidation import (
     consolidate_working_day,
     derived_counts,
 )
+from watson.privacy.logging import configure_logging
 
 _DEAL_RECORDINGS = {
     "complete": [
@@ -277,6 +283,39 @@ def test_multichannel_observations_assign_one_deal_and_none_stays_none(
         conn.close()
 
 
+@pytest.mark.parametrize(
+    "title",
+    (
+        "none",
+        "None",
+        "NONE",
+        "None Deal",
+        " none deal ",
+        "n/A",
+        "No Deal",
+        "no-deal",
+        "na",
+        "NA",
+        "unassigned",
+        "Unassigned",
+    ),
+)
+def test_none_like_cluster_titles_are_unassigned(title: str) -> None:
+    from watson.pipeline.consolidation import _is_none_deal_title
+
+    assert _is_none_deal_title(title) is True
+
+
+@pytest.mark.parametrize(
+    "title",
+    ("Nonesuch", "N/A Corp", "N/A Logistics", "Nationwide", "None of these"),
+)
+def test_real_deal_titles_are_not_none_aliases(title: str) -> None:
+    from watson.pipeline.consolidation import _is_none_deal_title
+
+    assert _is_none_deal_title(title) is False
+
+
 def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -338,14 +377,383 @@ def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
             (seeded["day_id"],),
         ).fetchone()
         narrative = str(row["narrative_md"])
+        assert narrative.strip()
         assert "## none" not in narrative
         assert "Noise leaked" not in narrative
-        assert f"[c:{seeded['noise_claim']}]" not in narrative
-        assert "Ferry timetable" not in narrative
+        assert f"[c:{seeded['noise_claim']}]" in narrative
+        assert "Ferry timetable" in narrative
         assert not any("Write the daily narrative" in blob for blob in captured)
         sections = json.loads(str(row["sections_json"]))
         assert sections["deals"] == []
         assert sections["slots"] == []
+    finally:
+        conn.close()
+
+
+def test_none_deal_day_writes_cited_fallback_narrative(tmp_path: Path) -> None:
+    from watson.intelligence.eval.score import collect_predicted
+
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "None Deal",
+                                    "summary": "not a deal",
+                                    "observation_indexes": [1, 2, 3, 4],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "Invented wrap-up [c:1].",
+                                    "claim_ids": ["1"],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        assert derived_counts(conn, seeded["day_id"])["deals"] == 0
+        row = conn.execute(
+            "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert narrative.strip()
+        assert "Invented wrap-up" not in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
+        assert f"[c:{seeded['who']}]" in narrative
+        assert f"[c:{seeded['next']}]" in narrative
+        assert f"[c:{seeded['noise_claim']}]" in narrative
+        predicted = collect_predicted(conn, seeded["day_id"])
+        assert predicted["citations_resolvable"] == 1.0
+        assert predicted["narrative_nonempty"] is True
+        assert predicted["deal_titles"] == []
+    finally:
+        conn.close()
+
+
+def test_duplicate_observation_index_first_deal_wins(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Northwind Renewal",
+                                    "summary": "first",
+                                    "observation_indexes": [1, 2],
+                                },
+                                {
+                                    "title": "Expansion Seats",
+                                    "summary": "duplicate index 2",
+                                    "observation_indexes": [2, 3],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "What happened: renewal work [c:1].",
+                                    "claim_ids": ["1"],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        with caplog.at_level("WARNING", logger="watson.pipeline.consolidation"):
+            consolidate_working_day(
+                conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW
+            )
+        titles = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT title FROM deals WHERE working_day_id = ? ORDER BY created_at, id",
+                (seeded["day_id"],),
+            )
+        ]
+        assert "Northwind Renewal" in titles
+        assert "Expansion Seats" in titles
+        by_segment = {
+            str(row[0]): str(row[1] or "")
+            for row in conn.execute(
+                """
+                SELECT s.id, d.title
+                FROM segments s
+                LEFT JOIN deals d ON d.id = s.deal_id
+                WHERE s.working_day_id = ?
+                """,
+                (seeded["day_id"],),
+            )
+        }
+        assert by_segment[seeded["mail"]] == "Northwind Renewal"
+        assert by_segment[seeded["call"]] == "Northwind Renewal"
+        assert by_segment[seeded["doc"]] == "Expansion Seats"
+        assert "duplicate observation index dropped" in caplog.text
+    finally:
+        conn.close()
+
+
+def test_duplicate_observation_call_claim_cited_only_under_first_deal(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Northwind Renewal",
+                                    "summary": "first",
+                                    "observation_indexes": [1, 2],
+                                },
+                                {
+                                    "title": "Expansion Seats",
+                                    "summary": "duplicate index 2",
+                                    "observation_indexes": [2, 3],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "Invented wrap-up",
+                                    "claim_ids": [],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        narrative = str(
+            conn.execute(
+                "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+                (seeded["day_id"],),
+            ).fetchone()[0]
+        )
+        call_cite = f"[c:{seeded['who']}]"
+        by_title: dict[str, str] = {}
+        for part in narrative.split("## "):
+            title, sep, body = part.partition("\n")
+            if not sep:
+                continue
+            by_title[title.strip()] = body
+        assert "Northwind Renewal" in by_title
+        assert call_cite in by_title["Northwind Renewal"]
+        for title, body in by_title.items():
+            if title != "Northwind Renewal":
+                assert call_cite not in body, f"{call_cite} leaked into {title!r}"
+    finally:
+        conn.close()
+
+
+def test_duplicate_observation_drop_logs_ids_not_titles(tmp_path: Path) -> None:
+    confidential = "Project Bluebird acquisition of Contoso (confidential)"
+    conn = _open(tmp_path)
+    watson_log = logging.getLogger("watson")
+    old_handlers = list(watson_log.handlers)
+    old_level = watson_log.level
+    old_propagate = watson_log.propagate
+    buf = io.StringIO()
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": confidential,
+                                    "summary": "first",
+                                    "observation_indexes": [1, 2],
+                                },
+                                {
+                                    "title": f"{confidential} follow-on",
+                                    "summary": "duplicate index 2",
+                                    "observation_indexes": [2, 3],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "What happened: renewal work [c:1].",
+                                    "claim_ids": ["1"],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        configure_logging(level=logging.DEBUG, stream=buf)
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        output = buf.getvalue()
+        assert confidential not in output
+        assert "Bluebird" not in output
+        assert "Contoso" not in output
+        assert "follow-on" not in output
+        logged = False
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            extra = payload.get("extra") or {}
+            assert confidential not in json.dumps(payload)
+            if payload.get("msg") == "duplicate observation index dropped":
+                logged = True
+                assert "deal" not in extra
+                assert extra["dropped_count"] >= 1
+                assert extra["kept_count"] >= 0
+                assert extra["dropped_ids"]
+                assert extra["dropped_indexes"]
+                assert all(isinstance(item, str) for item in extra["dropped_ids"])
+                assert all(isinstance(item, int) for item in extra["dropped_indexes"])
+        assert logged
+    finally:
+        watson_log.handlers.clear()
+        for handler in old_handlers:
+            watson_log.addHandler(handler)
+        watson_log.setLevel(old_level)
+        watson_log.propagate = old_propagate
+        conn.close()
+
+
+def test_uncited_invented_summary_paragraph_is_dropped(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "same opportunity",
+                                    "observation_indexes": [1, 2, 3],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "John and Jane were involved",
+                                    "claim_ids": [],
+                                    "slot": "who_involved",
+                                },
+                                {
+                                    "text": "The deal was completed",
+                                    "claim_ids": [],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": "What happened: Sent the pricing pack [c:1].",
+                                    "claim_ids": ["1"],
+                                    "slot": "what_happened",
+                                },
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert "John and Jane" not in narrative
+        assert "The deal was completed" not in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
     finally:
         conn.close()
 
@@ -428,8 +836,79 @@ def test_clustering_prompt_includes_understanding_deal_candidates(tmp_path: Path
         assert narrative_prompts
         assert "Deal: Acme Q4 proposal" in narrative_prompts[0]
         assert "what happened" in narrative_prompts[0].casefold()
+        assert "Roster names:" in narrative_prompts[0]
+        assert "[c:" in narrative_prompts[0]
     finally:
         conn.close()
+
+
+def test_summary_roster_lists_day_people_not_projects(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        _insert_entity(conn, name="Priya Natarajan", typ="person")
+        _insert_entity(conn, name="Jordan Hale", typ="person")
+        _insert_entity(conn, name="Secret Skunkworks", typ="project")
+        conn.execute(
+            """
+            UPDATE observations
+            SET raw_json = ?
+            WHERE segment_id IN (?, ?, ?)
+            """,
+            (
+                json.dumps(
+                    {
+                        "project_candidates": ["Acme Q4 proposal"],
+                        "people_candidates": ["Priya Natarajan"],
+                    }
+                ),
+                seeded["mail"],
+                seeded["call"],
+                seeded["doc"],
+            ),
+        )
+        conn.commit()
+        captured: list[str] = []
+
+        class CaptureRuntime(FakeRuntime):
+            def complete(self, messages, schema, *, num_predict=None):  # type: ignore[no-untyped-def]
+                captured.append("\n".join(item["content"] for item in messages))
+                return super().complete(messages, schema, num_predict=num_predict)
+
+        runtime = CaptureRuntime(recordings=_DEAL_RECORDINGS)
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        narrative_prompts = [blob for blob in captured if "Write the daily narrative" in blob]
+        assert narrative_prompts
+        prompt = narrative_prompts[0]
+        assert "Roster names:" in prompt
+        assert "Priya Natarajan" in prompt
+        assert "Jordan Hale" not in prompt
+        assert "Secret Skunkworks" not in prompt
+    finally:
+        conn.close()
+
+
+def test_day_roster_scopes_to_day_people_and_caps() -> None:
+    from watson.pipeline.consolidation import _ROSTER_CAP, _day_roster
+
+    entities = [
+        {"type": "person", "canonical_name": "Priya Natarajan"},
+        {"type": "person", "canonical_name": "Jordan Hale"},
+        {"type": "project", "canonical_name": "Secret Skunkworks"},
+    ]
+    observations = [
+        {"raw_json": json.dumps({"people_candidates": ["Priya Natarajan"]})},
+    ]
+    assert _day_roster(entities, observations) == ["Priya Natarajan"]
+
+    many = [{"type": "person", "canonical_name": f"Person {index:02d}"} for index in range(20)]
+    day_names = [row["canonical_name"] for row in many]
+    capped = _day_roster(
+        many,
+        [{"raw_json": json.dumps({"people_candidates": day_names})}],
+    )
+    assert capped == day_names[:_ROSTER_CAP]
+    assert len(capped) == 12
 
 
 def test_eval_collect_predicted_exposes_segment_deals(tmp_path: Path) -> None:

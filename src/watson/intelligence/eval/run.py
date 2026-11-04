@@ -475,6 +475,8 @@ def _eval_one(
             setter(fixture.name, result.date)
         day_id = _day_id(conn, result.date)
         spool = out_dir / "spool"
+        # Second pass is the idempotency rerun (`identical_counts`). Cluster /
+        # extract / summary are issued again on purpose — not a double-record bug.
         first = _eval_consolidate(
             conn, day_id, runtime=runtime, date=result.date, now_fn=now_fn, spool_dir=spool
         )
