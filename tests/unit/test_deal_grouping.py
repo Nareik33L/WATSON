@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tests.unit.test_consolidation import (
     NOW,
     _insert_claim,
@@ -277,6 +279,16 @@ def test_multichannel_observations_assign_one_deal_and_none_stays_none(
         conn.close()
 
 
+@pytest.mark.parametrize(
+    "title",
+    ("none", "None", "NONE", "None Deal", " none deal ", "n/A", "No Deal", "no-deal"),
+)
+def test_none_like_cluster_titles_are_unassigned(title: str) -> None:
+    from watson.pipeline.consolidation import _is_none_deal_title
+
+    assert _is_none_deal_title(title) is True
+
+
 def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -346,6 +358,153 @@ def test_none_titled_cluster_is_not_stored(tmp_path: Path) -> None:
         sections = json.loads(str(row["sections_json"]))
         assert sections["deals"] == []
         assert sections["slots"] == []
+    finally:
+        conn.close()
+
+
+def test_duplicate_observation_index_first_deal_wins(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Northwind Renewal",
+                                    "summary": "first",
+                                    "observation_indexes": [1, 2],
+                                },
+                                {
+                                    "title": "Expansion Seats",
+                                    "summary": "duplicate index 2",
+                                    "observation_indexes": [2, 3],
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "What happened: renewal work [c:1].",
+                                    "claim_ids": ["1"],
+                                    "slot": "what_happened",
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        with caplog.at_level("WARNING", logger="watson.pipeline.consolidation"):
+            consolidate_working_day(
+                conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW
+            )
+        titles = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT title FROM deals WHERE working_day_id = ? ORDER BY created_at, id",
+                (seeded["day_id"],),
+            )
+        ]
+        assert "Northwind Renewal" in titles
+        assert "Expansion Seats" in titles
+        by_segment = {
+            str(row[0]): str(row[1] or "")
+            for row in conn.execute(
+                """
+                SELECT s.id, d.title
+                FROM segments s
+                LEFT JOIN deals d ON d.id = s.deal_id
+                WHERE s.working_day_id = ?
+                """,
+                (seeded["day_id"],),
+            )
+        }
+        assert by_segment[seeded["mail"]] == "Northwind Renewal"
+        assert by_segment[seeded["call"]] == "Northwind Renewal"
+        assert by_segment[seeded["doc"]] == "Expansion Seats"
+        assert "duplicate observation index dropped" in caplog.text
+    finally:
+        conn.close()
+
+
+def test_uncited_invented_summary_paragraph_is_dropped(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings={
+                "complete": [
+                    {
+                        "match": "Cluster these observations",
+                        "response": {
+                            "deals": [
+                                {
+                                    "title": "Acme Q4 proposal",
+                                    "summary": "same opportunity",
+                                    "observation_indexes": [1, 2, 3],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "match": "Extract cross-segment",
+                        "response": {
+                            "entity_deltas": [],
+                            "decisions": [],
+                            "commitments": [],
+                        },
+                    },
+                    {
+                        "match": "Write the daily narrative",
+                        "response": {
+                            "paragraphs": [
+                                {
+                                    "text": "John and Jane were involved",
+                                    "claim_ids": [],
+                                    "slot": "who_involved",
+                                },
+                                {
+                                    "text": "The deal was completed",
+                                    "claim_ids": [],
+                                    "slot": "what_happened",
+                                },
+                                {
+                                    "text": "What happened: Sent the pricing pack [c:1].",
+                                    "claim_ids": ["1"],
+                                    "slot": "what_happened",
+                                },
+                            ]
+                        },
+                    },
+                ]
+            }
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert "John and Jane" not in narrative
+        assert "The deal was completed" not in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
     finally:
         conn.close()
 
@@ -428,6 +587,8 @@ def test_clustering_prompt_includes_understanding_deal_candidates(tmp_path: Path
         assert narrative_prompts
         assert "Deal: Acme Q4 proposal" in narrative_prompts[0]
         assert "what happened" in narrative_prompts[0].casefold()
+        assert "Roster names:" in narrative_prompts[0]
+        assert "[c:" in narrative_prompts[0]
     finally:
         conn.close()
 

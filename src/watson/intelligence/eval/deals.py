@@ -1553,8 +1553,9 @@ def materialize_deal_day(day: DayGold, dest: Path) -> Path:
             seen.add(frame_id)
             frame = day.frames.get(frame_id)
             png_path = day_dir / f"{frame_id}.png"
-            _write_png(png_path)
+            _write_png(png_path, seed=frame_id.encode())
             private = segment.privacy_bait or (frame is not None and frame.skipped)
+            ocr_lines = _ocr_lines(frame.text if frame is not None else "")
             sidecar = {
                 "frame_id": frame_id,
                 "captured_at": segment.started_at or f"{date}T09:00:00Z",
@@ -1568,15 +1569,14 @@ def materialize_deal_day(day: DayGold, dest: Path) -> Path:
                 "ocr": {
                     "lines": [
                         {
-                            "text": (
-                                frame.text.strip() if frame and frame.text.strip() else "empty"
-                            ),
-                            "bbox": [0, 0, 2, 2],
+                            "text": line,
+                            "bbox": [0, index, 2, index + 1],
                             "confidence": 1.0,
                         }
+                        for index, line in enumerate(ocr_lines)
                     ]
                 },
-                "phash": "0123456789abcdef",
+                "phash": hashlib.sha256(frame_id.encode()).hexdigest()[:16],
                 "width": 2,
                 "height": 2,
                 "capture_mode": "fixture",
@@ -1607,12 +1607,40 @@ def materialize_deal_day(day: DayGold, dest: Path) -> Path:
     return dest
 
 
-def _write_png(path: Path, width: int = 2, height: int = 2) -> bytes:
+_OCR_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _ocr_lines(text: str) -> list[str]:
+    """Split gold frame text into OCR lines so understand evidence spans resolve.
+
+    Folded YAML paragraphs are one line; understanding drops claims whose
+    ``line_end`` is past ``len(lines)``. Sentence-split so a typical 1–N cite
+    stays in range.
+    """
+    chunks = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    if not chunks:
+        return ["empty"]
+    lines: list[str] = []
+    for chunk in chunks:
+        parts = [part.strip() for part in _OCR_SENTENCE.split(chunk) if part.strip()]
+        lines.extend(parts or [chunk])
+    return lines
+
+
+def _write_png(path: Path, width: int = 2, height: int = 2, *, seed: bytes = b"") -> bytes:
     def chunk(tag: bytes, data: bytes) -> bytes:
         crc = zlib.crc32(tag + data) & 0xFFFFFFFF
         return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
 
-    raw = b"".join(b"\x00" + (b"\x00\x00\x00" * width) for _ in range(height))
+    fill = hashlib.sha256(seed or path.name.encode()).digest()
+    needed = width * height * 3
+    pixels = (fill * ((needed // len(fill)) + 1))[:needed]
+    rows = []
+    offset = 0
+    for _ in range(height):
+        rows.append(b"\x00" + pixels[offset : offset + width * 3])
+        offset += width * 3
+    raw = b"".join(rows)
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     png = (
         b"\x89PNG\r\n\x1a\n"

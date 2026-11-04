@@ -47,6 +47,19 @@ def test_strips_missing_and_foreign_citations() -> None:
     assert MISSING not in unverified_ids
 
 
+def test_invented_uncited_paragraph_is_dropped() -> None:
+    paragraphs = [
+        {"text": "John and Jane were involved", "claim_ids": []},
+        {"text": "The deal was completed", "claim_ids": []},
+        {"text": f"Cited work landed [c:{DAY_A}].", "claim_ids": [DAY_A]},
+    ]
+    verified = verify_narrative(paragraphs, list(CLAIMS), fallback=False)
+    assert "John and Jane" not in verified.narrative_md
+    assert "The deal was completed" not in verified.narrative_md
+    assert f"[c:{DAY_A}]" in verified.narrative_md
+    assert citations_resolvable(verified.narrative_md, {DAY_A, CLAIMS[1]["id"]}) is True
+
+
 def test_strips_uncited_sentences() -> None:
     paragraphs = [
         {
