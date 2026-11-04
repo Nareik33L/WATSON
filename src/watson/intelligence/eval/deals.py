@@ -7,9 +7,13 @@ contradictions, and citation-failure-only unsupported. See ``docs/eval.md``.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
+import struct
 import uuid
+import zlib
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -1357,8 +1361,8 @@ def stable_id(day_name: str, local_id: str | None, kind: str) -> str:
 def collect_predicted_deals(conn: Any, day_name: str) -> PredictedDay:
     """Read replay/pipeline segments and stored text for deal scoring.
 
-    The pipeline has no deal column yet, so every predicted cluster is ``none``.
-    Alignment still works: gold and predicted share fixture frame ids.
+    Ingest-only callers still see ``none`` until consolidation assigns
+    ``segments.deal_id``. Alignment uses shared fixture frame ids.
     """
     segments: list[PredictedSegment] = []
     for row in conn.execute("SELECT id, started_at FROM segments ORDER BY started_at, id"):
@@ -1387,6 +1391,237 @@ def collect_predicted_deals(conn: Any, day_name: str) -> PredictedDay:
         claims=[],
         stored_texts=_stored_pipeline_texts(conn),
     )
+
+
+def predicted_day_from_collect(name: str, collected: dict[str, Any]) -> PredictedDay:
+    """Build a scorable day from ``collect_predicted`` deal fields.
+
+    Uses ``segment_deals`` (ids, cluster, frames) and ``summary_slots`` plus
+    ``deal_claims`` (claim text and evidence ids). Never requires OCR or titles.
+    """
+    segments = [
+        PredictedSegment(
+            id=str(row.get("segment_id") or ""),
+            frame_ids=tuple(str(frame_id) for frame_id in (row.get("frame_ids") or ())),
+            deal=str(row.get("deal_id") or NONE),
+            started_at=str(row.get("started_at") or ""),
+        )
+        for row in collected.get("segment_deals") or []
+        if str(row.get("segment_id") or "")
+    ]
+    claim_info = collected.get("deal_claims") or {}
+    claims: list[PredictedClaim] = []
+    for slot in collected.get("summary_slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        deal_id = str(slot.get("deal_id") or "")
+        slot_name = str(slot.get("slot") or "")
+        for cid in slot.get("claim_ids") or []:
+            info = claim_info.get(str(cid)) or {}
+            if not isinstance(info, dict):
+                info = {}
+            evidence = [
+                PredictedEvidence(
+                    frame_id=(str(item["frame_id"]) if item.get("frame_id") else None),
+                    segment_id=(str(item["segment_id"]) if item.get("segment_id") else None),
+                )
+                for item in (info.get("evidence") or [])
+                if isinstance(item, dict)
+            ]
+            claims.append(
+                PredictedClaim(
+                    id=str(cid),
+                    deal=deal_id,
+                    slot=slot_name,
+                    text=str(info.get("text") or ""),
+                    evidence=evidence,
+                )
+            )
+    return PredictedDay(name=name, segments=segments, claims=claims)
+
+
+def gold_for_eval_run(
+    names: Sequence[str],
+    fixtures_root: Path | None = None,
+    *,
+    mode: str = "replay",
+) -> DealCorpus:
+    """Gold used for the eval deal gate, resolved per run mode.
+
+    Replay always scores the pipeline days' ``deals.yaml`` overlays, including
+    ``day_near_empty``'s own overlay — never ``deal_gold/day_near_empty``.
+    Record scores the materialized ``V1_DEAL_DAYS`` gold corpus.
+    Days are returned in canonical list order, including the last name.
+    """
+    wanted = set(names)
+    if mode == "record":
+        deal_names = [name for name in V1_DEAL_DAYS if name in wanted]
+        if not deal_names:
+            return DealCorpus(days=[])
+        by_name = {day.name: day for day in load_deal_corpus().days}
+        return DealCorpus(days=[by_name[name] for name in deal_names if name in by_name])
+    pipeline_names = [name for name in V1_PIPELINE_DAYS if name in wanted]
+    if not pipeline_names:
+        return DealCorpus(days=[])
+    overlays = load_v1_deal_corpus(fixtures_root)
+    by_name = {day.name: day for day in overlays.days}
+    return DealCorpus(days=[by_name[name] for name in pipeline_names if name in by_name])
+
+
+def grouping_report(score: GroupingScore) -> dict[str, Any]:
+    """Ids/counts/metrics only — never titles or OCR."""
+    return {
+        "accuracy": score.accuracy,
+        "assignment_accuracy": score.assignment_accuracy,
+        "deal_segment_recall": score.deal_segment_recall,
+        "pairwise_precision": score.pairwise_precision,
+        "pairwise_recall": score.pairwise_recall,
+        "pairwise_f1": score.pairwise_f1,
+        "correct": score.correct,
+        "segments": score.segments,
+        "deal_segments": score.deal_segments,
+        "deal_recalled": score.deal_recalled,
+        "pairwise_tp": score.pairwise_tp,
+        "pairwise_fp": score.pairwise_fp,
+        "pairwise_fn": score.pairwise_fn,
+    }
+
+
+def summary_report(score: SummaryScore) -> dict[str, Any]:
+    """Ids/counts/metrics only — never titles, prompts, or OCR."""
+    return {
+        "accuracy": score.accuracy,
+        "claim_precision": score.precision,
+        "what_happened_recall": score.what_happened_recall,
+        "next_step_recall": score.next_step_recall,
+        "who_involved_recall": score.who_involved_recall,
+        "unsupported": score.unsupported,
+        "correct": score.correct,
+        "claims": score.claims,
+        "slot_tp": dict(score.slot_tp),
+        "slot_gold": dict(score.slot_gold),
+    }
+
+
+def empty_deal_blocks() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Closed-fail deal blocks when no gold day was scored."""
+    grouping = grouping_report(GroupingScore(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0))
+    zeros = {slot: 0 for slot in SLOTS}
+    summary = summary_report(SummaryScore(0.0, 0.0, 0.0, 0.0, 0, 0.0, 0, 0, zeros, zeros))
+    grouping["days"] = {}
+    summary["days"] = {}
+    return grouping, summary
+
+
+def deal_score_report(
+    gold: DealCorpus, predicted: PredictedCorpus
+) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Pooled gate plus per-day component blocks."""
+    if not gold.days:
+        grouping, summary = empty_deal_blocks()
+        return grouping, summary, False
+    wanted = {day.name for day in gold.days}
+    pred = PredictedCorpus(days=[day for day in predicted.days if day.name in wanted])
+    pooled = score_deals(gold, pred)
+    pred_by_name = {day.name: day for day in pred.days}
+    grouping_days: dict[str, dict[str, Any]] = {}
+    summary_days: dict[str, dict[str, Any]] = {}
+    for day in gold.days:
+        one_pred = pred_by_name.get(day.name) or PredictedDay(name=day.name, segments=[], claims=[])
+        one = score_deals(DealCorpus(days=[day]), PredictedCorpus(days=[one_pred]))
+        grouping_days[day.name] = grouping_report(one.grouping)
+        summary_days[day.name] = summary_report(one.summary)
+    grouping = grouping_report(pooled.grouping)
+    summary = summary_report(pooled.summary)
+    grouping["days"] = grouping_days
+    summary["days"] = summary_days
+    return grouping, summary, pooled.privacy_fail
+
+
+def materialize_deal_day(day: DayGold, dest: Path) -> Path:
+    """Write PNG + sidecar + manifest so a deal-gold day can be replayed."""
+    dest.mkdir(parents=True, exist_ok=True)
+    date = day.date or "2026-10-31"
+    day_dir = dest / "frames" / date
+    day_dir.mkdir(parents=True, exist_ok=True)
+    entries: dict[str, dict[str, object]] = {}
+    seen: set[str] = set()
+    for segment in day.segments:
+        for frame_id in segment.frame_ids:
+            if frame_id in seen:
+                continue
+            seen.add(frame_id)
+            frame = day.frames.get(frame_id)
+            png_path = day_dir / f"{frame_id}.png"
+            _write_png(png_path)
+            private = segment.privacy_bait or (frame is not None and frame.skipped)
+            sidecar = {
+                "frame_id": frame_id,
+                "captured_at": segment.started_at or f"{date}T09:00:00Z",
+                "display_id": 1,
+                "bundle_id": segment.bundle_id or "com.lumen.mail",
+                "app_name": "Passwords" if private else "Lumen Mail",
+                "window_title": segment.window_title or "Inbox",
+                "window_id": 1,
+                "is_private_browsing": private,
+                "url": None,
+                "ocr": {
+                    "lines": [
+                        {
+                            "text": (
+                                frame.text.strip() if frame and frame.text.strip() else "empty"
+                            ),
+                            "bbox": [0, 0, 2, 2],
+                            "confidence": 1.0,
+                        }
+                    ]
+                },
+                "phash": "0123456789abcdef",
+                "width": 2,
+                "height": 2,
+                "capture_mode": "fixture",
+            }
+            if private:
+                sidecar["bundle_id"] = (
+                    frame.bundle_id
+                    if frame and frame.bundle_id
+                    else (segment.bundle_id or "com.apple.Passwords")
+                )
+            (day_dir / f"{frame_id}.json").write_text(
+                json.dumps(sidecar, indent=2) + "\n", encoding="utf-8"
+            )
+            rel = f"frames/{date}/{frame_id}.png"
+            entries[frame_id] = {
+                "png": rel,
+                "sha256": hashlib.sha256(png_path.read_bytes()).hexdigest(),
+                "width": 2,
+                "height": 2,
+            }
+    manifest = {"name": day.name, "date": date, "seed": 1, "frames": entries}
+    (dest / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    source = deal_gold_root() / day.name
+    for extra in ("truth.yaml", "honest_summary.yaml"):
+        src = source / extra
+        if src.is_file() and not (dest / extra).is_file():
+            (dest / extra).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    return dest
+
+
+def _write_png(path: Path, width: int = 2, height: int = 2) -> bytes:
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    raw = b"".join(b"\x00" + (b"\x00\x00\x00" * width) for _ in range(height))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
+    path.write_bytes(png)
+    return png
 
 
 def honest_has_roster_name_and_deadline(gold: DealCorpus, predicted: PredictedCorpus) -> bool:
@@ -2796,6 +3031,7 @@ __all__ = [
     "NONE",
     "SLOTS",
     "V1_DEAL_DAYS",
+    "V1_PIPELINE_DAYS",
     "DealCorpus",
     "DealScore",
     "DayGold",
@@ -2842,6 +3078,13 @@ __all__ = [
     "baseline_one_deal_per_segment",
     "collect_predicted_deals",
     "company_cluster",
+    "deal_score_report",
+    "empty_deal_blocks",
+    "gold_for_eval_run",
+    "grouping_report",
+    "materialize_deal_day",
+    "predicted_day_from_collect",
+    "summary_report",
     "content_tokens",
     "contradicts",
     "corpus_guidance",

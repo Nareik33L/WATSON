@@ -285,7 +285,7 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 
 def _cmd_eval(args: argparse.Namespace) -> int:
     from watson.intelligence.eval.recordings import DEFAULT_RECORDINGS
-    from watson.intelligence.eval.run import V1_DAY_FIXTURES, run_eval
+    from watson.intelligence.eval.run import eval_fixture_names, run_eval
 
     config = load_config()
     if args.llm_model:
@@ -301,7 +301,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
         if args.fixtures is not None
         else Path(__file__).resolve().parents[2] / "tests" / "fixtures"
     )
-    names = tuple(args.only) if args.only else V1_DAY_FIXTURES
+    names = eval_fixture_names(mode, tuple(args.only) if args.only else None)
     out_dir = args.out if args.out is not None else config.data_dir / "eval"
     if args.recordings is not None:
         recordings = args.recordings
@@ -324,6 +324,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
         rss_pids=tuple(args.rss_pid or ()),
         measure_model=bool(args.measure_model),
         profile=None if args.profile == "auto" else str(args.profile),
+        prefer_deal_gold=mode == "record",
     )
     print(f"eval_mode: {report.mode}")
     print(f"eval_runtime: {report.runtime}")

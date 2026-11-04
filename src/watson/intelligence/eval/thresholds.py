@@ -11,8 +11,25 @@ from typing import Any
 
 THRESHOLDS_PATH = Path(__file__).with_name("thresholds.json")
 
+# Parked Revision 2 quality rows. Still measured; they do not fail --strict.
+PARKED_QUALITY = frozenset(
+    {
+        "project_f1",
+        "people_f1",
+        "completed_accuracy",
+        "decisions_recall",
+        "decisions_precision",
+        "commitments_recall",
+        "commitments_precision",
+        "unsupported_achievements",
+        "duplicate_observation_rate",
+        "noise_non_work_rate",
+    }
+)
+# Measured zero for the parked unsupported-achievements row. Not a hard gate.
 HARD_ZERO = frozenset({"unsupported_achievements"})
 HARD_HUNDRED = frozenset({"claims_with_evidence", "citations_resolvable"})
+DEAL_ACCURACY_MIN = 0.85
 PROFILE_KEY = "profiles"
 # Auto-select min-spec below 16 GiB so the 8 GB dev Mac is included; 16 GB+ is primary.
 MIN_SPEC_RAM_LIMIT_BYTES = 16 * 1024**3
@@ -221,40 +238,104 @@ def headroom_status(
     }
 
 
+def deal_quality_passed(
+    grouping: dict[str, Any] | None,
+    summary: dict[str, Any] | None,
+    privacy_fail: bool,
+) -> bool:
+    """§11.2 deal gate: both accuracies ≥ 0.85 and no privacy leak."""
+    if privacy_fail:
+        return False
+    if not grouping or not summary:
+        return False
+    try:
+        grouping_acc = float(grouping["accuracy"])
+        summary_acc = float(summary["accuracy"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return grouping_acc >= DEAL_ACCURACY_MIN and summary_acc >= DEAL_ACCURACY_MIN
+
+
+def passing_deal_blocks() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Structural-ok deal blocks for tests that are not scoring deals."""
+    grouping = {
+        "accuracy": 1.0,
+        "assignment_accuracy": 1.0,
+        "deal_segment_recall": 1.0,
+        "pairwise_precision": 1.0,
+        "pairwise_recall": 1.0,
+        "pairwise_f1": 1.0,
+        "correct": 0,
+        "segments": 0,
+        "deal_segments": 0,
+        "deal_recalled": 0,
+        "pairwise_tp": 0,
+        "pairwise_fp": 0,
+        "pairwise_fn": 0,
+        "days": {},
+    }
+    summary = {
+        "accuracy": 1.0,
+        "claim_precision": 1.0,
+        "what_happened_recall": 1.0,
+        "next_step_recall": 1.0,
+        "who_involved_recall": 1.0,
+        "unsupported": 0,
+        "correct": 0,
+        "claims": 0,
+        "slot_tp": {},
+        "slot_gold": {},
+        "days": {},
+    }
+    return grouping, summary
+
+
 def gate_metrics(
     metrics: dict[str, float], thresholds: dict[str, Threshold] | None = None
 ) -> dict[str, Any]:
     """Compare named metrics to §11.2 thresholds. Keys are never swapped.
 
-    A missing metric or an empty aggregate is a failure (undefined → fail).
+    Parked quality rows are measured and listed under ``report_only_failures``.
+    Only structural hard 100% metrics fail ``passed``. An empty aggregate is a
+    failure (undefined → fail).
     """
     rules = thresholds if thresholds is not None else load_thresholds()
     failures: list[str] = []
     hard_failures: list[str] = []
+    report_only_failures: list[str] = []
     if not metrics:
         names = list(rules)
-        hard = [name for name in names if name in HARD_ZERO or name in HARD_HUNDRED]
+        hard = [name for name in names if name in HARD_HUNDRED]
         return {
             "passed": False,
-            "failures": ["empty_aggregate", *names],
+            "failures": ["empty_aggregate", *hard],
             "hard_failures": hard,
+            "report_only_failures": [name for name in names if name in PARKED_QUALITY],
         }
     for name, rule in rules.items():
+        parked = name in PARKED_QUALITY
         if name not in metrics:
-            failures.append(name)
-            if name in HARD_ZERO or name in HARD_HUNDRED:
-                hard_failures.append(name)
+            if parked:
+                report_only_failures.append(name)
+            else:
+                failures.append(name)
+                if name in HARD_HUNDRED:
+                    hard_failures.append(name)
             continue
         value = float(metrics[name])
         if rule.allows(value):
             continue
+        if parked:
+            report_only_failures.append(name)
+            continue
         failures.append(name)
-        if name in HARD_ZERO or name in HARD_HUNDRED:
+        if name in HARD_HUNDRED:
             hard_failures.append(name)
     return {
         "passed": not failures,
         "failures": failures,
         "hard_failures": hard_failures,
+        "report_only_failures": report_only_failures,
     }
 
 

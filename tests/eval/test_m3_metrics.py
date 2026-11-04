@@ -55,6 +55,13 @@ def test_m3_replay_meets_section_11_2_and_acceptance(tmp_path: Path, key_provide
             assert day.metrics["citations_resolvable"] == 1.0
     assert report.pipeline_passed, f"pipeline: {report.gate} {report.aggregate}"
     assert not report.gate["hard_failures"], report.gate["hard_failures"]
+    assert "deal_grouping" in payload
+    assert "deal_summary" in payload
+    assert "accuracy" in payload["deal_grouping"]
+    assert "accuracy" in payload["deal_summary"]
+    assert "days" in payload["deal_grouping"]
+    assert "days" in payload["deal_summary"]
+    assert "privacy_fail" in payload
     for name in HARD_ZERO:
         assert report.aggregate[name] == 0.0
     for name in HARD_HUNDRED:
@@ -162,9 +169,11 @@ def test_bad_replay_recordings_fail_hard_thresholds(tmp_path: Path, key_provider
     # Persist-time evidence guard drops the invented achievement; the gate
     # still fails on the hallucinated Ghost Project (and other soft metrics).
     assert report.aggregate["unsupported_achievements"] == 0.0
-    assert report.gate["passed"] is False
+    assert "project_f1" in (report.gate.get("report_only_failures") or [])
+    assert "project_f1" not in (report.gate.get("failures") or [])
+    assert report.deal_grouping
+    assert report.deal_summary
     assert report.passed is False
-    assert "project_f1" in report.gate["failures"]
 
 
 def test_eval_refuses_implicit_fake_in_replay() -> None:

@@ -9,6 +9,12 @@ from pathlib import Path
 import pytest
 
 from tests.replay_support import TEST_KEY
+from watson.intelligence.eval.deals import (
+    V1_DEAL_DAYS,
+    baseline_all_none,
+    honest_prediction,
+    load_deal_corpus,
+)
 from watson.intelligence.eval.recordings import RecordingRuntime, prompt_hash
 from watson.intelligence.eval.run import DayEval, run_eval
 from watson.intelligence.eval.thresholds import load_thresholds
@@ -224,6 +230,9 @@ def test_eval_report_files_do_not_contain_ocr_sentinel(
         "profile_gate",
         "headroom",
         "completed_without_kill",
+        "deal_grouping",
+        "deal_summary",
+        "privacy_fail",
     }
     assert set(payload) <= allowed
     needle = P1_SENTINEL.encode("utf-8")
@@ -326,43 +335,80 @@ def _day_with_metrics(name: str, **overrides: float) -> DayEval:
     )
 
 
-@pytest.mark.parametrize("metric", ["decisions_precision", "commitments_precision"])
-def test_run_eval_min_spec_fails_precision_0_84_and_passes_0_85(
-    tmp_path: Path, key_provider: object, monkeypatch: object, metric: str
+def test_run_eval_min_spec_fails_deal_accuracy_below_gate(
+    tmp_path: Path, key_provider: object, monkeypatch: object
 ) -> None:
-    """A mutant that skips §11.2 precision when profile is min-spec must fail."""
+    """Parked precision misses stay report-only; deal accuracy gates --strict/passed."""
     from watson.intelligence.eval import run as run_mod
 
-    def run_with(value: float) -> object:
+    gold = load_deal_corpus()
+    honest = {day.name: day for day in honest_prediction(gold).days}
+    none = {day.name: day for day in baseline_all_none(gold).days}
+
+    def run_with(source: dict[str, object], out_name: str) -> object:
         def fake_one(fixture: Path, **_kwargs: object) -> DayEval:
-            return _day_with_metrics(fixture.name, **{metric: value})
+            day = _day_with_metrics(fixture.name, decisions_precision=0.84)
+            predicted = source.get(fixture.name)
+            if predicted is not None:
+                day.predicted = predicted  # type: ignore[attr-defined]
+            return day
 
         monkeypatch.setattr(run_mod, "_eval_one", fake_one)
         return run_eval(
             fixtures_root=FIXTURES,
-            names=("day_near_empty",),
-            mode="replay",
-            runtime_name="replay",
+            names=V1_DEAL_DAYS,
+            mode="record",
+            runtime_name="fake",
             recordings=RECORDINGS,
-            out_dir=tmp_path / f"min-spec-{metric}-{value}",
+            out_dir=tmp_path / out_name,
             key=TEST_KEY,
             profile="min-spec",
+            prefer_deal_gold=True,
         )
 
-    miss = run_with(0.84)
-    hit = run_with(0.85)
+    miss = run_with(none, "deal-miss")
+    hit = run_with(honest, "deal-hit")
     assert miss.profile == "min-spec"
-    assert miss.aggregate[metric] == 0.84
-    assert miss.gate["passed"] is False
-    assert metric in miss.gate["failures"]
+    assert miss.aggregate["decisions_precision"] == pytest.approx(0.84)
+    assert "decisions_precision" not in (miss.gate.get("failures") or [])
     assert miss.pipeline_passed is True
+    assert miss.deal_grouping["accuracy"] < 0.85
     assert miss.passed is False
-    assert hit.profile == "min-spec"
-    assert hit.aggregate[metric] == 0.85
-    assert hit.gate["passed"] is True
-    assert metric not in (hit.gate.get("failures") or [])
+    assert hit.deal_grouping["accuracy"] >= 0.85
+    assert hit.deal_summary["accuracy"] >= 0.85
     assert hit.pipeline_passed is True
     assert hit.passed is True
+    assert set(hit.deal_grouping["days"]) == set(V1_DEAL_DAYS)
+
+
+def test_no_gold_run_fails_closed_empty_deal_blocks(
+    tmp_path: Path, key_provider: object, monkeypatch: object
+) -> None:
+    """Record of a pipeline-only day scores no deal_gold and closed-fails."""
+    from watson.intelligence.eval import run as run_mod
+
+    def fake_one(fixture: Path, **_kwargs: object) -> DayEval:
+        return _day_with_metrics(fixture.name)
+
+    monkeypatch.setattr(run_mod, "_eval_one", fake_one)
+    report = run_eval(
+        fixtures_root=FIXTURES,
+        names=("day_acme_q4",),
+        mode="record",
+        runtime_name="fake",
+        recordings=RECORDINGS,
+        out_dir=tmp_path / "no-gold",
+        key=TEST_KEY,
+        prefer_deal_gold=True,
+    )
+    payload = json.loads((tmp_path / "no-gold" / "report.json").read_text(encoding="utf-8"))
+    assert report.deal_grouping["accuracy"] == 0.0
+    assert report.deal_summary["accuracy"] == 0.0
+    assert report.deal_grouping["days"] == {}
+    assert report.pipeline_passed is True
+    assert report.passed is False
+    assert payload["privacy_fail"] is False
+    assert payload["deal_grouping"]["accuracy"] == 0.0
 
 
 def test_run_eval_min_spec_gate_fails_when_runtime_aborts(

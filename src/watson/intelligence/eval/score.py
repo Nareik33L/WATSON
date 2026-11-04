@@ -226,23 +226,37 @@ def collect_predicted(
         """,
         (working_day_id, pipeline_version),
     )
-    segment_deals = [
-        {
-            "segment_id": str(row[0]),
-            "deal_id": str(row[1]) if row[1] else "none",
-            "title": str(row[2]) if row[2] else "none",
-        }
-        for row in conn.execute(
-            """
-            SELECT s.id, s.deal_id, d.title
-            FROM segments s
-            LEFT JOIN deals d ON d.id = s.deal_id
-            WHERE s.working_day_id = ?
-            ORDER BY s.started_at, s.id
-            """,
-            (working_day_id,),
+    segment_deals: list[dict[str, Any]] = []
+    for row in conn.execute(
+        """
+        SELECT s.id, s.deal_id, d.title, s.started_at
+        FROM segments s
+        LEFT JOIN deals d ON d.id = s.deal_id
+        WHERE s.working_day_id = ?
+        ORDER BY s.started_at, s.id
+        """,
+        (working_day_id,),
+    ):
+        frames = [
+            str(item[0])
+            for item in conn.execute(
+                """
+                SELECT frame_id FROM segment_frames
+                WHERE segment_id = ?
+                ORDER BY captured_at, frame_id
+                """,
+                (row[0],),
+            )
+        ]
+        segment_deals.append(
+            {
+                "segment_id": str(row[0]),
+                "deal_id": str(row[1]) if row[1] else "none",
+                "title": str(row[2]) if row[2] else "none",
+                "frame_ids": frames,
+                "started_at": str(row[3] or ""),
+            }
         )
-    ]
     raw_slots = sections.get("slots")
     slots: list[dict[str, Any]] = []
     if isinstance(raw_slots, list):
@@ -260,6 +274,41 @@ def collect_predicted(
             if any(not cid or cid.isdigit() for cid in resolved):
                 continue
             slots.append({"slot": slot_name, "claim_ids": resolved, "deal_id": deal_id})
+    claim_text = {
+        str(row[0]): str(row[1] or "")
+        for row in conn.execute(
+            """
+            SELECT id, text FROM claims
+            WHERE working_day_id = ? AND pipeline_version = ?
+            """,
+            (working_day_id, pipeline_version),
+        )
+    }
+    evidence_by_claim: dict[str, list[dict[str, str | None]]] = {}
+    for row in conn.execute(
+        """
+        SELECT e.claim_id, e.frame_id, e.segment_id
+        FROM claim_evidence e
+        JOIN claims c ON c.id = e.claim_id
+        WHERE c.working_day_id = ? AND c.pipeline_version = ?
+        ORDER BY e.created_at, e.id
+        """,
+        (working_day_id, pipeline_version),
+    ):
+        evidence_by_claim.setdefault(str(row[0]), []).append(
+            {
+                "frame_id": str(row[1]) if row[1] else None,
+                "segment_id": str(row[2]) if row[2] else None,
+            }
+        )
+    deal_claims = {
+        cid: {
+            "text": claim_text.get(cid, ""),
+            "evidence": evidence_by_claim.get(cid, []),
+        }
+        for slot in slots
+        for cid in slot["claim_ids"]
+    }
     return {
         "projects": projects,
         "people": people,
@@ -277,6 +326,7 @@ def collect_predicted(
         "deal_titles": deal_titles,
         "segment_deals": segment_deals,
         "summary_slots": slots,
+        "deal_claims": deal_claims,
     }
 
 
