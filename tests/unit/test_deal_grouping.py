@@ -75,6 +75,19 @@ _DEAL_RECORDINGS = {
 }
 
 
+def _recordings_with_summary(paragraphs: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "complete": [
+            _DEAL_RECORDINGS["complete"][0],
+            _DEAL_RECORDINGS["complete"][1],
+            {
+                "match": "Write the daily narrative",
+                "response": {"paragraphs": paragraphs},
+            },
+        ]
+    }
+
+
 def _seed_channels(conn: object) -> dict[str, str]:
     from tests.unit.test_consolidation import _insert_day
 
@@ -185,6 +198,8 @@ def test_load_deal_prompts_target_v1_scope() -> None:
     assert "deal" in cluster_text
     assert "none" in cluster_text
     assert "email" in cluster_text and "call" in cluster_text
+    assert "separate companies" in cluster_text
+    assert "pier" in cluster_text and "cedar" in cluster_text
     summary_text = summary.text.casefold()
     assert "what_happened" in summary_text
     assert "who_involved" in summary_text
@@ -758,6 +773,98 @@ def test_uncited_invented_summary_paragraph_is_dropped(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_claim_ids_without_inline_citations_still_write_slots(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": "What happened: Sent the pricing pack.",
+                        "claim_ids": ["1"],
+                        "slot": "what_happened",
+                    }
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        assert "Sent the pricing pack" in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
+        slots = {item["slot"]: item for item in sections["slots"]}
+        assert slots["what_happened"]["claim_ids"] == [seeded["sent"]]
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
+    finally:
+        conn.close()
+
+
+def test_slot_inferred_from_prefix_when_model_omits_slot(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": "Who involved: Priya joined the call [c:2].",
+                        "claim_ids": ["2"],
+                    }
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        sections = json.loads(str(row["sections_json"]))
+        slots = {item["slot"]: item for item in sections["slots"]}
+        assert slots["who_involved"]["claim_ids"] == [seeded["who"]]
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
+    finally:
+        conn.close()
+
+
+def test_empty_model_paragraphs_fallback_writes_slots(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(recordings=_recordings_with_summary([]))
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        slots = {item["slot"]: item for item in sections["slots"]}
+        assert set(slots) == {"what_happened", "who_involved", "next_step"}
+        assert slots["what_happened"]["claim_ids"] == [seeded["sent"]]
+        assert slots["who_involved"]["claim_ids"] == [seeded["who"]]
+        assert slots["next_step"]["claim_ids"] == [seeded["next"]]
+        assert all(item.get("deal_id") not in {"", "none"} for item in sections["slots"])
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
+        cited = {cid for item in sections["slots"] for cid in item["claim_ids"]}
+        assert seeded["noise_claim"] not in cited
+        assert f"[c:{seeded['sent']}]" in narrative
+        assert f"[c:{seeded['who']}]" in narrative
+        assert f"[c:{seeded['next']}]" in narrative
+    finally:
+        conn.close()
+
+
 def test_activities_recording_promotes_to_a_deal(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -832,6 +939,9 @@ def test_clustering_prompt_includes_understanding_deal_candidates(tmp_path: Path
         prompt = cluster_prompts[0]
         assert "deal candidates: Acme Q4 proposal" in prompt
         assert "none is its own class" in prompt
+        assert "Separate companies are separate deals" in prompt
+        assert "Pier invoice" in prompt
+        assert "cedar onboarding" in prompt.casefold()
         narrative_prompts = [blob for blob in captured if "Write the daily narrative" in blob]
         assert narrative_prompts
         assert "Deal: Acme Q4 proposal" in narrative_prompts[0]
@@ -1065,7 +1175,11 @@ def test_invalid_citation_does_not_dump_noise_into_deal_summary(tmp_path: Path) 
         assert "## Acme Q4 proposal" in narrative
         assert f"[c:{seeded['sent']}]" in narrative
         sections = json.loads(str(row["sections_json"]))
-        assert sections["slots"] == []
+        assert sections["slots"]
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
+        assert all(seeded["noise_claim"] not in item["claim_ids"] for item in sections["slots"])
         assert all(item.get("id") and item.get("title") for item in sections["deals"])
     finally:
         conn.close()

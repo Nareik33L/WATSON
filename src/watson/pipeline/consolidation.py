@@ -114,6 +114,14 @@ _UNDERSTAND_FAILED_RE = re.compile(r"understand_failed=\d+")
 _GROUND_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
 _GROUND_OVERLAP_MIN = 0.4
 _ROSTER_CAP = 12
+_SUMMARY_SLOTS = frozenset({"what_happened", "who_involved", "next_step"})
+_SLOT_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("what happened:", "what_happened"),
+    ("who involved:", "who_involved"),
+    ("next step:", "next_step"),
+)
+_NEXT_STEP_MARKERS = (" will ", "need to", "going to", "next step")
+_PEOPLE_HINTS = (" joined ", " called ", " emailed ", " met ")
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
 )
@@ -814,6 +822,8 @@ def _cluster_observations(
             "content": (
                 "Cluster these observations into deals. "
                 "Same sales opportunity across email, call, and docs is one deal. "
+                "Separate companies are separate deals — do not merge Pier invoice "
+                "work with Cedar onboarding. "
                 "none is its own class — leave those observations out.\n\n"
                 f"{numbered}"
             ),
@@ -1856,6 +1866,77 @@ def _group_claims_by_deal(
     return groups
 
 
+def _append_missing_citations(text: str, claim_ids: Sequence[str], grouped_ids: set[str]) -> str:
+    """Keep claim_ids-only model output by writing missing ``[c:id]`` into the text."""
+    present = {tok for tok in CITATION_RE.findall(text) if tok in grouped_ids}
+    missing = [cid for cid in claim_ids if cid in grouped_ids and cid not in present]
+    if not missing:
+        return text
+    tokens = " ".join(f"[c:{cid}]" for cid in missing)
+    stripped = text.rstrip()
+    if stripped.endswith("."):
+        return f"{stripped[:-1]} {tokens}."
+    return f"{stripped} {tokens}".strip()
+
+
+def _slot_from_prefix(text: str) -> str | None:
+    """Infer a summary slot from a leading What happened / Who involved / Next step prefix."""
+    head = str(text or "").lstrip().casefold()
+    for prefix, slot in _SLOT_PREFIXES:
+        if head.startswith(prefix):
+            return slot
+    return None
+
+
+def _people_bearing(text: str) -> bool:
+    folded = f" {text.casefold()} "
+    if any(hint in folded for hint in _PEOPLE_HINTS):
+        return True
+    return bool(re.search(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", text))
+
+
+def _slot_for_claim(row: dict[str, Any]) -> str:
+    """Map one claim onto a summary slot without inventing facts.
+
+    Prefer ``kind`` / ``assertion`` when they already name a slot. Otherwise
+    ``person_interaction`` → who_involved, ``commitment`` → next_step, next-step
+    language → next_step, people-bearing text → who_involved, remaining
+    observed/work claims → what_happened.
+    """
+    kind = str(row.get("kind") or "").strip().casefold()
+    assertion = str(row.get("assertion") or "").strip().casefold()
+    if kind in _SUMMARY_SLOTS:
+        return kind
+    if assertion in _SUMMARY_SLOTS:
+        return assertion
+    if kind == "person_interaction":
+        return "who_involved"
+    if kind == "commitment":
+        return "next_step"
+    text = str(row.get("text") or "")
+    folded = f" {text.casefold()} "
+    if any(marker in folded for marker in _NEXT_STEP_MARKERS):
+        return "next_step"
+    if _people_bearing(text):
+        return "who_involved"
+    return "what_happened"
+
+
+def _slot_drafts_from_claims(
+    key: object, claims: list[dict[str, Any]]
+) -> list[tuple[object, str, list[str]]]:
+    """Per-deal fallback slots from claim rows. Ids are claim UUIDs, never indexes."""
+    buckets: dict[str, list[str]] = {
+        slot: [] for slot in ("what_happened", "who_involved", "next_step")
+    }
+    for row in claims:
+        cid = str(row.get("id") or "")
+        if not cid or cid.isdigit():
+            continue
+        buckets[_slot_for_claim(row)].append(cid)
+    return [(key, slot, ids) for slot, ids in buckets.items() if ids]
+
+
 def _bucket_deal_paragraphs(
     raw_summary: DailySummaryOutput,
     deal_groups: list[tuple[object, str, list[dict[str, Any]]]],
@@ -1883,10 +1964,11 @@ def _bucket_deal_paragraphs(
         for key, _title, grouped in deal_groups:
             expanded = expand_index_citations([payload], grouped)[0]
             grouped_ids = {str(row["id"]) for row in grouped}
+            mapped = [cid for cid in expanded["claim_ids"] if cid in grouped_ids]
+            expanded["text"] = _append_missing_citations(str(expanded["text"]), mapped, grouped_ids)
             cited_toks = [
                 tok for tok in CITATION_RE.findall(str(expanded["text"])) if tok in grouped_ids
             ]
-            mapped = [cid for cid in expanded["claim_ids"] if cid in grouped_ids]
             if cited_toks or mapped:
                 owners.append(key)
                 expanded_by_key[key] = expanded
@@ -1906,8 +1988,9 @@ def _bucket_deal_paragraphs(
             continue
         buckets[key].extend(_strip_leading_headings(body) for body in verified.paragraphs)
         cited_by_key[key].update(verified.claim_ids)
-        if para.slot:
-            slot_drafts.append((key, para.slot, list(verified.claim_ids)))
+        slot = para.slot or _slot_from_prefix(para.text)
+        if slot:
+            slot_drafts.append((key, slot, list(verified.claim_ids)))
 
     for key, _title, grouped in deal_groups:
         if buckets[key] or not grouped:
@@ -1916,6 +1999,7 @@ def _bucket_deal_paragraphs(
         fallback = _cited_fallback(cite_claims)
         buckets[key].extend(_strip_leading_headings(body) for body in fallback.paragraphs)
         cited_by_key[key].update(fallback.claim_ids)
+        slot_drafts.extend(_slot_drafts_from_claims(key, grouped))
 
     cited_ids: set[str] = set()
     unverified: list[dict[str, str]] = []

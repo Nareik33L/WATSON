@@ -74,8 +74,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "slot-drafts-raw",
         CONSOLIDATION,
-        "            slot_drafts.append((key, para.slot, list(verified.claim_ids)))\n",
-        "            slot_drafts.append((key, para.slot, list(para.claim_ids)))\n",
+        "            slot_drafts.append((key, slot, list(verified.claim_ids)))\n",
+        "            slot_drafts.append((key, slot, list(para.claim_ids)))\n",
     ),
     (
         "unmatched-kept",
