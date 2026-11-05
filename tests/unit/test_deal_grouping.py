@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import logging
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tests.unit.test_consolidation import (
     NOW,
@@ -20,15 +22,20 @@ from tests.unit.test_consolidation import (
     _runtime,
     _seed_day,
 )
+from watson.intelligence import prompts as prompt_mod
+from watson.intelligence.eval.deals import load_deal_day
 from watson.intelligence.prompts import load_prompt
 from watson.intelligence.runtime import FakeRuntime
 from watson.intelligence.runtime.types import OutputParseError
 from watson.intelligence.schemas.consolidation import ClusteringOutput, SummaryParagraph
+from watson.pipeline import consolidation as cons_mod
 from watson.pipeline.consolidation import (
+    _summarize_day,
     _summary_deal_sections,
     consolidate_working_day,
     derived_counts,
 )
+from watson.pipeline.understanding import understand_segment
 from watson.privacy.logging import configure_logging
 
 _DEAL_RECORDINGS = {
@@ -73,6 +80,89 @@ _DEAL_RECORDINGS = {
         },
     ]
 }
+
+
+def _recordings_with_summary(paragraphs: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "complete": [
+            _DEAL_RECORDINGS["complete"][0],
+            _DEAL_RECORDINGS["complete"][1],
+            {
+                "match": "Write the daily narrative",
+                "response": {"paragraphs": paragraphs},
+            },
+        ]
+    }
+
+
+def _assert_no_deal_summary_credit(conn: object, seeded: dict[str, str]) -> None:
+    from watson.intelligence.eval.deals import (
+        DayGold,
+        Deal,
+        DealCorpus,
+        Frame,
+        GoldFact,
+        GoldSegment,
+        Person,
+        PredictedCorpus,
+        predicted_day_from_collect,
+        score_deals,
+    )
+    from watson.intelligence.eval.score import collect_predicted
+
+    collected = collect_predicted(conn, seeded["day_id"])
+    assert collected["summary_slots"] == []
+    predicted = predicted_day_from_collect("day_seeded", collected)
+    assert predicted.claims == []
+    frames: dict[str, Frame] = {}
+    gold_segments: list[GoldSegment] = []
+    for row in collected["segment_deals"]:
+        sid = str(row["segment_id"])
+        fids = tuple(str(fid) for fid in row.get("frame_ids") or ())
+        deal = "none" if sid == seeded["noise"] else "acme"
+        gold_segments.append(GoldSegment(id=sid, frame_ids=fids, deal=deal))
+        for fid in fids:
+            frames[fid] = Frame(id=fid, text="seed")
+    gold = DayGold(
+        name="day_seeded",
+        date="2026-10-31",
+        deals=[Deal(id="acme", name="Acme Q4 proposal", company="Acme")],
+        people=[Person(id="priya", name="Priya Natarajan")],
+        segments=gold_segments,
+        frames=frames,
+        facts=[
+            GoldFact(
+                "f-what",
+                "acme",
+                "what_happened",
+                ("pricing", "pack"),
+                {},
+                (seeded["mail"],),
+            ),
+            GoldFact(
+                "f-who",
+                "acme",
+                "who_involved",
+                ("Priya",),
+                {},
+                (seeded["call"],),
+                person_id="priya",
+            ),
+            GoldFact(
+                "f-next",
+                "acme",
+                "next_step",
+                ("revised", "pricing"),
+                {},
+                (seeded["doc"],),
+            ),
+        ],
+        skipped={},
+    )
+    score = score_deals(DealCorpus(days=[gold]), PredictedCorpus(days=[predicted]))
+    assert score.summary.claims == 0
+    assert score.summary.accuracy < 0.85
+    assert score.summary.accuracy == 0.0
 
 
 def _seed_channels(conn: object) -> dict[str, str]:
@@ -176,6 +266,471 @@ def _seed_channels(conn: object) -> dict[str, str]:
     }
 
 
+_PROMPT_ROOT = Path(prompt_mod.__file__).resolve().parent
+_SKIP_GOLD_TOKENS = frozenset({"none", "missing", "n/a", "na"})
+
+
+def _fixture_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "tests" / "fixtures"
+        if candidate.is_dir() and (candidate / "deal_gold").is_dir():
+            return candidate
+    raise FileNotFoundError("tests/fixtures not found")
+
+
+def _gold_token(raw: object) -> str | None:
+    token = " ".join(str(raw or "").split())
+    if not token or token.isdigit() or token.casefold() in _SKIP_GOLD_TOKENS:
+        return None
+    distinctive = any(ch in "$£€" for ch in token) or (
+        any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+    )
+    if len(token) < 4 and not distinctive:
+        return None
+    return token
+
+
+def _add_gold(bucket: set[str], raw: object) -> None:
+    token = _gold_token(raw)
+    if token:
+        bucket.add(token)
+
+
+def _add_fact_strings(strings: set[str], required_terms: object, aliases: object) -> None:
+    terms = [str(item) for item in list(required_terms or []) if str(item).strip()]
+    for term in terms:
+        token = _gold_token(term)
+        if token and (len(token) >= 8 or any(ch.isdigit() or ch in "$£€ " for ch in token)):
+            strings.add(token)
+    if len(terms) >= 2:
+        _add_gold(strings, " ".join(terms))
+    if isinstance(aliases, dict):
+        for phrases in aliases.values():
+            for phrase in list(phrases or []):
+                _add_gold(strings, phrase)
+
+
+def _add_distinctive_phrases(strings: set[str], text: object) -> None:
+    body = " ".join(str(text or "").split())
+    _add_gold(strings, body)
+    words = body.split()
+    for size in (2, 3, 4):
+        for index in range(0, len(words) - size + 1):
+            chunk = " ".join(words[index : index + size])
+            if any(ch.isdigit() or ch in "$£€" for ch in chunk):
+                _add_gold(strings, chunk)
+
+
+def _add_gold_sentence(strings: set[str], text: object) -> None:
+    """Full gold sentence plus 4+ word spans so truncated plants still match."""
+    body = " ".join(str(text or "").split())
+    _add_gold(strings, body)
+    stripped = body.rstrip(".,;: ")
+    _add_gold(strings, stripped)
+    words = stripped.split()
+    for size in range(4, len(words) + 1):
+        for index in range(0, len(words) - size + 1):
+            _add_gold(strings, " ".join(words[index : index + size]))
+
+
+def _collect_replay_truth(names: set[str], strings: set[str]) -> None:
+    root = _fixture_root()
+    paths = sorted(root.glob("day_*/truth.yaml"))
+    assert paths, "expected replay tests/fixtures/day_*/truth.yaml"
+    for path in paths:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for project in payload.get("projects") or []:
+            _add_gold(names, project)
+            _add_gold(strings, project)
+        for key in ("decisions", "commitments"):
+            for row in payload.get(key) or []:
+                text = row.get("text") if isinstance(row, dict) else row
+                _add_gold_sentence(strings, text)
+
+
+def _collect_from_mapping(
+    payload: object, names: set[str], ids: set[str], strings: set[str]
+) -> None:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            key_s = str(key)
+            if key_s in {"id", "person_id"} or key_s.endswith("_id") or key_s.endswith("_ids"):
+                if isinstance(value, list):
+                    for item in value:
+                        _add_gold(ids, item)
+                else:
+                    _add_gold(ids, value)
+            elif key_s in {"name", "company"}:
+                _add_gold(names, value)
+            elif key_s == "required_terms":
+                _add_fact_strings(strings, value, payload.get("aliases"))
+            elif key_s == "aliases":
+                _add_fact_strings(strings, payload.get("required_terms"), value)
+            elif key_s == "text":
+                _add_distinctive_phrases(strings, value)
+            else:
+                _collect_from_mapping(value, names, ids, strings)
+    elif isinstance(payload, list):
+        for item in payload:
+            _collect_from_mapping(item, names, ids, strings)
+
+
+def _collect_from_day(day: object, names: set[str], ids: set[str], strings: set[str]) -> None:
+    _add_gold(ids, getattr(day, "name", None))
+    for deal in getattr(day, "deals", []) or []:
+        _add_gold(names, getattr(deal, "name", None))
+        _add_gold(names, getattr(deal, "company", None))
+        _add_gold(ids, getattr(deal, "id", None))
+    for person in getattr(day, "people", []) or []:
+        _add_gold(names, getattr(person, "name", None))
+        _add_gold(names, getattr(person, "company", None))
+        _add_gold(ids, getattr(person, "id", None))
+    for segment in getattr(day, "segments", []) or []:
+        _add_gold(ids, getattr(segment, "id", None))
+        for frame_id in getattr(segment, "frame_ids", ()) or ():
+            _add_gold(ids, frame_id)
+    for fact in getattr(day, "facts", []) or []:
+        _add_gold(ids, getattr(fact, "id", None))
+        _add_gold(ids, getattr(fact, "person_id", None))
+        _add_fact_strings(
+            strings, getattr(fact, "required_terms", ()), getattr(fact, "aliases", {})
+        )
+        for segment_id in getattr(fact, "evidence_segments", ()) or ():
+            _add_gold(ids, segment_id)
+    for frame_id in getattr(day, "frames", {}) or {}:
+        _add_gold(ids, frame_id)
+    for frame_id in getattr(day, "skipped", {}) or {}:
+        _add_gold(ids, frame_id)
+
+
+@functools.lru_cache(maxsize=1)
+def _gold_leak_tokens() -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """Auto-discovered gold names, ids, and strings that must not leak into prompts."""
+    names: set[str] = set()
+    ids: set[str] = set()
+    strings: set[str] = set()
+    root = _fixture_root()
+    gold_dirs = sorted({path.parent for path in (root / "deal_gold").glob("*/truth.yaml")})
+    overlay_paths = sorted(root.glob("day_*/deals.yaml"))
+    honest_paths = sorted((root / "deal_gold").glob("*/honest_summary.yaml"))
+    assert gold_dirs and overlay_paths and honest_paths
+    for day_dir in gold_dirs:
+        _collect_from_day(load_deal_day(day_dir), names, ids, strings)
+        _collect_from_mapping(
+            yaml.safe_load((day_dir / "truth.yaml").read_text(encoding="utf-8")),
+            names,
+            ids,
+            strings,
+        )
+    for overlay in overlay_paths:
+        _collect_from_mapping(
+            yaml.safe_load(overlay.read_text(encoding="utf-8")), names, ids, strings
+        )
+    for honest in honest_paths:
+        _collect_from_mapping(
+            yaml.safe_load(honest.read_text(encoding="utf-8")), names, ids, strings
+        )
+    _collect_replay_truth(names, strings)
+    assert names and ids and strings
+    return frozenset(names), frozenset(ids), frozenset(strings)
+
+
+def _template_needles() -> set[str]:
+    names, ids, strings = _gold_leak_tokens()
+    return set(names) | set(ids) | set(strings)
+
+
+def _deal_names() -> set[str]:
+    names: set[str] = set()
+    root = _fixture_root()
+    for path in [*(root / "deal_gold").glob("*/truth.yaml"), *root.glob("day_*/deals.yaml")]:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for row in payload.get("deals") or []:
+            if isinstance(row, dict):
+                _add_gold(names, row.get("name"))
+    assert names
+    return names
+
+
+def _leaked(blob: str, needles: set[str]) -> list[str]:
+    folded = blob.casefold()
+    return [
+        needle for needle in sorted(needles, key=len, reverse=True) if needle.casefold() in folded
+    ]
+
+
+def _absent_from(needles: set[str], blob: str) -> set[str]:
+    folded = blob.casefold()
+    return {needle for needle in needles if needle.casefold() not in folded}
+
+
+def _all_prompt_templates() -> list[tuple[str, str]]:
+    paths = sorted(_PROMPT_ROOT.rglob("*.md"))
+    assert paths, "expected prompt templates under intelligence/prompts"
+    return [
+        (str(path.relative_to(_PROMPT_ROOT)), path.read_text(encoding="utf-8")) for path in paths
+    ]
+
+
+def _built_prompt_constants() -> list[tuple[str, str]]:
+    found = [
+        (name, value)
+        for name, value in sorted(vars(cons_mod).items())
+        if name.endswith("_USER_PREFIX") and isinstance(value, str) and value.strip()
+    ]
+    assert found, "expected *_USER_PREFIX constants on consolidation"
+    return found
+
+
+def _prefix_matching(marker: str) -> str:
+    for _name, value in _built_prompt_constants():
+        if marker.casefold() in value.casefold():
+            return value
+    raise AssertionError(f"no user prefix contains {marker!r}")
+
+
+def _seeded_input_blob(conn: object, day_id: str) -> str:
+    parts: list[str] = []
+    for row in conn.execute(  # type: ignore[union-attr]
+        """
+        SELECT o.description, o.raw_json
+        FROM observations o
+        JOIN segments s ON s.id = o.segment_id
+        WHERE s.working_day_id = ?
+        """,
+        (day_id,),
+    ):
+        parts.append(str(row["description"] or ""))
+        parts.append(str(row["raw_json"] or ""))
+    for row in conn.execute(  # type: ignore[union-attr]
+        "SELECT text FROM claims WHERE working_day_id = ?",
+        (day_id,),
+    ):
+        parts.append(str(row["text"] or ""))
+    for row in conn.execute(  # type: ignore[union-attr]
+        "SELECT merged_text, window_title_norm FROM segments WHERE working_day_id = ?",
+        (day_id,),
+    ):
+        parts.append(str(row["merged_text"] or ""))
+        parts.append(str(row["window_title_norm"] or ""))
+    for row in conn.execute("SELECT canonical_name FROM entities"):  # type: ignore[union-attr]
+        parts.append(str(row["canonical_name"] or ""))
+    return "\n".join(parts)
+
+
+def _capture_runtime(
+    captured: list[str], recordings: dict[str, object] | None = None
+) -> FakeRuntime:
+    class CaptureRuntime(FakeRuntime):
+        def complete(self, messages, schema, *, num_predict=None):  # type: ignore[no-untyped-def]
+            captured.append("\n".join(item["content"] for item in messages))
+            return super().complete(messages, schema, num_predict=num_predict)
+
+    return CaptureRuntime(recordings=recordings)
+
+
+def _capture_built_prompts(tmp_path: Path) -> tuple[object, dict[str, str], list[str]]:
+    conn = _open(tmp_path)
+    seeded = _seed_channels(conn)
+    captured: list[str] = []
+    runtime = _capture_runtime(captured, _DEAL_RECORDINGS)
+    consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+    _summarize_day(
+        runtime,
+        [
+            {
+                "id": seeded["sent"],
+                "kind": "activity",
+                "assertion": "observed",
+                "text": "Sent the pricing pack",
+            }
+        ],
+        load_prompt("daily_summary", "v2").text,
+        deal_groups=None,
+        roster=None,
+    )
+    extra = _insert_frame(conn, seeded["day_id"], captured_at="2026-10-31T13:00:00Z")
+    extra_seg = _insert_segment(
+        conn,
+        seeded["day_id"],
+        extra,
+        started_at="2026-10-31T13:00:00Z",
+        merged="Inbox glance",
+    )
+    understand_segment(conn, extra_seg, runtime, runtime)
+    assert captured
+    return conn, seeded, captured
+
+
+def _summary_prompts(captured: list[str]) -> list[str]:
+    return [blob for blob in captured if "Write the daily narrative" in blob]
+
+
+def _no_deal_summary_prompts(captured: list[str]) -> list[str]:
+    return [blob for blob in _summary_prompts(captured) if "Deal:" not in blob]
+
+
+def _understanding_prompts(captured: list[str]) -> list[str]:
+    return [blob for blob in captured if "Merged text (capped at" in blob]
+
+
+def _roster_lines(blob: str) -> list[str]:
+    return [line for line in blob.splitlines() if line.casefold().startswith("roster names:")]
+
+
+def test_prompt_templates_and_built_prompts_omit_gold_fixtures(tmp_path: Path) -> None:
+    needles = _template_needles()
+    for label, blob in (*_all_prompt_templates(), *_built_prompt_constants()):
+        hits = _leaked(blob, needles)
+        assert not hits, f"{label} leaked gold fixtures: {hits}"
+
+    conn, seeded, captured = _capture_built_prompts(tmp_path)
+    try:
+        seeded_blob = _seeded_input_blob(conn, seeded["day_id"])
+        forbidden = _absent_from(needles, seeded_blob)
+        deal_names = _deal_names()
+        assert any("Deal:" in blob for blob in _summary_prompts(captured))
+        assert _no_deal_summary_prompts(captured)
+        assert _understanding_prompts(captured)
+        for blob in captured:
+            hits = _leaked(blob, forbidden)
+            assert not hits, f"built prompt leaked gold not in seeded inputs: {hits}"
+            for line in _roster_lines(blob):
+                roster_hits = _leaked(line, deal_names)
+                assert not roster_hits, f"roster_line leaked deal titles: {roster_hits}"
+    finally:
+        conn.close()
+
+
+def test_leakage_guard_flags_person_name_in_daily_summary_template() -> None:
+    needles = _template_needles()
+    planted = "Priya Natarajan"
+    assert planted in _gold_leak_tokens()[0]
+    template = load_prompt("daily_summary", "v2").text
+    assert not _leaked(template, needles)
+    assert planted in _leaked(template + f"\n{planted}", needles)
+
+
+def test_leakage_guard_flags_gold_id_in_clustering_prefix() -> None:
+    needles = _template_needles()
+    planted = "fact-q4-call"
+    assert planted in _gold_leak_tokens()[1]
+    prefix = _prefix_matching("Cluster these observations")
+    assert not _leaked(prefix, needles)
+    assert planted in _leaked(prefix + planted, needles)
+
+
+def test_leakage_guard_flags_gold_fact_strings_in_extract_prefix_and_templates() -> None:
+    needles = _template_needles()
+    planted = next(
+        text
+        for text in sorted(_gold_leak_tokens()[2], key=len, reverse=True)
+        if "14 nov demo" in text.casefold() and text.casefold().startswith("noted")
+    )
+    prefix = _prefix_matching("Extract cross-segment")
+    assert planted in _leaked(prefix + f"\n{planted}", needles)
+    for label, blob in _all_prompt_templates():
+        assert planted in _leaked(blob + f"\n{planted}", needles), label
+
+
+def test_leakage_guard_flags_alias_in_clustering_prefix() -> None:
+    needles = _template_needles()
+    planted = "14 Nov demo"
+    prefix = _prefix_matching("Cluster these observations")
+    assert not _leaked(prefix, needles)
+    hits = _leaked(prefix + planted, needles)
+    assert hits, f"alias {planted!r} must fail the guard"
+
+
+def test_leakage_guard_flags_gold_name_only_in_built_summary_prompt(tmp_path: Path) -> None:
+    names, _ids, strings = _gold_leak_tokens()
+    conn, seeded, captured = _capture_built_prompts(tmp_path)
+    try:
+        seeded_blob = _seeded_input_blob(conn, seeded["day_id"])
+        planted = next(
+            name
+            for name in sorted(names, key=len, reverse=True)
+            if " " in name and name.casefold() not in seeded_blob.casefold()
+        )
+        summary = next(blob for blob in captured if "Write the daily narrative" in blob)
+        forbidden = _absent_from(set(names) | set(strings), seeded_blob)
+        assert planted in forbidden
+        assert not _leaked(summary, forbidden)
+        assert planted in _leaked(summary + f"\n{planted}", forbidden)
+    finally:
+        conn.close()
+
+
+def test_leakage_guard_flags_deal_title_in_roster_line() -> None:
+    deal_names = _deal_names()
+    planted = next(name for name in sorted(deal_names, key=len, reverse=True))
+    line = "Roster names: Priya Natarajan"
+    assert not _leaked(line, deal_names)
+    assert planted in _leaked(f"{line}, {planted}", deal_names)
+
+
+def test_leakage_guard_flags_replay_gold_ids() -> None:
+    needles = _template_needles()
+    ids = _gold_leak_tokens()[1]
+    planted = next(item for item in sorted(ids) if item.startswith("fact-v1-"))
+    prefix = _prefix_matching("Cluster these observations")
+    assert planted in ids
+    assert not _leaked(prefix, needles)
+    assert planted in _leaked(prefix + planted, needles)
+    for label, blob in _all_prompt_templates():
+        assert planted in _leaked(blob + f"\n{planted}", needles), label
+
+
+def test_leakage_guard_flags_gold_name_in_no_deal_summary_prompt(tmp_path: Path) -> None:
+    names, _ids, strings = _gold_leak_tokens()
+    conn, seeded, captured = _capture_built_prompts(tmp_path)
+    try:
+        seeded_blob = _seeded_input_blob(conn, seeded["day_id"])
+        planted = next(
+            name
+            for name in sorted(names, key=len, reverse=True)
+            if " " in name and name.casefold() not in seeded_blob.casefold()
+        )
+        no_deal = _no_deal_summary_prompts(captured)
+        assert no_deal
+        forbidden = _absent_from(set(names) | set(strings), seeded_blob)
+        assert planted in forbidden
+        for blob in no_deal:
+            assert not _leaked(blob, forbidden)
+            assert planted in _leaked(blob + f"\n{planted}", forbidden)
+    finally:
+        conn.close()
+
+
+def test_leakage_guard_flags_replay_decision_commitment_project_strings() -> None:
+    needles = _template_needles()
+    planted = "Adopt the published three-tier rate card."
+    assert _leaked(planted, needles)
+    prefix = _prefix_matching("Extract cross-segment")
+    assert not _leaked(prefix, needles)
+    assert _leaked(prefix + planted, needles)
+    names, _ids, strings = _gold_leak_tokens()
+    project = "Internal Onboarding Guide"
+    assert project in names or project in strings
+    assert project in _leaked(prefix + project, needles)
+
+
+def test_leakage_guard_flags_gold_string_in_understanding_prompt(tmp_path: Path) -> None:
+    needles = _template_needles()
+    planted = "Adopt the published three-tier rate card."
+    conn, seeded, captured = _capture_built_prompts(tmp_path)
+    try:
+        understanding = _understanding_prompts(captured)
+        assert understanding
+        forbidden = _absent_from(needles, _seeded_input_blob(conn, seeded["day_id"]))
+        assert _leaked(planted, forbidden)
+        for blob in understanding:
+            assert not _leaked(blob, forbidden)
+            assert _leaked(blob + f"\n{planted}", forbidden)
+    finally:
+        conn.close()
+
+
 def test_load_deal_prompts_target_v1_scope() -> None:
     cluster = load_prompt("clustering", "v2")
     summary = load_prompt("daily_summary", "v2")
@@ -185,6 +740,7 @@ def test_load_deal_prompts_target_v1_scope() -> None:
     assert "deal" in cluster_text
     assert "none" in cluster_text
     assert "email" in cluster_text and "call" in cluster_text
+    assert "separate companies" in cluster_text
     summary_text = summary.text.casefold()
     assert "what_happened" in summary_text
     assert "who_involved" in summary_text
@@ -758,6 +1314,133 @@ def test_uncited_invented_summary_paragraph_is_dropped(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_invented_claim_ids_only_text_is_not_cited_as_model(tmp_path: Path) -> None:
+    invented = "Northwind acquired Contoso for £100 billion"
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": invented,
+                        "claim_ids": ["1", "2", "3"],
+                        "slot": "what_happened",
+                    }
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        assert invented not in narrative
+        assert all(item.get("source") == "fallback" for item in sections["slots"])
+        assert all(item.get("source") == "fallback" for item in sections.get("paragraphs") or [])
+        _assert_no_deal_summary_credit(conn, seeded)
+    finally:
+        conn.close()
+
+
+def test_slot_inferred_from_prefix_when_model_omits_slot(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": "Who involved: Priya joined the call [c:2].",
+                        "claim_ids": ["2"],
+                    }
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        sections = json.loads(str(row["sections_json"]))
+        slots = {item["slot"]: item for item in sections["slots"]}
+        assert slots["who_involved"]["claim_ids"] == [seeded["who"]]
+        assert slots["who_involved"]["source"] == "model"
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
+    finally:
+        conn.close()
+
+
+def test_dropped_next_step_prefix_does_not_credit_next_step(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": (
+                            "Next step: invent a merger. "
+                            "What happened: Sent the pricing pack [c:1]."
+                        ),
+                        "claim_ids": ["1"],
+                    }
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        slots = {item["slot"]: item for item in sections["slots"]}
+        assert "invent a merger" not in narrative
+        assert "next_step" not in slots
+        assert slots["what_happened"]["claim_ids"] == [seeded["sent"]]
+        assert slots["what_happened"]["source"] == "model"
+    finally:
+        conn.close()
+
+
+def test_empty_model_paragraphs_fallback_writes_slots(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(recordings=_recordings_with_summary([]))
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        slots = {item["slot"]: item for item in sections["slots"]}
+        assert set(slots) == {"what_happened", "who_involved", "next_step"}
+        assert slots["what_happened"]["claim_ids"] == [seeded["sent"]]
+        assert slots["who_involved"]["claim_ids"] == [seeded["who"]]
+        assert slots["next_step"]["claim_ids"] == [seeded["next"]]
+        assert all(item.get("source") == "fallback" for item in sections["slots"])
+        assert all(item.get("source") == "fallback" for item in sections.get("paragraphs") or [])
+        assert all(item.get("deal_id") not in {"", "none"} for item in sections["slots"])
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
+        cited = {cid for item in sections["slots"] for cid in item["claim_ids"]}
+        assert seeded["noise_claim"] not in cited
+        assert f"[c:{seeded['sent']}]" in narrative
+        assert f"[c:{seeded['who']}]" in narrative
+        assert f"[c:{seeded['next']}]" in narrative
+        _assert_no_deal_summary_credit(conn, seeded)
+    finally:
+        conn.close()
+
+
 def test_activities_recording_promotes_to_a_deal(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -832,6 +1515,7 @@ def test_clustering_prompt_includes_understanding_deal_candidates(tmp_path: Path
         prompt = cluster_prompts[0]
         assert "deal candidates: Acme Q4 proposal" in prompt
         assert "none is its own class" in prompt
+        assert "Separate companies are separate deals" in prompt
         narrative_prompts = [blob for blob in captured if "Write the daily narrative" in blob]
         assert narrative_prompts
         assert "Deal: Acme Q4 proposal" in narrative_prompts[0]
@@ -1065,7 +1749,12 @@ def test_invalid_citation_does_not_dump_noise_into_deal_summary(tmp_path: Path) 
         assert "## Acme Q4 proposal" in narrative
         assert f"[c:{seeded['sent']}]" in narrative
         sections = json.loads(str(row["sections_json"]))
-        assert sections["slots"] == []
+        assert sections["slots"]
+        assert all(item.get("source") == "fallback" for item in sections["slots"])
+        assert all(
+            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
+        )
+        assert all(seeded["noise_claim"] not in item["claim_ids"] for item in sections["slots"])
         assert all(item.get("id") and item.get("title") for item in sections["deals"])
     finally:
         conn.close()
@@ -1151,7 +1840,12 @@ def test_summary_deal_sections_keep_validated_slots_only() -> None:
         ],
     )
     assert payload["slots"] == [
-        {"slot": "next_step", "claim_ids": ["claim-uuid"], "deal_id": "deal-1"}
+        {
+            "slot": "next_step",
+            "claim_ids": ["claim-uuid"],
+            "deal_id": "deal-1",
+            "source": "model",
+        }
     ]
     assert "paragraphs" not in payload
 

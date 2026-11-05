@@ -104,6 +104,19 @@ SUMMARY_PROMPT_TASK = "daily_summary"
 CLUSTER_PROMPT_VERSION = "v2"
 EXTRACT_PROMPT_VERSION = "v1"
 SUMMARY_PROMPT_VERSION = "v2"
+_CLUSTER_USER_PREFIX = (
+    "Cluster these observations into deals. "
+    "Same sales opportunity across email, call, and docs is one deal. "
+    "Separate companies are separate deals. "
+    "none is its own class — leave those observations out.\n\n"
+)
+_EXTRACT_USER_PREFIX = "Extract cross-segment decisions, commitments, and entity deltas.\n\n"
+_SUMMARY_USER_PREFIX = (
+    "Write the daily narrative from these claims. "
+    "Cite each used claim inline as [c:<id>]. "
+    "For each deal write what happened, who was involved, and the next step "
+    "from that deal's claims only.\n\n"
+)
 PROMPT_VERSION = EXTRACT_PROMPT_VERSION
 # Keep clustering / extract / summary user lists inside the 4096-token window.
 _CLUSTER_ITEM_MAX = 120
@@ -114,6 +127,14 @@ _UNDERSTAND_FAILED_RE = re.compile(r"understand_failed=\d+")
 _GROUND_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
 _GROUND_OVERLAP_MIN = 0.4
 _ROSTER_CAP = 12
+_SUMMARY_SLOTS = frozenset({"what_happened", "who_involved", "next_step"})
+_SLOT_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("what happened:", "what_happened"),
+    ("who involved:", "who_involved"),
+    ("next step:", "next_step"),
+)
+_NEXT_STEP_MARKERS = (" will ", "need to", "going to", "next step")
+_PEOPLE_HINTS = (" joined ", " called ", " emailed ", " met ")
 TERMINAL_FRAME_STATES = frozenset(
     {"extracted", "deleted", "failed", "deleted_unprocessed", "skipped"}
 )
@@ -811,12 +832,7 @@ def _cluster_observations(
         {"role": "system", "content": system},
         {
             "role": "user",
-            "content": (
-                "Cluster these observations into deals. "
-                "Same sales opportunity across email, call, and docs is one deal. "
-                "none is its own class — leave those observations out.\n\n"
-                f"{numbered}"
-            ),
+            "content": f"{_CLUSTER_USER_PREFIX}{numbered}",
         },
     ]
     result = _structured(language, messages, ClusteringOutput, CLUSTERING_JSON_SCHEMA, "clustering")
@@ -857,8 +873,7 @@ def _extract_day(
         {
             "role": "user",
             "content": (
-                "Extract cross-segment decisions, commitments, and entity deltas.\n\n"
-                f"Entities:\n{entity_lines}\n\nClaims:\n{claim_lines}\n"
+                f"{_EXTRACT_USER_PREFIX}Entities:\n{entity_lines}\n\nClaims:\n{claim_lines}\n"
             ),
         },
     ]
@@ -904,13 +919,7 @@ def _summarize_day(
         {"role": "system", "content": system},
         {
             "role": "user",
-            "content": (
-                "Write the daily narrative from these claims. "
-                "Cite each used claim inline as [c:<id>]. "
-                "For each deal write what happened, who was involved, and the next step "
-                "from that deal's claims only.\n\n"
-                f"{claim_block}\n"
-            ),
+            "content": f"{_SUMMARY_USER_PREFIX}{claim_block}\n",
         },
     ]
     result = _structured(
@@ -1856,6 +1865,64 @@ def _group_claims_by_deal(
     return groups
 
 
+def _slot_from_prefix(text: str) -> str | None:
+    """Infer a summary slot from a leading What happened / Who involved / Next step prefix."""
+    head = str(text or "").lstrip().casefold()
+    for prefix, slot in _SLOT_PREFIXES:
+        if head.startswith(prefix):
+            return slot
+    return None
+
+
+def _people_bearing(text: str) -> bool:
+    folded = f" {text.casefold()} "
+    if any(hint in folded for hint in _PEOPLE_HINTS):
+        return True
+    return bool(re.search(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", text))
+
+
+def _slot_for_claim(row: dict[str, Any]) -> str:
+    """Map one claim onto a summary slot without inventing facts.
+
+    Prefer ``kind`` / ``assertion`` when they already name a slot. Otherwise
+    ``person_interaction`` → who_involved, ``commitment`` → next_step, next-step
+    language → next_step, people-bearing text → who_involved, remaining
+    observed/work claims → what_happened.
+    """
+    kind = str(row.get("kind") or "").strip().casefold()
+    assertion = str(row.get("assertion") or "").strip().casefold()
+    if kind in _SUMMARY_SLOTS:
+        return kind
+    if assertion in _SUMMARY_SLOTS:
+        return assertion
+    if kind == "person_interaction":
+        return "who_involved"
+    if kind == "commitment":
+        return "next_step"
+    text = str(row.get("text") or "")
+    folded = f" {text.casefold()} "
+    if any(marker in folded for marker in _NEXT_STEP_MARKERS):
+        return "next_step"
+    if _people_bearing(text):
+        return "who_involved"
+    return "what_happened"
+
+
+def _slot_drafts_from_claims(
+    key: object, claims: list[dict[str, Any]]
+) -> list[tuple[object, str, list[str]]]:
+    """Per-deal fallback slots from claim rows. Ids are claim UUIDs, never indexes."""
+    buckets: dict[str, list[str]] = {
+        slot: [] for slot in ("what_happened", "who_involved", "next_step")
+    }
+    for row in claims:
+        cid = str(row.get("id") or "")
+        if not cid or cid.isdigit():
+            continue
+        buckets[_slot_for_claim(row)].append(cid)
+    return [(key, slot, ids) for slot, ids in buckets.items() if ids]
+
+
 def _bucket_deal_paragraphs(
     raw_summary: DailySummaryOutput,
     deal_groups: list[tuple[object, str, list[dict[str, Any]]]],
@@ -1865,14 +1932,14 @@ def _bucket_deal_paragraphs(
     claims: list[dict[str, Any]],
 ) -> tuple[
     dict[object, list[str]],
-    list[tuple[object, str, list[str]]],
+    list[tuple[object, ...]],
     set[str],
     tuple[dict[str, str], ...],
 ]:
     """Assign each paragraph to one deal. Drop cross-deal and unmatched text."""
     buckets: dict[object, list[str]] = {key: [] for key, _title, _grouped in deal_groups}
     cited_by_key: dict[object, set[str]] = {key: set() for key, _title, _grouped in deal_groups}
-    slot_drafts: list[tuple[object, str, list[str]]] = []
+    slot_drafts: list[tuple[object, ...]] = []
     if not deal_groups or not claims:
         return buckets, slot_drafts, set(), ()
 
@@ -1886,8 +1953,7 @@ def _bucket_deal_paragraphs(
             cited_toks = [
                 tok for tok in CITATION_RE.findall(str(expanded["text"])) if tok in grouped_ids
             ]
-            mapped = [cid for cid in expanded["claim_ids"] if cid in grouped_ids]
-            if cited_toks or mapped:
+            if cited_toks:
                 owners.append(key)
                 expanded_by_key[key] = expanded
         if len(owners) != 1:
@@ -1906,8 +1972,10 @@ def _bucket_deal_paragraphs(
             continue
         buckets[key].extend(_strip_leading_headings(body) for body in verified.paragraphs)
         cited_by_key[key].update(verified.claim_ids)
-        if para.slot:
-            slot_drafts.append((key, para.slot, list(verified.claim_ids)))
+        verified_text = "\n\n".join(verified.paragraphs)
+        slot = _slot_from_prefix(verified_text) or para.slot
+        if slot and verified.claim_ids:
+            slot_drafts.append((key, slot, list(verified.claim_ids), "model"))
 
     for key, _title, grouped in deal_groups:
         if buckets[key] or not grouped:
@@ -1916,6 +1984,10 @@ def _bucket_deal_paragraphs(
         fallback = _cited_fallback(cite_claims)
         buckets[key].extend(_strip_leading_headings(body) for body in fallback.paragraphs)
         cited_by_key[key].update(fallback.claim_ids)
+        slot_drafts.extend(
+            (draft_key, slot, ids, "fallback")
+            for draft_key, slot, ids in _slot_drafts_from_claims(key, grouped)
+        )
 
     cited_ids: set[str] = set()
     unverified: list[dict[str, str]] = []
@@ -1969,21 +2041,44 @@ def _narrative_from_stored_deals(
     )
 
 
+def _slot_draft_parts(
+    draft: tuple[object, ...],
+) -> tuple[object, str, list[str], str]:
+    raw_ids = draft[2]
+    claim_ids = [str(item) for item in raw_ids] if isinstance(raw_ids, list) else []
+    key, slot = draft[0], str(draft[1])
+    source = str(draft[3]) if len(draft) > 3 else "model"
+    if source not in {"model", "fallback"}:
+        source = "model"
+    return key, slot, claim_ids, source
+
+
 def _summary_deal_sections(
     deals: list[dict[str, Any]],
-    slot_drafts: list[tuple[object, str, list[str]]],
+    slot_drafts: Sequence[tuple[object, ...]],
     buckets: dict[object, list[str]] | None = None,
 ) -> dict[str, Any]:
     """Store validated slot citations and narrative blocks with deal_id."""
     key_to_id = {row["index"]: str(row["id"]) for row in deals}
     slots: list[dict[str, Any]] = []
-    for key, slot, claim_ids in slot_drafts:
+    fallback_keys: set[object] = set()
+    for draft in slot_drafts:
+        key, slot, claim_ids, source = _slot_draft_parts(draft)
         deal_id = key_to_id.get(key)
         if not deal_id or not slot or not claim_ids:
             continue
         if any(not cid or cid.isdigit() for cid in claim_ids):
             continue
-        slots.append({"slot": slot, "claim_ids": list(claim_ids), "deal_id": deal_id})
+        if source == "fallback":
+            fallback_keys.add(key)
+        slots.append(
+            {
+                "slot": slot,
+                "claim_ids": list(claim_ids),
+                "deal_id": deal_id,
+                "source": source,
+            }
+        )
     payload: dict[str, Any] = {
         "deals": [{"id": row["id"], "title": row["title"]} for row in deals],
         "slots": slots,
@@ -1999,6 +2094,7 @@ def _summary_deal_sections(
             {
                 "deal_id": str(deal["id"]),
                 "text": _deal_heading_block(str(deal["title"]), paras),
+                "source": "fallback" if deal["index"] in fallback_keys else "model",
             }
         )
     payload["paragraphs"] = paragraphs

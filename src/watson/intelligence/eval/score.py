@@ -268,6 +268,8 @@ def collect_predicted(
             slot_claim_ids = item.get("claim_ids")
             if not deal_id or slot_name not in {"what_happened", "who_involved", "next_step"}:
                 continue
+            if str(item.get("source") or "model") == "fallback":
+                continue
             if not isinstance(slot_claim_ids, list) or not slot_claim_ids:
                 continue
             resolved = [str(cid) for cid in slot_claim_ids]
