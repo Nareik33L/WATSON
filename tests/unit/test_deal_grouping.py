@@ -30,10 +30,12 @@ from watson.intelligence.runtime.types import OutputParseError
 from watson.intelligence.schemas.consolidation import ClusteringOutput, SummaryParagraph
 from watson.pipeline import consolidation as cons_mod
 from watson.pipeline.consolidation import (
+    _summarize_day,
     _summary_deal_sections,
     consolidate_working_day,
     derived_counts,
 )
+from watson.pipeline.understanding import understand_segment
 from watson.privacy.logging import configure_logging
 
 _DEAL_RECORDINGS = {
@@ -319,6 +321,33 @@ def _add_distinctive_phrases(strings: set[str], text: object) -> None:
                 _add_gold(strings, chunk)
 
 
+def _add_gold_sentence(strings: set[str], text: object) -> None:
+    """Full gold sentence plus 4+ word spans so truncated plants still match."""
+    body = " ".join(str(text or "").split())
+    _add_gold(strings, body)
+    stripped = body.rstrip(".,;: ")
+    _add_gold(strings, stripped)
+    words = stripped.split()
+    for size in range(4, len(words) + 1):
+        for index in range(0, len(words) - size + 1):
+            _add_gold(strings, " ".join(words[index : index + size]))
+
+
+def _collect_replay_truth(names: set[str], strings: set[str]) -> None:
+    root = _fixture_root()
+    paths = sorted(root.glob("day_*/truth.yaml"))
+    assert paths, "expected replay tests/fixtures/day_*/truth.yaml"
+    for path in paths:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for project in payload.get("projects") or []:
+            _add_gold(names, project)
+            _add_gold(strings, project)
+        for key in ("decisions", "commitments"):
+            for row in payload.get(key) or []:
+                text = row.get("text") if isinstance(row, dict) else row
+                _add_gold_sentence(strings, text)
+
+
 def _collect_from_mapping(
     payload: object, names: set[str], ids: set[str], strings: set[str]
 ) -> None:
@@ -401,6 +430,7 @@ def _gold_leak_tokens() -> tuple[frozenset[str], frozenset[str], frozenset[str]]
         _collect_from_mapping(
             yaml.safe_load(honest.read_text(encoding="utf-8")), names, ids, strings
         )
+    _collect_replay_truth(names, strings)
     assert names and ids and strings
     return frozenset(names), frozenset(ids), frozenset(strings)
 
@@ -488,20 +518,60 @@ def _seeded_input_blob(conn: object, day_id: str) -> str:
     return "\n".join(parts)
 
 
-def _capture_built_prompts(tmp_path: Path) -> tuple[object, dict[str, str], list[str]]:
-    conn = _open(tmp_path)
-    seeded = _seed_channels(conn)
-    captured: list[str] = []
-
+def _capture_runtime(
+    captured: list[str], recordings: dict[str, object] | None = None
+) -> FakeRuntime:
     class CaptureRuntime(FakeRuntime):
         def complete(self, messages, schema, *, num_predict=None):  # type: ignore[no-untyped-def]
             captured.append("\n".join(item["content"] for item in messages))
             return super().complete(messages, schema, num_predict=num_predict)
 
-    runtime = CaptureRuntime(recordings=_DEAL_RECORDINGS)
+    return CaptureRuntime(recordings=recordings)
+
+
+def _capture_built_prompts(tmp_path: Path) -> tuple[object, dict[str, str], list[str]]:
+    conn = _open(tmp_path)
+    seeded = _seed_channels(conn)
+    captured: list[str] = []
+    runtime = _capture_runtime(captured, _DEAL_RECORDINGS)
     consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+    _summarize_day(
+        runtime,
+        [
+            {
+                "id": seeded["sent"],
+                "kind": "activity",
+                "assertion": "observed",
+                "text": "Sent the pricing pack",
+            }
+        ],
+        load_prompt("daily_summary", "v2").text,
+        deal_groups=None,
+        roster=None,
+    )
+    extra = _insert_frame(conn, seeded["day_id"], captured_at="2026-10-31T13:00:00Z")
+    extra_seg = _insert_segment(
+        conn,
+        seeded["day_id"],
+        extra,
+        started_at="2026-10-31T13:00:00Z",
+        merged="Inbox glance",
+    )
+    understand_segment(conn, extra_seg, runtime, runtime)
     assert captured
     return conn, seeded, captured
+
+
+def _summary_prompts(captured: list[str]) -> list[str]:
+    return [blob for blob in captured if "Write the daily narrative" in blob]
+
+
+def _no_deal_summary_prompts(captured: list[str]) -> list[str]:
+    return [blob for blob in _summary_prompts(captured) if "Deal:" not in blob]
+
+
+def _understanding_prompts(captured: list[str]) -> list[str]:
+    return [blob for blob in captured if "Merged text (capped at" in blob]
 
 
 def _roster_lines(blob: str) -> list[str]:
@@ -519,7 +589,9 @@ def test_prompt_templates_and_built_prompts_omit_gold_fixtures(tmp_path: Path) -
         seeded_blob = _seeded_input_blob(conn, seeded["day_id"])
         forbidden = _absent_from(needles, seeded_blob)
         deal_names = _deal_names()
-        assert captured
+        assert any("Deal:" in blob for blob in _summary_prompts(captured))
+        assert _no_deal_summary_prompts(captured)
+        assert _understanding_prompts(captured)
         for blob in captured:
             hits = _leaked(blob, forbidden)
             assert not hits, f"built prompt leaked gold not in seeded inputs: {hits}"
@@ -607,6 +679,56 @@ def test_leakage_guard_flags_replay_gold_ids() -> None:
     assert planted in _leaked(prefix + planted, needles)
     for label, blob in _all_prompt_templates():
         assert planted in _leaked(blob + f"\n{planted}", needles), label
+
+
+def test_leakage_guard_flags_gold_name_in_no_deal_summary_prompt(tmp_path: Path) -> None:
+    names, _ids, strings = _gold_leak_tokens()
+    conn, seeded, captured = _capture_built_prompts(tmp_path)
+    try:
+        seeded_blob = _seeded_input_blob(conn, seeded["day_id"])
+        planted = next(
+            name
+            for name in sorted(names, key=len, reverse=True)
+            if " " in name and name.casefold() not in seeded_blob.casefold()
+        )
+        no_deal = _no_deal_summary_prompts(captured)
+        assert no_deal
+        forbidden = _absent_from(set(names) | set(strings), seeded_blob)
+        assert planted in forbidden
+        for blob in no_deal:
+            assert not _leaked(blob, forbidden)
+            assert planted in _leaked(blob + f"\n{planted}", forbidden)
+    finally:
+        conn.close()
+
+
+def test_leakage_guard_flags_replay_decision_commitment_project_strings() -> None:
+    needles = _template_needles()
+    planted = "Adopt the published three-tier rate card."
+    assert _leaked(planted, needles)
+    prefix = _prefix_matching("Extract cross-segment")
+    assert not _leaked(prefix, needles)
+    assert _leaked(prefix + planted, needles)
+    names, _ids, strings = _gold_leak_tokens()
+    project = "Internal Onboarding Guide"
+    assert project in names or project in strings
+    assert project in _leaked(prefix + project, needles)
+
+
+def test_leakage_guard_flags_gold_string_in_understanding_prompt(tmp_path: Path) -> None:
+    needles = _template_needles()
+    planted = "Adopt the published three-tier rate card."
+    conn, seeded, captured = _capture_built_prompts(tmp_path)
+    try:
+        understanding = _understanding_prompts(captured)
+        assert understanding
+        forbidden = _absent_from(needles, _seeded_input_blob(conn, seeded["day_id"]))
+        assert _leaked(planted, forbidden)
+        for blob in understanding:
+            assert not _leaked(blob, forbidden)
+            assert _leaked(blob + f"\n{planted}", forbidden)
+    finally:
+        conn.close()
 
 
 def test_load_deal_prompts_target_v1_scope() -> None:
