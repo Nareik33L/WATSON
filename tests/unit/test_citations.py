@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from watson.intelligence.citations import (
     citations_resolvable,
+    displayed_claim_text,
     expand_index_citations,
     verify_narrative,
 )
@@ -45,6 +46,21 @@ def test_strips_missing_and_foreign_citations() -> None:
     assert DAY_A not in unverified_ids
     assert DAY_B not in unverified_ids
     assert MISSING not in unverified_ids
+
+
+def test_displayed_claim_text_is_the_shown_sentence() -> None:
+    blob = (
+        f"Northwind acquired Contoso for £100 billion [c:{DAY_A}]. "
+        f"Sent the pricing pack [c:{DAY_B}]."
+    )
+    shown = displayed_claim_text(blob, claim_id=DAY_A)
+    assert shown == "Northwind acquired Contoso for £100 billion."
+    assert "pricing pack" not in shown
+    assert f"[c:{DAY_A}]" not in shown
+    headed = displayed_claim_text(f"## Acme Q4\n\n{blob}", claim_id=DAY_A)
+    assert headed == "Northwind acquired Contoso for £100 billion."
+    assert displayed_claim_text("no citations here", claim_id=DAY_A) == ""
+    assert displayed_claim_text(claim_id=DAY_A) == ""
 
 
 def test_invented_uncited_paragraph_is_dropped() -> None:

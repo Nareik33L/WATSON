@@ -165,6 +165,81 @@ def _assert_no_deal_summary_credit(conn: object, seeded: dict[str, str]) -> None
     assert score.summary.accuracy == 0.0
 
 
+def _score_seeded_summary(conn: object, seeded: dict[str, str]) -> tuple[dict[str, object], object]:
+    """Score stored slots against gold that the upstream claim rows would cover."""
+    from watson.intelligence.eval.deals import (
+        DayGold,
+        Deal,
+        DealCorpus,
+        Frame,
+        GoldFact,
+        GoldSegment,
+        Person,
+        PredictedCorpus,
+        predicted_day_from_collect,
+        score_deals,
+    )
+    from watson.intelligence.eval.score import collect_predicted
+
+    collected = collect_predicted(conn, seeded["day_id"])
+    for row in collected["segment_deals"]:
+        if row.get("frame_ids"):
+            continue
+        start = conn.execute(
+            "SELECT start_frame_id FROM segments WHERE id = ?",
+            (row["segment_id"],),
+        ).fetchone()
+        if start and start[0]:
+            row["frame_ids"] = [str(start[0])]
+    predicted = predicted_day_from_collect("day_seeded", collected)
+    frames: dict[str, Frame] = {}
+    gold_segments: list[GoldSegment] = []
+    ocr = "Priya sent the pricing pack. Kieran will send revised pricing."
+    for row in collected["segment_deals"]:
+        sid = str(row["segment_id"])
+        fids = tuple(str(fid) for fid in row.get("frame_ids") or ())
+        deal = "none" if sid == seeded["noise"] else "acme"
+        gold_segments.append(GoldSegment(id=sid, frame_ids=fids, deal=deal))
+        for fid in fids:
+            frames[fid] = Frame(id=fid, text=ocr)
+    gold = DayGold(
+        name="day_seeded",
+        date="2026-10-31",
+        deals=[Deal(id="acme", name="Acme Q4 proposal", company="Acme")],
+        people=[Person(id="priya", name="Priya Natarajan")],
+        segments=gold_segments,
+        frames=frames,
+        facts=[
+            GoldFact(
+                "f-what",
+                "acme",
+                "what_happened",
+                ("pricing", "pack"),
+                {},
+                (seeded["mail"],),
+            ),
+            GoldFact(
+                "f-who",
+                "acme",
+                "who_involved",
+                ("Priya",),
+                {},
+                (seeded["call"],),
+            ),
+            GoldFact(
+                "f-next",
+                "acme",
+                "next_step",
+                ("revised", "pricing"),
+                {},
+                (seeded["doc"],),
+            ),
+        ],
+        skipped={},
+    )
+    return collected, score_deals(DealCorpus(days=[gold]), PredictedCorpus(days=[predicted]))
+
+
 def _seed_channels(conn: object) -> dict[str, str]:
     from tests.unit.test_consolidation import _insert_day
 
@@ -1310,6 +1385,69 @@ def test_uncited_invented_summary_paragraph_is_dropped(tmp_path: Path) -> None:
         assert "John and Jane" not in narrative
         assert "The deal was completed" not in narrative
         assert f"[c:{seeded['sent']}]" in narrative
+    finally:
+        conn.close()
+
+
+def test_invented_cited_paragraph_cannot_score_full_credit(tmp_path: Path) -> None:
+    invented = [
+        "What happened: Northwind acquired Contoso for £100 billion [c:1].",
+        "Who involved: The Northwind board [c:2].",
+        "Next step: Announce the merger tomorrow [c:3].",
+    ]
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {"text": invented[0], "claim_ids": ["1"], "slot": "what_happened"},
+                    {"text": invented[1], "claim_ids": ["2"], "slot": "who_involved"},
+                    {"text": invented[2], "claim_ids": ["3"], "slot": "next_step"},
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        narrative = str(
+            conn.execute(
+                "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+                (seeded["day_id"],),
+            ).fetchone()[0]
+        )
+        assert "Northwind acquired Contoso" in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
+        assert f"[c:{seeded['who']}]" in narrative
+        assert f"[c:{seeded['next']}]" in narrative
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert shown[seeded["sent"]] == (
+            "What happened: Northwind acquired Contoso for £100 billion."
+        )
+        assert shown[seeded["who"]] == "Who involved: The Northwind board."
+        assert shown[seeded["next"]] == "Next step: Announce the merger tomorrow."
+        assert all("pricing pack" not in text.casefold() for text in shown.values())
+        assert all("priya joined" not in text.casefold() for text in shown.values())
+        assert score.summary.claims == 3
+        assert score.summary.accuracy < 0.85
+        assert score.summary.accuracy != 1.0
+        assert score.summary.correct == 0
+    finally:
+        conn.close()
+
+
+def test_honest_cited_paragraph_still_scores_deal_summary(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(recordings=_DEAL_RECORDINGS)
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert "pricing pack" in shown[seeded["sent"]].casefold()
+        assert "priya" in shown[seeded["who"]].casefold()
+        assert "revised pricing" in shown[seeded["next"]].casefold()
+        assert score.summary.accuracy >= 0.85
+        assert score.summary.accuracy == 1.0
     finally:
         conn.close()
 

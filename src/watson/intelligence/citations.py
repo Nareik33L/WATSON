@@ -118,6 +118,35 @@ def citations_resolvable(narrative_md: str, day_claim_ids: set[str]) -> bool:
     return all(_resolvable(claim_id, day_claim_ids) for claim_id in found)
 
 
+def displayed_claim_text(*texts: str, claim_id: str) -> str:
+    """Citation-stripped displayed sentence that shows ``[c:claim_id]``.
+
+    Deal-summary scoring uses this wording — the text the user sees — not
+    ``claims.text``. Invented prose cannot ride a valid citation. Empty when
+    the id is not shown.
+    """
+    if not claim_id:
+        return ""
+    needle = f"[c:{claim_id}]"
+    for text in texts:
+        body = _strip_md_headings(text)
+        if not body or needle not in body:
+            continue
+        for sentence in _split_sentences(body):
+            if needle not in sentence:
+                continue
+            cleaned = CITATION_RE.sub("", sentence)
+            cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+            return " ".join(cleaned.split())
+    return ""
+
+
+def _strip_md_headings(text: str) -> str:
+    """Drop ``##`` title lines so scoring reads the card body, not the heading."""
+    lines = [line for line in text.splitlines() if not line.lstrip().startswith("##")]
+    return "\n".join(lines).strip()
+
+
 def _resolvable(claim_id: str, day_ids: set[str]) -> bool:
     return bool(claim_id) and claim_id in day_ids
 

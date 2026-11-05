@@ -5,6 +5,8 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-05, #55):** `deal_summary` scores the displayed citation sentence (the paragraph the user sees), not `claims.text`. Invented prose with valid `[c:id]` cannot earn full credit. §14 / D1–D12 unchanged.
+
 **Changelog (2026-11-03, QA on #47 @d924f96):** Cited gold segments must **intersect** a fact's `evidence_segments`, and at most **one** cited segment may fall outside them. Containment (cited ⊆ evidence) is not the rule. Raw sliding-what plus full next/who dump windows, and nearby widths 5–7 / strides 1–3, must score < 0.85. §14 / D8 / D10 / D11 unchanged.
 
 **Changelog (2026-11-03, QA on #47 @7f3c41c):** A claim covers a fact only when its cited gold segments stay inside that fact's `evidence_segments` (overlap by containment, not "cite the whole deal"). Raw sliding-what plus full next/who dump windows, and nearby widths 5–7 / strides 1–3, must score < 0.85. Same-cover copies with partially overlapping citations still count once. §14 / D8 / D10 / D11 unchanged.

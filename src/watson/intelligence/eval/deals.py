@@ -1397,7 +1397,8 @@ def predicted_day_from_collect(name: str, collected: dict[str, Any]) -> Predicte
     """Build a scorable day from ``collect_predicted`` deal fields.
 
     Uses ``segment_deals`` (ids, cluster, frames) and ``summary_slots`` plus
-    ``deal_claims`` (claim text and evidence ids). Never requires OCR or titles.
+    ``deal_claims`` (displayed citation sentence and evidence ids). Never
+    requires OCR or titles. Claim-table wording is not a scoring input.
     """
     segments = [
         PredictedSegment(
