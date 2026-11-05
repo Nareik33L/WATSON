@@ -74,8 +74,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "slot-drafts-raw",
         CONSOLIDATION,
-        "            slot_drafts.append((key, slot, list(verified.claim_ids)))\n",
-        "            slot_drafts.append((key, slot, list(para.claim_ids)))\n",
+        '            slot_drafts.append((key, slot, list(verified.claim_ids), "model"))\n',
+        '            slot_drafts.append((key, slot, list(para.claim_ids), "model"))\n',
     ),
     (
         "unmatched-kept",
@@ -86,11 +86,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "slots-no-deal-id",
         CONSOLIDATION,
-        (
-            '        slots.append({"slot": slot, "claim_ids": list(claim_ids),'
-            ' "deal_id": deal_id})\n'
-        ),
-        '        slots.append({"slot": slot, "claim_ids": list(claim_ids)})\n',
+        ('                "deal_id": deal_id,\n                "source": source,\n'),
+        '                "source": source,\n',
     ),
     (
         "slots-raw-tokens",

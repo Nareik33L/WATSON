@@ -88,6 +88,76 @@ def _recordings_with_summary(paragraphs: list[dict[str, object]]) -> dict[str, o
     }
 
 
+def _assert_no_deal_summary_credit(conn: object, seeded: dict[str, str]) -> None:
+    from watson.intelligence.eval.deals import (
+        DayGold,
+        Deal,
+        DealCorpus,
+        Frame,
+        GoldFact,
+        GoldSegment,
+        Person,
+        PredictedCorpus,
+        predicted_day_from_collect,
+        score_deals,
+    )
+    from watson.intelligence.eval.score import collect_predicted
+
+    collected = collect_predicted(conn, seeded["day_id"])
+    assert collected["summary_slots"] == []
+    predicted = predicted_day_from_collect("day_seeded", collected)
+    assert predicted.claims == []
+    frames: dict[str, Frame] = {}
+    gold_segments: list[GoldSegment] = []
+    for row in collected["segment_deals"]:
+        sid = str(row["segment_id"])
+        fids = tuple(str(fid) for fid in row.get("frame_ids") or ())
+        deal = "none" if sid == seeded["noise"] else "acme"
+        gold_segments.append(GoldSegment(id=sid, frame_ids=fids, deal=deal))
+        for fid in fids:
+            frames[fid] = Frame(id=fid, text="seed")
+    gold = DayGold(
+        name="day_seeded",
+        date="2026-10-31",
+        deals=[Deal(id="acme", name="Acme Q4 proposal", company="Acme")],
+        people=[Person(id="priya", name="Priya Natarajan")],
+        segments=gold_segments,
+        frames=frames,
+        facts=[
+            GoldFact(
+                "f-what",
+                "acme",
+                "what_happened",
+                ("pricing", "pack"),
+                {},
+                (seeded["mail"],),
+            ),
+            GoldFact(
+                "f-who",
+                "acme",
+                "who_involved",
+                ("Priya",),
+                {},
+                (seeded["call"],),
+                person_id="priya",
+            ),
+            GoldFact(
+                "f-next",
+                "acme",
+                "next_step",
+                ("revised", "pricing"),
+                {},
+                (seeded["doc"],),
+            ),
+        ],
+        skipped={},
+    )
+    score = score_deals(DealCorpus(days=[gold]), PredictedCorpus(days=[predicted]))
+    assert score.summary.claims == 0
+    assert score.summary.accuracy < 0.85
+    assert score.summary.accuracy == 0.0
+
+
 def _seed_channels(conn: object) -> dict[str, str]:
     from tests.unit.test_consolidation import _insert_day
 
@@ -189,6 +259,24 @@ def _seed_channels(conn: object) -> dict[str, str]:
     }
 
 
+def test_clustering_prompts_omit_deal_gold_fixture_names() -> None:
+    from watson.intelligence.eval.deals import load_deal_corpus, load_failing_acme_1211
+    from watson.pipeline.consolidation import _CLUSTER_USER_PREFIX
+
+    blob = (load_prompt("clustering", "v2").text + "\n" + _CLUSTER_USER_PREFIX).casefold()
+    names: set[str] = set()
+    for corpus in (load_deal_corpus(), load_failing_acme_1211()):
+        for day in corpus.days:
+            for deal in day.deals:
+                for raw in (deal.name, deal.company):
+                    token = " ".join(str(raw or "").split())
+                    if token:
+                        names.add(token)
+    assert names
+    for name in sorted(names, key=len, reverse=True):
+        assert name.casefold() not in blob, name
+
+
 def test_load_deal_prompts_target_v1_scope() -> None:
     cluster = load_prompt("clustering", "v2")
     summary = load_prompt("daily_summary", "v2")
@@ -199,7 +287,6 @@ def test_load_deal_prompts_target_v1_scope() -> None:
     assert "none" in cluster_text
     assert "email" in cluster_text and "call" in cluster_text
     assert "separate companies" in cluster_text
-    assert "pier" in cluster_text and "cedar" in cluster_text
     summary_text = summary.text.casefold()
     assert "what_happened" in summary_text
     assert "who_involved" in summary_text
@@ -773,7 +860,8 @@ def test_uncited_invented_summary_paragraph_is_dropped(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_claim_ids_without_inline_citations_still_write_slots(tmp_path: Path) -> None:
+def test_invented_claim_ids_only_text_is_not_cited_as_model(tmp_path: Path) -> None:
+    invented = "Northwind acquired Contoso for £100 billion"
     conn = _open(tmp_path)
     try:
         seeded = _seed_channels(conn)
@@ -781,8 +869,8 @@ def test_claim_ids_without_inline_citations_still_write_slots(tmp_path: Path) ->
             recordings=_recordings_with_summary(
                 [
                     {
-                        "text": "What happened: Sent the pricing pack.",
-                        "claim_ids": ["1"],
+                        "text": invented,
+                        "claim_ids": ["1", "2", "3"],
                         "slot": "what_happened",
                     }
                 ]
@@ -795,13 +883,10 @@ def test_claim_ids_without_inline_citations_still_write_slots(tmp_path: Path) ->
         ).fetchone()
         narrative = str(row["narrative_md"])
         sections = json.loads(str(row["sections_json"]))
-        assert "Sent the pricing pack" in narrative
-        assert f"[c:{seeded['sent']}]" in narrative
-        slots = {item["slot"]: item for item in sections["slots"]}
-        assert slots["what_happened"]["claim_ids"] == [seeded["sent"]]
-        assert all(
-            not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
-        )
+        assert invented not in narrative
+        assert all(item.get("source") == "fallback" for item in sections["slots"])
+        assert all(item.get("source") == "fallback" for item in sections.get("paragraphs") or [])
+        _assert_no_deal_summary_credit(conn, seeded)
     finally:
         conn.close()
 
@@ -828,6 +913,7 @@ def test_slot_inferred_from_prefix_when_model_omits_slot(tmp_path: Path) -> None
         sections = json.loads(str(row["sections_json"]))
         slots = {item["slot"]: item for item in sections["slots"]}
         assert slots["who_involved"]["claim_ids"] == [seeded["who"]]
+        assert slots["who_involved"]["source"] == "model"
         assert all(
             not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
         )
@@ -852,6 +938,8 @@ def test_empty_model_paragraphs_fallback_writes_slots(tmp_path: Path) -> None:
         assert slots["what_happened"]["claim_ids"] == [seeded["sent"]]
         assert slots["who_involved"]["claim_ids"] == [seeded["who"]]
         assert slots["next_step"]["claim_ids"] == [seeded["next"]]
+        assert all(item.get("source") == "fallback" for item in sections["slots"])
+        assert all(item.get("source") == "fallback" for item in sections.get("paragraphs") or [])
         assert all(item.get("deal_id") not in {"", "none"} for item in sections["slots"])
         assert all(
             not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
@@ -861,6 +949,7 @@ def test_empty_model_paragraphs_fallback_writes_slots(tmp_path: Path) -> None:
         assert f"[c:{seeded['sent']}]" in narrative
         assert f"[c:{seeded['who']}]" in narrative
         assert f"[c:{seeded['next']}]" in narrative
+        _assert_no_deal_summary_credit(conn, seeded)
     finally:
         conn.close()
 
@@ -940,8 +1029,6 @@ def test_clustering_prompt_includes_understanding_deal_candidates(tmp_path: Path
         assert "deal candidates: Acme Q4 proposal" in prompt
         assert "none is its own class" in prompt
         assert "Separate companies are separate deals" in prompt
-        assert "Pier invoice" in prompt
-        assert "cedar onboarding" in prompt.casefold()
         narrative_prompts = [blob for blob in captured if "Write the daily narrative" in blob]
         assert narrative_prompts
         assert "Deal: Acme Q4 proposal" in narrative_prompts[0]
@@ -1176,6 +1263,7 @@ def test_invalid_citation_does_not_dump_noise_into_deal_summary(tmp_path: Path) 
         assert f"[c:{seeded['sent']}]" in narrative
         sections = json.loads(str(row["sections_json"]))
         assert sections["slots"]
+        assert all(item.get("source") == "fallback" for item in sections["slots"])
         assert all(
             not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
         )
@@ -1265,7 +1353,12 @@ def test_summary_deal_sections_keep_validated_slots_only() -> None:
         ],
     )
     assert payload["slots"] == [
-        {"slot": "next_step", "claim_ids": ["claim-uuid"], "deal_id": "deal-1"}
+        {
+            "slot": "next_step",
+            "claim_ids": ["claim-uuid"],
+            "deal_id": "deal-1",
+            "source": "model",
+        }
     ]
     assert "paragraphs" not in payload
 
