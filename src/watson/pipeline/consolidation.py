@@ -110,6 +110,13 @@ _CLUSTER_USER_PREFIX = (
     "Separate companies are separate deals. "
     "none is its own class — leave those observations out.\n\n"
 )
+_EXTRACT_USER_PREFIX = "Extract cross-segment decisions, commitments, and entity deltas.\n\n"
+_SUMMARY_USER_PREFIX = (
+    "Write the daily narrative from these claims. "
+    "Cite each used claim inline as [c:<id>]. "
+    "For each deal write what happened, who was involved, and the next step "
+    "from that deal's claims only.\n\n"
+)
 PROMPT_VERSION = EXTRACT_PROMPT_VERSION
 # Keep clustering / extract / summary user lists inside the 4096-token window.
 _CLUSTER_ITEM_MAX = 120
@@ -866,8 +873,7 @@ def _extract_day(
         {
             "role": "user",
             "content": (
-                "Extract cross-segment decisions, commitments, and entity deltas.\n\n"
-                f"Entities:\n{entity_lines}\n\nClaims:\n{claim_lines}\n"
+                f"{_EXTRACT_USER_PREFIX}Entities:\n{entity_lines}\n\nClaims:\n{claim_lines}\n"
             ),
         },
     ]
@@ -913,13 +919,7 @@ def _summarize_day(
         {"role": "system", "content": system},
         {
             "role": "user",
-            "content": (
-                "Write the daily narrative from these claims. "
-                "Cite each used claim inline as [c:<id>]. "
-                "For each deal write what happened, who was involved, and the next step "
-                "from that deal's claims only.\n\n"
-                f"{claim_block}\n"
-            ),
+            "content": f"{_SUMMARY_USER_PREFIX}{claim_block}\n",
         },
     ]
     result = _structured(
@@ -1972,7 +1972,8 @@ def _bucket_deal_paragraphs(
             continue
         buckets[key].extend(_strip_leading_headings(body) for body in verified.paragraphs)
         cited_by_key[key].update(verified.claim_ids)
-        slot = para.slot or _slot_from_prefix(para.text)
+        verified_text = "\n\n".join(verified.paragraphs)
+        slot = _slot_from_prefix(verified_text) or para.slot
         if slot and verified.claim_ids:
             slot_drafts.append((key, slot, list(verified.claim_ids), "model"))
 

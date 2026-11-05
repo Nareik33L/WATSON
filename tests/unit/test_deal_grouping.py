@@ -20,11 +20,22 @@ from tests.unit.test_consolidation import (
     _runtime,
     _seed_day,
 )
+from watson.intelligence import prompts as prompt_mod
+from watson.intelligence.eval.deals import (
+    V1_DEAL_DAYS,
+    deal_gold_root,
+    load_deal_corpus,
+    load_failing_acme_1211,
+    load_honest_claims,
+)
 from watson.intelligence.prompts import load_prompt
 from watson.intelligence.runtime import FakeRuntime
 from watson.intelligence.runtime.types import OutputParseError
 from watson.intelligence.schemas.consolidation import ClusteringOutput, SummaryParagraph
 from watson.pipeline.consolidation import (
+    _CLUSTER_USER_PREFIX,
+    _EXTRACT_USER_PREFIX,
+    _SUMMARY_USER_PREFIX,
     _summary_deal_sections,
     consolidate_working_day,
     derived_counts,
@@ -259,22 +270,121 @@ def _seed_channels(conn: object) -> dict[str, str]:
     }
 
 
-def test_clustering_prompts_omit_deal_gold_fixture_names() -> None:
-    from watson.intelligence.eval.deals import load_deal_corpus, load_failing_acme_1211
-    from watson.pipeline.consolidation import _CLUSTER_USER_PREFIX
+_PROMPT_ROOT = Path(prompt_mod.__file__).resolve().parent
+_SKIP_GOLD_TOKENS = frozenset({"none", "missing", "n/a", "na"})
 
-    blob = (load_prompt("clustering", "v2").text + "\n" + _CLUSTER_USER_PREFIX).casefold()
+
+def _gold_token(raw: object) -> str | None:
+    token = " ".join(str(raw or "").split())
+    if len(token) < 4 or token.casefold() in _SKIP_GOLD_TOKENS:
+        return None
+    return token
+
+
+def _gold_leak_tokens() -> tuple[set[str], set[str]]:
+    """Gold proper names vs gold-only ids/strings that must never appear in prompts."""
     names: set[str] = set()
+    ids: set[str] = set()
+
+    def add(bucket: set[str], raw: object) -> None:
+        token = _gold_token(raw)
+        if token:
+            bucket.add(token)
+
     for corpus in (load_deal_corpus(), load_failing_acme_1211()):
         for day in corpus.days:
+            add(ids, day.name)
             for deal in day.deals:
-                for raw in (deal.name, deal.company):
-                    token = " ".join(str(raw or "").split())
-                    if token:
-                        names.add(token)
-    assert names
-    for name in sorted(names, key=len, reverse=True):
-        assert name.casefold() not in blob, name
+                add(names, deal.name)
+                add(names, deal.company)
+                add(ids, deal.id)
+            for person in day.people:
+                add(names, person.name)
+                add(names, person.company)
+                add(ids, person.id)
+            for segment in day.segments:
+                add(ids, segment.id)
+                for frame_id in segment.frame_ids:
+                    add(ids, frame_id)
+            for fact in day.facts:
+                add(ids, fact.id)
+                add(ids, fact.person_id)
+            for frame_id in day.frames:
+                add(ids, frame_id)
+            for frame_id in day.skipped:
+                add(ids, frame_id)
+    for name in V1_DEAL_DAYS:
+        for claim in load_honest_claims(deal_gold_root() / name):
+            add(ids, claim.id)
+    assert names and ids
+    return names, ids
+
+
+def _leaked(blob: str, needles: set[str]) -> list[str]:
+    folded = blob.casefold()
+    return [
+        needle for needle in sorted(needles, key=len, reverse=True) if needle.casefold() in folded
+    ]
+
+
+def _all_prompt_templates() -> list[tuple[str, str]]:
+    paths = sorted(_PROMPT_ROOT.rglob("*.md"))
+    assert paths, "expected prompt templates under intelligence/prompts"
+    return [
+        (str(path.relative_to(_PROMPT_ROOT)), path.read_text(encoding="utf-8")) for path in paths
+    ]
+
+
+def _built_prompt_constants() -> list[tuple[str, str]]:
+    return [
+        ("_CLUSTER_USER_PREFIX", _CLUSTER_USER_PREFIX),
+        ("_EXTRACT_USER_PREFIX", _EXTRACT_USER_PREFIX),
+        ("_SUMMARY_USER_PREFIX", _SUMMARY_USER_PREFIX),
+    ]
+
+
+def test_prompt_templates_and_built_prompts_omit_gold_fixtures(tmp_path: Path) -> None:
+    names, ids = _gold_leak_tokens()
+    template_needles = names | ids
+    for label, blob in (*_all_prompt_templates(), *_built_prompt_constants()):
+        hits = _leaked(blob, template_needles)
+        assert not hits, f"{label} leaked gold fixtures: {hits}"
+
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        captured: list[str] = []
+
+        class CaptureRuntime(FakeRuntime):
+            def complete(self, messages, schema, *, num_predict=None):  # type: ignore[no-untyped-def]
+                captured.append("\n".join(item["content"] for item in messages))
+                return super().complete(messages, schema, num_predict=num_predict)
+
+        runtime = CaptureRuntime(recordings=_DEAL_RECORDINGS)
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        assert captured
+        for blob in captured:
+            hits = _leaked(blob, ids)
+            assert not hits, f"built prompt leaked gold-only ids: {hits}"
+    finally:
+        conn.close()
+
+
+def test_leakage_guard_flags_person_name_in_daily_summary_template() -> None:
+    names, ids = _gold_leak_tokens()
+    planted = "Priya Natarajan"
+    assert planted in names
+    template = load_prompt("daily_summary", "v2").text
+    assert not _leaked(template, names | ids)
+    assert planted in _leaked(template + f"\n{planted}", names | ids)
+
+
+def test_leakage_guard_flags_gold_id_in_clustering_prefix() -> None:
+    _names, ids = _gold_leak_tokens()
+    planted = "fact-q4-call"
+    assert planted in ids
+    assert not _leaked(_CLUSTER_USER_PREFIX, ids)
+    assert planted in _leaked(_CLUSTER_USER_PREFIX + planted, ids)
 
 
 def test_load_deal_prompts_target_v1_scope() -> None:
@@ -917,6 +1027,39 @@ def test_slot_inferred_from_prefix_when_model_omits_slot(tmp_path: Path) -> None
         assert all(
             not any(str(cid).isdigit() for cid in item["claim_ids"]) for item in sections["slots"]
         )
+    finally:
+        conn.close()
+
+
+def test_dropped_next_step_prefix_does_not_credit_next_step(tmp_path: Path) -> None:
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": (
+                            "Next step: invent a merger. "
+                            "What happened: Sent the pricing pack [c:1]."
+                        ),
+                        "claim_ids": ["1"],
+                    }
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        slots = {item["slot"]: item for item in sections["slots"]}
+        assert "invent a merger" not in narrative
+        assert "next_step" not in slots
+        assert slots["what_happened"]["claim_ids"] == [seeded["sent"]]
+        assert slots["what_happened"]["source"] == "model"
     finally:
         conn.close()
 
