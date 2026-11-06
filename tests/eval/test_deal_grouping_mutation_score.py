@@ -1,6 +1,6 @@
 """Named-mutation score for deal grouping and per-deal summaries.
 
-Target ≥ 13 of 16 mutants. No-ops and collection errors count as SURVIVED.
+Target ≥ 15 of 18 mutants. No-ops and collection errors count as SURVIVED.
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-TARGET_MUTANTS = 16
-KILL_FLOOR = 13
+TARGET_MUTANTS = 18
+KILL_FLOOR = 15
 TEST_PATHS = (
     "tests/unit/test_deal_grouping.py",
     "tests/unit/test_daily_summary.py",
@@ -200,6 +200,29 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
             " cluster.title, grouped))\n"
         ),
     ),
+    (
+        "drop-append-markers",
+        CONSOLIDATION,
+        (
+            '            expanded["text"] = append_missing_citations('
+            'str(expanded["text"]), mapped, grouped_ids)\n'
+        ),
+        "            pass\n",
+    ),
+    (
+        "inject-claims-text",
+        CONSOLIDATION,
+        (
+            '            expanded["text"] = append_missing_citations('
+            'str(expanded["text"]), mapped, grouped_ids)\n'
+        ),
+        (
+            '            expanded["text"] = " ".join(\n'
+            "                f\"{str(row.get('text') or '').rstrip('.')} "
+            "[c:{row['id']}].\" for row in grouped\n"
+            "            )\n"
+        ),
+    ),
 )
 
 
@@ -259,7 +282,7 @@ def _classify(src_root: Path, *, changed: bool) -> str:
 
 
 @pytest.mark.timeout(300)
-def test_deal_grouping_kills_at_least_13_of_16(tmp_path: Path) -> None:
+def test_deal_grouping_kills_at_least_15_of_18(tmp_path: Path) -> None:
     assert len(MUTANTS) == TARGET_MUTANTS
     names = [row[0] for row in MUTANTS]
     assert len(names) == len(set(names))

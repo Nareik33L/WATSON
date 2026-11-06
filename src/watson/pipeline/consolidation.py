@@ -38,6 +38,7 @@ from watson.intelligence.citations import (
     CITATION_RE,
     VerifiedNarrative,
     _cited_fallback,
+    append_missing_citations,
     expand_index_citations,
     verify_narrative,
 )
@@ -113,7 +114,9 @@ _CLUSTER_USER_PREFIX = (
 _EXTRACT_USER_PREFIX = "Extract cross-segment decisions, commitments, and entity deltas.\n\n"
 _SUMMARY_USER_PREFIX = (
     "Write the daily narrative from these claims. "
-    "Cite each used claim inline as [c:<id>]. "
+    "Cite each used claim inline as [c:<id>] in the displayed sentence. "
+    "Listing ids in claim_ids is not enough — every asserted claim must "
+    "appear as [c:<id>] inside the sentence text. "
     "For each deal write what happened, who was involved, and the next step "
     "from that deal's claims only.\n\n"
 )
@@ -1950,10 +1953,12 @@ def _bucket_deal_paragraphs(
         for key, _title, grouped in deal_groups:
             expanded = expand_index_citations([payload], grouped)[0]
             grouped_ids = {str(row["id"]) for row in grouped}
+            mapped = [cid for cid in expanded["claim_ids"] if cid in grouped_ids]
+            expanded["text"] = append_missing_citations(str(expanded["text"]), mapped, grouped_ids)
             cited_toks = [
                 tok for tok in CITATION_RE.findall(str(expanded["text"])) if tok in grouped_ids
             ]
-            if cited_toks:
+            if cited_toks or mapped:
                 owners.append(key)
                 expanded_by_key[key] = expanded
         if len(owners) != 1:

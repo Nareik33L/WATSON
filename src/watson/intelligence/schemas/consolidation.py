@@ -68,8 +68,21 @@ class DayExtractOutput(BaseModel):
 
 class SummaryParagraph(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    text: str = Field(..., min_length=1)
-    claim_ids: list[str] = Field(default_factory=list)
+    text: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Displayed sentence. Must include inline [c:<id>] for every "
+            "claim this paragraph asserts."
+        ),
+    )
+    claim_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Same claim ids as the inline [c:<id>] markers in text. "
+            "Not a substitute for those markers."
+        ),
+    )
     slot: Literal["what_happened", "who_involved", "next_step"] | None = None
 
 

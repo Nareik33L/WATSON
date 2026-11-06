@@ -821,6 +821,14 @@ def test_load_deal_prompts_target_v1_scope() -> None:
     assert "who_involved" in summary_text
     assert "next_step" in summary_text
     assert "[c:<id>]" in summary.text
+    assert "displayed" in summary_text
+    assert "not a substitute" in summary_text
+    prefix = cons_mod._SUMMARY_USER_PREFIX.casefold()
+    assert "displayed sentence" in prefix
+    assert "claim_ids is not enough" in prefix
+    schema_blob = json.dumps(cons_mod.DAILY_SUMMARY_JSON_SCHEMA).casefold()
+    assert "[c:<id>]" in schema_blob
+    assert "not a substitute" in schema_blob
 
 
 def test_clustering_schema_accepts_deals_or_parked_activities() -> None:
@@ -1435,6 +1443,58 @@ def test_invented_cited_paragraph_cannot_score_full_credit(tmp_path: Path) -> No
         conn.close()
 
 
+def test_claim_ids_only_honest_prose_is_scorable(tmp_path: Path) -> None:
+    """Mutant (a): drop append-markers → claim_ids-only honest paras score 0."""
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": "What happened: Sent the pricing pack.",
+                        "claim_ids": ["1"],
+                        "slot": "what_happened",
+                    },
+                    {
+                        "text": "Who involved: Priya joined the call.",
+                        "claim_ids": ["2"],
+                        "slot": "who_involved",
+                    },
+                    {
+                        "text": "Next step: Kieran will send revised pricing.",
+                        "claim_ids": ["3"],
+                        "slot": "next_step",
+                    },
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md, sections_json FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sections = json.loads(str(row["sections_json"]))
+        assert "What happened: Sent the pricing pack" in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
+        assert f"[c:{seeded['who']}]" in narrative
+        assert f"[c:{seeded['next']}]" in narrative
+        assert all(item.get("source") == "model" for item in sections["slots"])
+        assert all(item.get("source") == "model" for item in sections.get("paragraphs") or [])
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert shown[seeded["sent"]].casefold().startswith("what happened:")
+        assert "pricing pack" in shown[seeded["sent"]].casefold()
+        assert "priya joined the call" in shown[seeded["who"]].casefold()
+        assert "revised pricing" in shown[seeded["next"]].casefold()
+        assert score.summary.claims == 3
+        assert score.summary.accuracy >= 0.85
+        assert score.summary.accuracy == 1.0
+    finally:
+        conn.close()
+
+
 def test_honest_cited_paragraph_still_scores_deal_summary(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:
@@ -1563,19 +1623,22 @@ def test_nothing_displayed_paragraphs_score_zero(tmp_path: Path, shape: str) -> 
         conn.close()
 
 
-def test_invented_claim_ids_only_text_is_not_cited_as_model(tmp_path: Path) -> None:
-    invented = "Northwind acquired Contoso for £100 billion"
+def test_invented_claim_ids_only_prose_does_not_ride_claims_text(tmp_path: Path) -> None:
+    """Mutant (b): restore claims.text injection → invented wording scores 1.000."""
+    invented = [
+        "What happened: Northwind acquired Contoso for £100 billion",
+        "Who involved: The Northwind board",
+        "Next step: Announce the merger tomorrow",
+    ]
     conn = _open(tmp_path)
     try:
         seeded = _seed_channels(conn)
         runtime = FakeRuntime(
             recordings=_recordings_with_summary(
                 [
-                    {
-                        "text": invented,
-                        "claim_ids": ["1", "2", "3"],
-                        "slot": "what_happened",
-                    }
+                    {"text": invented[0], "claim_ids": ["1"], "slot": "what_happened"},
+                    {"text": invented[1], "claim_ids": ["2"], "slot": "who_involved"},
+                    {"text": invented[2], "claim_ids": ["3"], "slot": "next_step"},
                 ]
             )
         )
@@ -1586,10 +1649,21 @@ def test_invented_claim_ids_only_text_is_not_cited_as_model(tmp_path: Path) -> N
         ).fetchone()
         narrative = str(row["narrative_md"])
         sections = json.loads(str(row["sections_json"]))
-        assert invented not in narrative
-        assert all(item.get("source") == "fallback" for item in sections["slots"])
-        assert all(item.get("source") == "fallback" for item in sections.get("paragraphs") or [])
-        _assert_no_deal_summary_credit(conn, seeded)
+        assert "Northwind acquired Contoso" in narrative
+        assert "The Northwind board" in narrative
+        assert "Announce the merger tomorrow" in narrative
+        assert f"[c:{seeded['sent']}]" in narrative
+        assert all(item.get("source") == "model" for item in sections["slots"])
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert "northwind acquired contoso" in shown[seeded["sent"]].casefold()
+        assert all("pricing pack" not in text.casefold() for text in shown.values())
+        assert all("priya joined" not in text.casefold() for text in shown.values())
+        assert all("revised pricing" not in text.casefold() for text in shown.values())
+        assert score.summary.claims == 3
+        assert score.summary.accuracy < 0.85
+        assert score.summary.accuracy != 1.0
+        assert score.summary.correct == 0
     finally:
         conn.close()
 

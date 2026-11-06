@@ -5,6 +5,8 @@
 **Platform:** macOS (Apple Silicon first), local-first, offline-capable
 **Core language:** Python, with a small Swift capture helper
 
+**Changelog (2026-11-06, Mac r3 / #56 follow-up):** Deal and daily summary prompts require inline `[c:id]` in the displayed sentence. Persist appends missing markers onto the model's own sentence when `claim_ids` are present but the text omitted them. It does not publish `claims.text`. Scoring still reads displayed wording only; fallback `source=fallback` paragraphs stay out of §11.2. §14 / D1–D12 unchanged.
+
 **Changelog (2026-11-06, QA on #56):** `deal_summary` scores **every** displayed sentence that cites a claim. An invented extra sentence that reuses `[c:id]` cannot ride the first valid cite. Nothing-displayed (citation-only, heading-only, citation-after-the-period) scores 0 and never falls back to `claims.text`. §14 / D1–D12 unchanged.
 
 **Changelog (2026-11-05, #55):** `deal_summary` scores the displayed citation sentence (the paragraph the user sees), not `claims.text`. Invented prose with valid `[c:id]` cannot earn full credit. §14 / D1–D12 unchanged.
