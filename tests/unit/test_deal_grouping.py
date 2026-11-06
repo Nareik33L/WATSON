@@ -1452,6 +1452,117 @@ def test_honest_cited_paragraph_still_scores_deal_summary(tmp_path: Path) -> Non
         conn.close()
 
 
+def test_honest_then_invented_same_cite_does_not_score(tmp_path: Path) -> None:
+    """Every displayed sentence that cites a claim must cover; extras cannot ride."""
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": (
+                            "What happened: Sent the pricing pack [c:1]. "
+                            "Northwind acquired Contoso for £100 billion [c:1]."
+                        ),
+                        "claim_ids": ["1"],
+                        "slot": "what_happened",
+                    },
+                    {
+                        "text": (
+                            "Who involved: Priya joined the call [c:2]. The Northwind board [c:2]."
+                        ),
+                        "claim_ids": ["2"],
+                        "slot": "who_involved",
+                    },
+                    {
+                        "text": (
+                            "Next step: Kieran will send revised pricing [c:3]. "
+                            "Announce the merger tomorrow [c:3]."
+                        ),
+                        "claim_ids": ["3"],
+                        "slot": "next_step",
+                    },
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert "pricing pack" in shown[seeded["sent"]].casefold()
+        assert "northwind acquired contoso" in shown[seeded["sent"]].casefold()
+        assert "priya" in shown[seeded["who"]].casefold()
+        assert "northwind board" in shown[seeded["who"]].casefold()
+        assert "revised pricing" in shown[seeded["next"]].casefold()
+        assert "announce the merger" in shown[seeded["next"]].casefold()
+        assert score.summary.claims == 3
+        assert score.summary.accuracy == 0.0
+        assert score.summary.correct == 0
+    finally:
+        conn.close()
+
+
+def _overwrite_displayed_summary(conn: object, day_id: str, body: str) -> None:
+    row = conn.execute(
+        "SELECT sections_json FROM daily_summaries WHERE working_day_id = ?",
+        (day_id,),
+    ).fetchone()
+    sections = json.loads(str(row[0]))
+    for para in sections.get("paragraphs") or []:
+        if not isinstance(para, dict):
+            continue
+        if str(para.get("source") or "model") == "fallback":
+            continue
+        para["text"] = body
+    conn.execute(
+        """
+        UPDATE daily_summaries
+        SET narrative_md = ?, sections_json = ?
+        WHERE working_day_id = ?
+        """,
+        (body, json.dumps(sections), day_id),
+    )
+    conn.commit()
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ("citation-only", "heading-only", "citation-after-the-period"),
+)
+def test_nothing_displayed_paragraphs_score_zero(tmp_path: Path, shape: str) -> None:
+    """Citation-only / heading-only / cite-after-period must not read claims.text."""
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(recordings=_DEAL_RECORDINGS)
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        sent, who, nxt = seeded["sent"], seeded["who"], seeded["next"]
+        title = "Acme Q4 proposal"
+        bodies = {
+            "citation-only": f"## {title}\n\n[c:{sent}]. [c:{who}]. [c:{nxt}].",
+            "heading-only": f"## {title} [c:{sent}] [c:{who}] [c:{nxt}]",
+            "citation-after-the-period": (
+                f"## {title}\n\n"
+                f"Sent the pricing pack. [c:{sent}]. "
+                f"Priya joined the call. [c:{who}]. "
+                f"Kieran will send revised pricing. [c:{nxt}]."
+            ),
+        }
+        _overwrite_displayed_summary(conn, seeded["day_id"], bodies[shape])
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert set(shown) == {sent, who, nxt}
+        assert all(text == "" for text in shown.values())
+        assert all("pricing pack" not in text.casefold() for text in shown.values())
+        assert all("priya joined" not in text.casefold() for text in shown.values())
+        assert all("revised pricing" not in text.casefold() for text in shown.values())
+        assert score.summary.claims == 3
+        assert score.summary.accuracy == 0.0
+        assert score.summary.correct == 0
+    finally:
+        conn.close()
+
+
 def test_invented_claim_ids_only_text_is_not_cited_as_model(tmp_path: Path) -> None:
     invented = "Northwind acquired Contoso for £100 billion"
     conn = _open(tmp_path)

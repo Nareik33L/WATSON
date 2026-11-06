@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from watson.intelligence.citations import (
     citations_resolvable,
+    displayed_claim_sentences,
     displayed_claim_text,
     expand_index_citations,
     verify_narrative,
@@ -61,6 +62,28 @@ def test_displayed_claim_text_is_the_shown_sentence() -> None:
     assert headed == "Northwind acquired Contoso for £100 billion."
     assert displayed_claim_text("no citations here", claim_id=DAY_A) == ""
     assert displayed_claim_text(claim_id=DAY_A) == ""
+
+
+def test_displayed_claim_text_includes_every_citing_sentence() -> None:
+    blob = (
+        f"Sent the pricing pack [c:{DAY_A}]. "
+        f"Northwind acquired Contoso for £100 billion [c:{DAY_A}]."
+    )
+    shown = displayed_claim_text(blob, claim_id=DAY_A)
+    assert shown == ("Sent the pricing pack. Northwind acquired Contoso for £100 billion.")
+    assert displayed_claim_sentences(blob, claim_id=DAY_A) == [
+        "Sent the pricing pack.",
+        "Northwind acquired Contoso for £100 billion.",
+    ]
+
+
+def test_displayed_claim_text_empty_when_nothing_is_shown() -> None:
+    assert displayed_claim_text(f"[c:{DAY_A}]", claim_id=DAY_A) == ""
+    assert displayed_claim_text(f"## Acme Q4 [c:{DAY_A}]", claim_id=DAY_A) == ""
+    assert displayed_claim_text(f"Sent the pricing pack. [c:{DAY_A}]", claim_id=DAY_A) == ""
+    assert displayed_claim_sentences(f"[c:{DAY_A}]", claim_id=DAY_A) == [""]
+    assert displayed_claim_sentences(f"## Acme Q4 [c:{DAY_A}]", claim_id=DAY_A) == []
+    assert displayed_claim_sentences(f"Sent the pricing pack. [c:{DAY_A}]", claim_id=DAY_A) == [""]
 
 
 def test_invented_uncited_paragraph_is_dropped() -> None:

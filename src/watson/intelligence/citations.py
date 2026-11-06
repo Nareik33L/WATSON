@@ -118,16 +118,18 @@ def citations_resolvable(narrative_md: str, day_claim_ids: set[str]) -> bool:
     return all(_resolvable(claim_id, day_claim_ids) for claim_id in found)
 
 
-def displayed_claim_text(*texts: str, claim_id: str) -> str:
-    """Citation-stripped displayed sentence that shows ``[c:claim_id]``.
+def displayed_claim_sentences(*texts: str, claim_id: str) -> list[str]:
+    """Citation-stripped displayed sentences that show ``[c:claim_id]``.
 
-    Deal-summary scoring uses this wording — the text the user sees — not
-    ``claims.text``. Invented prose cannot ride a valid citation. Empty when
-    the id is not shown.
+    Every shown sentence that cites the id is returned, in display order.
+    Deal-summary scoring requires each of them to cover the gold fact —
+    invented extras cannot ride the first valid cite. Empty when the id is
+    not shown. Never falls back to ``claims.text``.
     """
     if not claim_id:
-        return ""
+        return []
     needle = f"[c:{claim_id}]"
+    found: list[str] = []
     for text in texts:
         body = _strip_md_headings(text)
         if not body or needle not in body:
@@ -137,8 +139,20 @@ def displayed_claim_text(*texts: str, claim_id: str) -> str:
                 continue
             cleaned = CITATION_RE.sub("", sentence)
             cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
-            return " ".join(cleaned.split())
-    return ""
+            cleaned = " ".join(cleaned.split())
+            if not re.search(r"\w", cleaned):
+                found.append("")
+            else:
+                found.append(cleaned)
+    return found
+
+
+def displayed_claim_text(*texts: str, claim_id: str) -> str:
+    """Join every citation-stripped displayed sentence for ``[c:claim_id]``.
+
+    Empty when the id is not shown. Never falls back to ``claims.text``.
+    """
+    return " ".join(part for part in displayed_claim_sentences(*texts, claim_id=claim_id) if part)
 
 
 def _strip_md_headings(text: str) -> str:

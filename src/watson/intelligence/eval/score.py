@@ -7,7 +7,11 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
-from watson.intelligence.citations import CITATION_RE, citations_resolvable, displayed_claim_text
+from watson.intelligence.citations import (
+    CITATION_RE,
+    citations_resolvable,
+    displayed_claim_sentences,
+)
 from watson.intelligence.eval.metrics import (
     completed_accuracy,
     duplicate_rate,
@@ -294,14 +298,18 @@ def collect_predicted(
                 "segment_id": str(row[2]) if row[2] else None,
             }
         )
-    deal_claims = {
-        cid: {
-            "text": displayed_claim_text(*display_blobs, claim_id=cid),
-            "evidence": evidence_by_claim.get(cid, []),
-        }
-        for slot in slots
-        for cid in slot["claim_ids"]
-    }
+    deal_claims = {}
+    for slot in slots:
+        for cid in slot["claim_ids"]:
+            if cid in deal_claims:
+                continue
+            sentences = displayed_claim_sentences(*display_blobs, claim_id=cid)
+            # Empty stays empty: never substitute claims.text when nothing is shown.
+            deal_claims[cid] = {
+                "text": " ".join(part for part in sentences if part),
+                "sentences": sentences,
+                "evidence": evidence_by_claim.get(cid, []),
+            }
     return {
         "projects": projects,
         "people": people,
