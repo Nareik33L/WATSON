@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 CITATION_RE = re.compile(r"\[c:([^\]]*)\]")
+_TRAILING_SENTENCE_PUNCT = re.compile(r"([.!?])$")
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,31 @@ class VerifiedNarrative:
             "unverified": [dict(row) for row in self.unverified],
             "claim_ids": list(self.claim_ids),
         }
+
+
+def append_missing_citations(text: str, claim_ids: Sequence[str], grouped_ids: set[str]) -> str:
+    """Append missing ``[c:id]`` markers onto the model's last sentence.
+
+    Only when the paragraph has no inline marker for this deal (the
+    claim_ids-only shape). An already-cited sentence is left unchanged, even
+    if ``claim_ids`` lists a peer, so two claims cannot share one honest
+    sentence. All missing ids are appended, in order, inside the last
+    sentence (before trailing punctuation). Never publishes ``claims.text``.
+    """
+    present = {tok for tok in CITATION_RE.findall(text) if tok in grouped_ids}
+    if present:
+        return text
+    missing = [cid for cid in claim_ids if cid in grouped_ids]
+    if not missing:
+        return text
+    tokens = " ".join(f"[c:{cid}]" for cid in missing)
+    stripped = text.rstrip()
+    if not stripped:
+        return tokens
+    match = _TRAILING_SENTENCE_PUNCT.search(stripped)
+    if match:
+        return f"{stripped[: match.start()]} {tokens}{match.group(1)}"
+    return f"{stripped} {tokens}"
 
 
 def expand_index_citations(

@@ -1,6 +1,6 @@
 """Named-mutation score for deal grouping and per-deal summaries.
 
-Target ≥ 13 of 16 mutants. No-ops and collection errors count as SURVIVED.
+Target ≥ 17 of 21 mutants. No-ops and collection errors count as SURVIVED.
 """
 
 from __future__ import annotations
@@ -15,17 +15,19 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-TARGET_MUTANTS = 16
-KILL_FLOOR = 13
+TARGET_MUTANTS = 21
+KILL_FLOOR = 17
 TEST_PATHS = (
     "tests/unit/test_deal_grouping.py",
     "tests/unit/test_daily_summary.py",
+    "tests/unit/test_citations.py",
 )
 _COLLECTED = re.compile(r"(\d+) tests? collected")
 _RAN = re.compile(r"(\d+) (passed|failed)")
 
 CONSOLIDATION = "src/watson/pipeline/consolidation.py"
 SCORE = "src/watson/intelligence/eval/score.py"
+CITATIONS = "src/watson/intelligence/citations.py"
 
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (
@@ -200,6 +202,61 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
             " cluster.title, grouped))\n"
         ),
     ),
+    (
+        "drop-append-markers",
+        CONSOLIDATION,
+        (
+            '            expanded["text"] = append_missing_citations('
+            'str(expanded["text"]), mapped, grouped_ids)\n'
+        ),
+        "            pass\n",
+    ),
+    (
+        "inject-claims-text",
+        CONSOLIDATION,
+        (
+            '            expanded["text"] = append_missing_citations('
+            'str(expanded["text"]), mapped, grouped_ids)\n'
+        ),
+        (
+            '            expanded["text"] = " ".join(\n'
+            "                f\"{str(row.get('text') or '').rstrip('.')} "
+            "[c:{row['id']}].\" for row in grouped\n"
+            "            )\n"
+        ),
+    ),
+    (
+        "append-peer-into-cited",
+        CITATIONS,
+        "    if present:\n        return text\n",
+        "    if False and present:\n        return text\n",
+    ),
+    (
+        "append-every-sentence",
+        CITATIONS,
+        (
+            "    match = _TRAILING_SENTENCE_PUNCT.search(stripped)\n"
+            "    if match:\n"
+            '        return f"{stripped[: match.start()]} {tokens}{match.group(1)}"\n'
+            '    return f"{stripped} {tokens}"\n'
+        ),
+        (
+            "    parts: list[str] = []\n"
+            "    for sentence in _split_sentences(stripped):\n"
+            "        smatch = _TRAILING_SENTENCE_PUNCT.search(sentence)\n"
+            "        if smatch:\n"
+            '            parts.append(f"{sentence[: smatch.start()]} {tokens}{smatch.group(1)}")\n'
+            "        else:\n"
+            '            parts.append(f"{sentence} {tokens}")\n'
+            '    return " ".join(parts)\n'
+        ),
+    ),
+    (
+        "append-first-missing-only",
+        CITATIONS,
+        "    missing = [cid for cid in claim_ids if cid in grouped_ids]\n",
+        "    missing = [cid for cid in claim_ids if cid in grouped_ids][:1]\n",
+    ),
 )
 
 
@@ -259,7 +316,7 @@ def _classify(src_root: Path, *, changed: bool) -> str:
 
 
 @pytest.mark.timeout(300)
-def test_deal_grouping_kills_at_least_13_of_16(tmp_path: Path) -> None:
+def test_deal_grouping_kills_at_least_17_of_21(tmp_path: Path) -> None:
     assert len(MUTANTS) == TARGET_MUTANTS
     names = [row[0] for row in MUTANTS]
     assert len(names) == len(set(names))
