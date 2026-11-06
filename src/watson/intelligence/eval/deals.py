@@ -1397,7 +1397,8 @@ def predicted_day_from_collect(name: str, collected: dict[str, Any]) -> Predicte
     """Build a scorable day from ``collect_predicted`` deal fields.
 
     Uses ``segment_deals`` (ids, cluster, frames) and ``summary_slots`` plus
-    ``deal_claims`` (claim text and evidence ids). Never requires OCR or titles.
+    ``deal_claims`` (displayed citation sentences and evidence ids). Never
+    requires OCR or titles. Claim-table wording is not a scoring input.
     """
     segments = [
         PredictedSegment(
@@ -2168,6 +2169,14 @@ def _evidence_overlap(cited: Sequence[str], evidence: Sequence[str]) -> bool:
     return bool(cited_set & evidence_set) and extra <= OUTSIDE_EVIDENCE_MAX
 
 
+def _claim_display_sentences(text: str) -> tuple[str, ...]:
+    """Split displayed citation wording so every shown sentence is scored."""
+    stripped = text.strip()
+    if not stripped:
+        return ()
+    return tuple(part.strip() for part in re.split(r"(?<=[.!?])\s+", stripped) if part.strip())
+
+
 def _claim_covers(
     day: DayGold,
     pred: PredictedDay,
@@ -2179,9 +2188,10 @@ def _claim_covers(
         return False
     if mapping.get(claim.deal) != fact.deal_id:
         return False
-    if len(content_tokens(claim.text)) > CONTENT_TOKEN_CAP:
+    sentences = _claim_display_sentences(claim.text)
+    if not sentences:
         return False
-    if not fact_terms_satisfied(claim.text, fact, day.people):
+    if len(content_tokens(claim.text)) > CONTENT_TOKEN_CAP:
         return False
     frames = resolve_claim_frames(claim, pred, day)
     if frames is None:
@@ -2190,10 +2200,16 @@ def _claim_covers(
     if not _evidence_overlap(cited_segments, fact.evidence_segments):
         return False
     cited_text = _ocr(day, frames)
-    if contradicts(claim, fact, day, cited_text):
-        return False
-    if not slot_modal_ok(claim, fact):
-        return False
+    for sentence in sentences:
+        piece = replace(claim, text=sentence)
+        if len(content_tokens(piece.text)) > CONTENT_TOKEN_CAP:
+            return False
+        if not fact_terms_satisfied(piece.text, fact, day.people):
+            return False
+        if contradicts(piece, fact, day, cited_text):
+            return False
+        if not slot_modal_ok(piece, fact):
+            return False
     return True
 
 

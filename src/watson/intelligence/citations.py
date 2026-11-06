@@ -118,6 +118,49 @@ def citations_resolvable(narrative_md: str, day_claim_ids: set[str]) -> bool:
     return all(_resolvable(claim_id, day_claim_ids) for claim_id in found)
 
 
+def displayed_claim_sentences(*texts: str, claim_id: str) -> list[str]:
+    """Citation-stripped displayed sentences that show ``[c:claim_id]``.
+
+    Every shown sentence that cites the id is returned, in display order.
+    Deal-summary scoring requires each of them to cover the gold fact —
+    invented extras cannot ride the first valid cite. Empty when the id is
+    not shown. Never falls back to ``claims.text``.
+    """
+    if not claim_id:
+        return []
+    needle = f"[c:{claim_id}]"
+    found: list[str] = []
+    for text in texts:
+        body = _strip_md_headings(text)
+        if not body or needle not in body:
+            continue
+        for sentence in _split_sentences(body):
+            if needle not in sentence:
+                continue
+            cleaned = CITATION_RE.sub("", sentence)
+            cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+            cleaned = " ".join(cleaned.split())
+            if not re.search(r"\w", cleaned):
+                found.append("")
+            else:
+                found.append(cleaned)
+    return found
+
+
+def displayed_claim_text(*texts: str, claim_id: str) -> str:
+    """Join every citation-stripped displayed sentence for ``[c:claim_id]``.
+
+    Empty when the id is not shown. Never falls back to ``claims.text``.
+    """
+    return " ".join(part for part in displayed_claim_sentences(*texts, claim_id=claim_id) if part)
+
+
+def _strip_md_headings(text: str) -> str:
+    """Drop ``##`` title lines so scoring reads the card body, not the heading."""
+    lines = [line for line in text.splitlines() if not line.lstrip().startswith("##")]
+    return "\n".join(lines).strip()
+
+
 def _resolvable(claim_id: str, day_ids: set[str]) -> bool:
     return bool(claim_id) and claim_id in day_ids
 

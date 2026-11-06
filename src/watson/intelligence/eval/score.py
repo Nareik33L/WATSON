@@ -7,7 +7,11 @@ from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
-from watson.intelligence.citations import CITATION_RE, citations_resolvable
+from watson.intelligence.citations import (
+    CITATION_RE,
+    citations_resolvable,
+    displayed_claim_sentences,
+)
 from watson.intelligence.eval.metrics import (
     completed_accuracy,
     duplicate_rate,
@@ -276,16 +280,7 @@ def collect_predicted(
             if any(not cid or cid.isdigit() for cid in resolved):
                 continue
             slots.append({"slot": slot_name, "claim_ids": resolved, "deal_id": deal_id})
-    claim_text = {
-        str(row[0]): str(row[1] or "")
-        for row in conn.execute(
-            """
-            SELECT id, text FROM claims
-            WHERE working_day_id = ? AND pipeline_version = ?
-            """,
-            (working_day_id, pipeline_version),
-        )
-    }
+    display_blobs = _display_summary_blobs(sections, narrative)
     evidence_by_claim: dict[str, list[dict[str, str | None]]] = {}
     for row in conn.execute(
         """
@@ -303,14 +298,18 @@ def collect_predicted(
                 "segment_id": str(row[2]) if row[2] else None,
             }
         )
-    deal_claims = {
-        cid: {
-            "text": claim_text.get(cid, ""),
-            "evidence": evidence_by_claim.get(cid, []),
-        }
-        for slot in slots
-        for cid in slot["claim_ids"]
-    }
+    deal_claims = {}
+    for slot in slots:
+        for cid in slot["claim_ids"]:
+            if cid in deal_claims:
+                continue
+            sentences = displayed_claim_sentences(*display_blobs, claim_id=cid)
+            # Empty stays empty: never substitute claims.text when nothing is shown.
+            deal_claims[cid] = {
+                "text": " ".join(part for part in sentences if part),
+                "sentences": sentences,
+                "evidence": evidence_by_claim.get(cid, []),
+            }
     return {
         "projects": projects,
         "people": people,
@@ -330,6 +329,27 @@ def collect_predicted(
         "summary_slots": slots,
         "deal_claims": deal_claims,
     }
+
+
+def _display_summary_blobs(sections: dict[str, Any], narrative: str) -> list[str]:
+    """Shown model summary text. Fallback paragraphs are not scored."""
+    blobs: list[str] = []
+    raw = sections.get("paragraphs")
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                if str(item.get("source") or "model") == "fallback":
+                    continue
+                text = str(item.get("text") or "")
+            else:
+                text = str(item)
+            if text.strip():
+                blobs.append(text)
+    if blobs:
+        return blobs
+    if narrative.strip():
+        return [narrative]
+    return []
 
 
 def _texts(conn: sqlcipher.Connection, sql: str, params: tuple[object, ...]) -> list[str]:
