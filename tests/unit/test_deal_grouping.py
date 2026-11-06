@@ -1495,6 +1495,128 @@ def test_claim_ids_only_honest_prose_is_scorable(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_already_cited_paragraph_does_not_append_peer_claim_id(tmp_path: Path) -> None:
+    """Already-cited + peer claim_id must keep 1.000 and must not attach the peer."""
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": "What happened: Sent the pricing pack [c:1].",
+                        "claim_ids": ["1", "2"],
+                        "slot": "what_happened",
+                    },
+                    {
+                        "text": "Who involved: Priya joined the call [c:2].",
+                        "claim_ids": ["2"],
+                        "slot": "who_involved",
+                    },
+                    {
+                        "text": "Next step: Kieran will send revised pricing [c:3].",
+                        "claim_ids": ["3"],
+                        "slot": "next_step",
+                    },
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        sent, who = seeded["sent"], seeded["who"]
+        assert f"[c:{sent}]" in narrative
+        assert f"[c:{who}]" in narrative
+        assert f"pricing pack [c:{sent}] [c:{who}]" not in narrative
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert "pricing pack" in shown[sent].casefold()
+        assert "priya" not in shown[sent].casefold()
+        assert "pricing pack" not in shown[who].casefold()
+        assert "priya" in shown[who].casefold()
+        assert score.summary.claims == 3
+        assert score.summary.accuracy == 1.0
+    finally:
+        conn.close()
+
+
+def test_claim_ids_only_multi_sentence_marks_last_only(tmp_path: Path) -> None:
+    """Mutant: add every id to every sentence → first sentence cites and score drops."""
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": "What happened: The team met. Sent the pricing pack.",
+                        "claim_ids": ["1"],
+                        "slot": "what_happened",
+                    },
+                    {
+                        "text": "Who involved: Priya joined the call.",
+                        "claim_ids": ["2"],
+                        "slot": "who_involved",
+                    },
+                    {
+                        "text": "Next step: Kieran will send revised pricing.",
+                        "claim_ids": ["3"],
+                        "slot": "next_step",
+                    },
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        row = conn.execute(
+            "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+            (seeded["day_id"],),
+        ).fetchone()
+        narrative = str(row["narrative_md"])
+        assert "the team met" not in narrative.casefold()
+        assert f"Sent the pricing pack [c:{seeded['sent']}]" in narrative
+        collected, score = _score_seeded_summary(conn, seeded)
+        shown = {cid: str(info.get("text") or "") for cid, info in collected["deal_claims"].items()}
+        assert shown[seeded["sent"]].casefold() == "sent the pricing pack."
+        assert "the team met" not in shown[seeded["sent"]].casefold()
+        assert score.summary.claims == 3
+        assert score.summary.accuracy == 1.0
+    finally:
+        conn.close()
+
+
+def test_claim_ids_only_appends_every_missing_id(tmp_path: Path) -> None:
+    """Mutant: append only the first missing id → second marker absent."""
+    conn = _open(tmp_path)
+    try:
+        seeded = _seed_channels(conn)
+        runtime = FakeRuntime(
+            recordings=_recordings_with_summary(
+                [
+                    {
+                        "text": "What happened: Sent the pricing pack.",
+                        "claim_ids": ["1", "2"],
+                        "slot": "what_happened",
+                    }
+                ]
+            )
+        )
+        consolidate_working_day(conn, seeded["day_id"], runtime=runtime, embedding=runtime, now=NOW)
+        narrative = str(
+            conn.execute(
+                "SELECT narrative_md FROM daily_summaries WHERE working_day_id = ?",
+                (seeded["day_id"],),
+            ).fetchone()[0]
+        )
+        assert f"[c:{seeded['sent']}]" in narrative
+        assert f"[c:{seeded['who']}]" in narrative
+        assert f"Sent the pricing pack [c:{seeded['sent']}] [c:{seeded['who']}]" in narrative
+    finally:
+        conn.close()
+
+
 def test_honest_cited_paragraph_still_scores_deal_summary(tmp_path: Path) -> None:
     conn = _open(tmp_path)
     try:

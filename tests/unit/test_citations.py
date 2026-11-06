@@ -217,10 +217,26 @@ def test_append_missing_citations_stays_on_model_sentence() -> None:
 def test_append_missing_citations_skips_present_and_foreign_ids() -> None:
     text = f"Work landed [c:{DAY_A}]."
     assert append_missing_citations(text, [DAY_A], {DAY_A, DAY_B}) == text
-    both = append_missing_citations(text, [DAY_A, DAY_B], {DAY_A, DAY_B})
-    assert both == f"Work landed [c:{DAY_A}] [c:{DAY_B}]."
+    # Already-cited + peer id: do not share the honest sentence with B.
+    assert append_missing_citations(text, [DAY_A, DAY_B], {DAY_A, DAY_B}) == text
     assert append_missing_citations(text, [DAY_B], {DAY_A}) == text
     assert append_missing_citations("   ", [DAY_A], {DAY_A}) == f"[c:{DAY_A}]"
+
+
+def test_append_missing_citations_marks_last_sentence_with_every_id() -> None:
+    """Placement: last sentence only, every missing id — not every sentence / first id."""
+    prose = "Sent the pricing pack. Follow-up notes stayed on the deal."
+    out = append_missing_citations(prose, [DAY_A, DAY_B], {DAY_A, DAY_B})
+    assert out == (
+        f"Sent the pricing pack. Follow-up notes stayed on the deal [c:{DAY_A}] [c:{DAY_B}]."
+    )
+    first, last = out.split(". ", 1)
+    assert "[c:" not in first
+    assert f"[c:{DAY_A}]" in last and f"[c:{DAY_B}]" in last
+    single = append_missing_citations(
+        "What happened: Sent the pricing pack.", [DAY_A, DAY_B], {DAY_A, DAY_B}
+    )
+    assert single == (f"What happened: Sent the pricing pack [c:{DAY_A}] [c:{DAY_B}].")
 
 
 def test_expand_index_citations_maps_one_based_ids() -> None:
