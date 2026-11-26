@@ -1,58 +1,76 @@
-# W.A.T.S.O.N
+# Sales Command Centre
 
-W.A.T.S.O.N is a local-first, offline-capable work-memory system for macOS (Apple Silicon first). A signed Swift helper captures the frontmost window; a Python supervisor, inference worker, and local dashboard coordinate through a single encrypted SQLite database. Frames are extracted with on-device OCR, grouped into activity segments, and recorded as claims with evidence. No component opens an outbound socket during normal operation.
+Phase 1 prototype of a local sales workspace. It runs on this machine, uses fictional demo data, and does not call Outlook, Gong, HubSpot, Excel, Calendly, or any AI service.
 
-This repository is at the layout-and-CI skeleton, the M0 bake-off and capture helper, and M1: config, encrypted SQLite, jobs queue, redacted logging, runtime network guard, `watson replay` of the `day_acme_q4` and `day_fragmented_multi` fixtures, and a loopback-only FastAPI status page. Production runtime adapters land later.
+## Requirements
 
-## Development
+- Python 3.11 or newer
+- Node.js 20 or newer (used once, to build the dashboard)
 
-Requires Python 3.12 and [uv](https://docs.astral.sh/uv/).
+## Run
 
-```bash
-uv sync --group dev
-uv run watson --version
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src/watson
-uv run pytest
-```
-
-The M0-B capture helper (`watson-capture`) lives in [`helper/`](helper/README.md). It is macOS 14+ and builds with Command Line Tools via `swiftc` (SwiftPM is `--spm` opt-in; CLT 16.2 cannot load `Package.swift`). The Mac runbook — build, sign as `WATSON Dev`, first-run Screen Recording grant, 1-hour CPU, two-rebuild TCC check — is in that README.
+From the repository root:
 
 ```bash
-helper/scripts/build.sh
-# SwiftPM + unit tests (CI / Xcode):
-#   helper/scripts/build.sh --spm && cd helper && swift test
+python3 main.py
 ```
 
-### CLI (this slice)
+If `python` on your PATH is Python 3.11 or newer, `python main.py` does the same thing.
 
-`watson doctor` prints resolved config paths (`~/Library/Application Support/WATSON` or `WATSON_DATA_DIR`) and database status. It never prints secrets or the SQLCipher key. `config.toml` exclusions are documented in [`docs/config.md`](docs/config.md): user lists merge with the built-in password-manager defaults; `allowed_bundle_ids` is a visible override (load warning + `watson status` / dashboard).
+The first launch:
 
-`watson db upgrade` creates the runtime directories if needed and applies Alembic migrations to the encrypted database.
+1. Checks the Python version and configuration.
+2. Creates `.venv` and installs `requirements.txt`. If that Python has no `ensurepip` module, pip is installed into the environment first.
+3. Installs the dashboard dependencies and builds the React app when the build is missing or stale.
+4. Creates `data/command.db`, applies the schema, and loads the fictional Helios Industrial portfolio.
+5. Serves the API and the dashboard on [http://127.0.0.1:8741/](http://127.0.0.1:8741/).
+6. Opens that address in the default browser.
 
-`watson db status` shows whether `watson.db` exists, whether it opens with the current key provider, WAL/FTS5/sqlite-vec, and the current vs head Alembic revision.
+Press Ctrl+C to stop. The process logs the shutdown.
 
-`watson replay <fixture_dir> [--speed N|--instant]` validates `manifest.json` (sha256/dims) and each sidecar against `schemas/sidecar.schema.json`, copies the fixture into a 0700/0600 temp spool, and ingests frames through the same spool reader live capture will use. Extraction redacts OCR (plan §5.3) before writing `frame_text`, computes pHash/dHash on the spool PNG for consecutive near-duplicate detection, then deletes the spool PNG **and sidecar** (Tier 0) and sets `deletion_verified=1`. Source fixture files are never deleted. Re-runs are idempotent on frame id.
-
-`watson status` prints capture state, queue depth, frame counts by state, deletion-verified counts, last frames (metadata only), last replay, an audit tail, and any `allowed_bundle_ids` that un-exclude a built-in default. The dashboard status page renders the same numbers and never shows OCR text.
-
-`watson dashboard [--host 127.0.0.1] [--port 8000] [--open]` serves the status page on loopback only. Any bind host other than `127.0.0.1` is refused. The per-install secret (macOS Keychain; `WATSON_DASHBOARD_TOKEN` or a `0600` file off-darwin) only signs session cookies and never appears in a URL or log. `watson dashboard` mints a single-use 60 s launch code and opens `/auth?code=…`, which sets an `HttpOnly; SameSite=Strict` session cookie. Sessions expire and a restart rotates them. Host/Origin are checked against DNS rebinding; POST requires CSRF; CSP is strict and HTMX is vendored (no CDN).
-
-Linux CI runs `watson replay` on `day_acme_q4` and `day_fragmented_multi` plus `watson db status` in a loopback-only network namespace (`sudo unshare --net` + `setpriv`; `unshare -rn` after relaxing AppArmor if needed). On Linux, set `WATSON_DB_KEY` to 64 hex characters; on macOS the key is Keychain-only and `WATSON_DB_KEY` is ignored. The key is never written to the data directory.
-
-`run` and `models` remain stubs until later milestones.
-
-The M0-A model bake-off and the V1.1 A0 transcription bake-off live in [`tools/bench/`](tools/bench/README.md). Meeting dialogue scripts are in [`tools/fixture_gen/meetings/`](tools/fixture_gen/meetings/README.md). On the 8 GB development Mac:
+Useful flags:
 
 ```bash
-uv sync --group bench
-uv run watson-bench fetch --profile 8gb --runtime ollama
-uv run watson-bench run --profile 8gb --runtime ollama --report
+python3 main.py --no-browser
+python3 main.py --port 8742
+python3 main.py --database data/other.db
+python3 main.py --log-level DEBUG
 ```
 
-## Engineering plan
+The server only binds to `127.0.0.1`, `localhost`, or `::1`. A public host is refused.
 
-Architecture decisions D1–D12, repository layout, and milestones are defined in [docs/WATSON_V1_ENGINEERING_PLAN.md](docs/WATSON_V1_ENGINEERING_PLAN.md) (Revision 2). Database encryption (§14 #4) is recorded in [docs/decisions/0004-db-encryption.md](docs/decisions/0004-db-encryption.md). Dashboard interactivity (§14 #8, HTMX vendored) is [docs/decisions/0005-dashboard-interactivity.md](docs/decisions/0005-dashboard-interactivity.md).
+Optional overrides live in `config/local.yaml` (gitignored). Copy values from `config/default.yaml`. Environment variables `WATSON_HOST`, `WATSON_PORT`, `WATSON_DATABASE`, `WATSON_LOG_LEVEL`, and `WATSON_NO_BROWSER=1` override the file.
 
-The release ladder (V1.0 personal build → V1.1 meeting intelligence → V1.2 commercialisation → V2.0 → V3.0+ Organisation) is in [docs/ROADMAP.md](docs/ROADMAP.md). Follow-on plans: [docs/WATSON_V1_1_AUDIO_MEETINGS_PLAN.md](docs/WATSON_V1_1_AUDIO_MEETINGS_PLAN.md) and [docs/WATSON_V1_2_COMMERCIALISATION_PLAN.md](docs/WATSON_V1_2_COMMERCIALISATION_PLAN.md).
+## What you can do
+
+The sidebar covers Overview, Daily Briefing, Deals, Customers, Commitments, Approvals, Forecast, Files & Reports, Activity, Integrations, and Settings.
+
+Filters for date, owner, pipeline, region, business unit, product, customer, opportunity, and stage are shared across the portfolio views. Open a customer or a deal for the people, commitments, and timeline. The Approvals page can approve, reject, edit, or defer. Those decisions are stored in the local database and do not leave the machine. Integrations can be refreshed; the refresh writes a local log and fetches nothing.
+
+Everything on screen is labelled demo data. Forecast adjustments and other “AI” lines are simulated placeholders. No model is called.
+
+## Tests
+
+After the first launch, the project virtual environment can run the tests:
+
+```bash
+.venv/bin/python -m pytest
+```
+
+Or, without using that environment:
+
+```bash
+pip install -r requirements.txt
+python3 -m pytest
+```
+
+The dashboard build is `npm run build` inside `frontend/`.
+
+## What this phase does not do
+
+- No live integrations and no outbound email.
+- No Ollama and no external AI API.
+- No encryption. The SQLite file holds fictional data only.
+- No sign-in. Actions are recorded as Alex Harrington, the demo user.
+
+Phase 2, not started here, is the local AI foundation: a local model, an AI service abstraction, structured outputs, and processing limits. It stays off external AI APIs.
