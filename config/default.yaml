@@ -1,0 +1,8 @@
+# Local-only Sales Command Centre.
+# Copy this file to config/local.yaml to override. The server refuses any
+# host other than localhost.
+host: 127.0.0.1
+port: 8741
+open_browser: true
+database_path: data/command.db
+log_level: INFO
